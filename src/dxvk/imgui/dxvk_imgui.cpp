@@ -1446,6 +1446,7 @@ namespace dxvk {
       ImGui::InputInt("Instance Index Range", &RtxOptions::Get()->instanceOverrideInstanceIdxRangeObject());
       ImGui::DragFloat3("Instance World Offset", &RtxOptions::Get()->instanceOverrideWorldOffsetObject(), 0.1f, -100.f, 100.f, "%.3f", sliderFlags);
       ImGui::Checkbox("Instance - Print Hash", &RtxOptions::Get()->instanceOverrideSelectedInstancePrintMaterialHashObject());
+      ImGui::Checkbox("Instance - Use OOBB's", &RtxOptions::Get()->instanceUseBoundingBoxObject());
       ImGui::Unindent();
       ImGui::Checkbox("Throttle presents", &RtxOptions::Get()->enablePresentThrottleObject());
       if (RtxOptions::Get()->enablePresentThrottle()) {

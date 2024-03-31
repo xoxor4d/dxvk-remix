@@ -765,6 +765,7 @@ namespace dxvk {
     RTX_OPTION("rtx", uint, instanceOverrideInstanceIdx, UINT32_MAX, "");
     RTX_OPTION("rtx", uint, instanceOverrideInstanceIdxRange, 15, "");
     RTX_OPTION("rtx", bool, instanceOverrideSelectedInstancePrintMaterialHash, false, "");
+    RTX_OPTION("rtx", bool, instanceUseBoundingBox, false, "Use OOBB's to better differentiate instances");
     RTX_OPTION("rtx", bool, enablePresentThrottle, false,
                "A flag to enable or disable present throttling, when set to true a sleep for a time specified by the throttle delay will be inserted into the DXVK presentation thread.\n"
                "Useful to manually reduce the framerate if the application is running too fast or to reduce GPU power usage during development to keep temperatures down.\n"
