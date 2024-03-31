@@ -170,7 +170,7 @@ namespace dxvk {
 
       // Cache based on current position.
       const AxisAlignedBoundingBox& boundingBox = getBlas()->input.getGeometryData().boundingBox;
-      const Vector3 newPos = (boundingBox.minPos + boundingBox.maxPos) * 0.5f + surface.objectToWorld[3].xyz();
+      const Vector3 newPos = (translationMatrix((boundingBox.minPos + boundingBox.maxPos) * 0.5f) * surface.objectToWorld).data[3].xyz();
 
       m_linkedBlas->getSpatialMap().move(m_spatialCachePos, newPos, this);
       m_spatialCachePos = newPos;
@@ -183,7 +183,7 @@ namespace dxvk {
     surface.prevObjectToWorld = objectToWorld;
     if (!m_isCreatedByRenderer) {
       const AxisAlignedBoundingBox& boundingBox = getBlas()->input.getGeometryData().boundingBox;
-      m_spatialCachePos = (boundingBox.minPos + boundingBox.maxPos) * 0.5f + surface.objectToWorld[3].xyz();
+      m_spatialCachePos = (translationMatrix((boundingBox.minPos + boundingBox.maxPos) * 0.5f) * surface.objectToWorld).data[3].xyz();
       m_linkedBlas->getSpatialMap().insert(m_spatialCachePos, this);
     }
     
@@ -646,7 +646,7 @@ namespace dxvk {
 
     const uint32_t currentFrameIdx = m_device->getCurrentFrameId();
 
-    const Vector3 worldPosition = (blas.input.getGeometryData().boundingBox.minPos + blas.input.getGeometryData().boundingBox.maxPos) * 0.5f + transform[3].xyz();
+    const Vector3 worldPosition = (translationMatrix((blas.input.getGeometryData().boundingBox.minPos + blas.input.getGeometryData().boundingBox.maxPos) * 0.5f) * transform).data[3].xyz();
 
     const float uniqueObjectDistanceSqr = RtxOptions::Get()->getUniqueObjectDistanceSqr();
 
@@ -665,7 +665,7 @@ namespace dxvk {
             if (memcmp(&transform, &instanceTransform, sizeof(instanceTransform)) == 0) {
 
               const auto& otherBoundingBox = instance->getBlas()->input.getGeometryData().boundingBox;
-              const Vector3 otherWorldPos = (otherBoundingBox.minPos + otherBoundingBox.maxPos) * 0.5f + instance->getWorldPosition();
+              const Vector3 otherWorldPos = (translationMatrix((otherBoundingBox.minPos + otherBoundingBox.maxPos) * 0.5f) * instance->getTransform()).data[3].xyz();
 
               if (worldPosition == otherWorldPos) {
                 return const_cast<RtInstance*>(instance);
