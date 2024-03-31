@@ -169,7 +169,9 @@ namespace dxvk {
       // const Vector3 newPos = 2.f * surface.objectToWorld[3].xyz() - surface.prevObjectToWorld[3].xyz();
 
       // Cache based on current position.
-      const Vector3 newPos = surface.objectToWorld[3].xyz();
+      const AxisAlignedBoundingBox& boundingBox = getBlas()->input.getGeometryData().boundingBox;
+      const Vector3 newPos = (boundingBox.minPos + boundingBox.maxPos) * 0.5f + surface.objectToWorld[3].xyz();
+
       m_linkedBlas->getSpatialMap().move(m_spatialCachePos, newPos, this);
       m_spatialCachePos = newPos;
     }
@@ -180,7 +182,8 @@ namespace dxvk {
     surface.normalObjectToWorld = transpose(inverse(Matrix3(surface.objectToWorld)));
     surface.prevObjectToWorld = objectToWorld;
     if (!m_isCreatedByRenderer) {
-      m_spatialCachePos = surface.objectToWorld[3].xyz();
+      const AxisAlignedBoundingBox& boundingBox = getBlas()->input.getGeometryData().boundingBox;
+      m_spatialCachePos = (boundingBox.minPos + boundingBox.maxPos) * 0.5f + surface.objectToWorld[3].xyz();
       m_linkedBlas->getSpatialMap().insert(m_spatialCachePos, this);
     }
     
@@ -643,7 +646,7 @@ namespace dxvk {
 
     const uint32_t currentFrameIdx = m_device->getCurrentFrameId();
 
-    const Vector3 worldPosition = transform[3].xyz();
+    const Vector3 worldPosition = (blas.input.getGeometryData().boundingBox.minPos + blas.input.getGeometryData().boundingBox.maxPos) * 0.5f + transform[3].xyz();
 
     const float uniqueObjectDistanceSqr = RtxOptions::Get()->getUniqueObjectDistanceSqr();
 
@@ -660,7 +663,13 @@ namespace dxvk {
             // then this is a second draw call on a single mesh.
             const Matrix4 instanceTransform = instance->getTransform();
             if (memcmp(&transform, &instanceTransform, sizeof(instanceTransform)) == 0) {
-              return const_cast<RtInstance*>(instance);
+
+              const auto& otherBoundingBox = instance->getBlas()->input.getGeometryData().boundingBox;
+              const Vector3 otherWorldPos = (otherBoundingBox.minPos + otherBoundingBox.maxPos) * 0.5f + instance->getWorldPosition();
+
+              if (worldPosition == otherWorldPos) {
+                return const_cast<RtInstance*>(instance);
+              }
             }
           } else if (instance->m_materialHash == material.getHash()) {
             // Instance hasn't been touched yet this frame.
