@@ -333,6 +333,8 @@ namespace dxvk {
     RTX_OPTION("rtx", uint32_t, minPrimsInStaticBLAS, 1000, "");
     RTX_OPTION("rtx", uint32_t, maxPrimsInMergedBLAS, 50000, "");
 
+    RTX_OPTION("rtx", bool, instanceUseBoundingBox, false, "Use AABB's to better differentiate instances");
+
     // Camera
     RW_RTX_OPTION_ENV("rtx", bool, shakeCamera, false, "RTX_FREE_CAMERA_ENABLE_ANIMATION", "Enables animation of the free camera.");
     RTX_OPTION_ENV("rtx", CameraAnimationMode, cameraAnimationMode, CameraAnimationMode::CameraShake_Pitch, "RTX_FREE_CAMERA_ANIMATION_MODE", "Free camera's animation mode.");
@@ -765,7 +767,6 @@ namespace dxvk {
     RTX_OPTION("rtx", uint, instanceOverrideInstanceIdx, UINT32_MAX, "");
     RTX_OPTION("rtx", uint, instanceOverrideInstanceIdxRange, 15, "");
     RTX_OPTION("rtx", bool, instanceOverrideSelectedInstancePrintMaterialHash, false, "");
-    RTX_OPTION("rtx", bool, instanceUseBoundingBox, false, "Use OOBB's to better differentiate instances");
     RTX_OPTION("rtx", bool, enablePresentThrottle, false,
                "A flag to enable or disable present throttling, when set to true a sleep for a time specified by the throttle delay will be inserted into the DXVK presentation thread.\n"
                "Useful to manually reduce the framerate if the application is running too fast or to reduce GPU power usage during development to keep temperatures down.\n"

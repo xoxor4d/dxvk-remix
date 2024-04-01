@@ -171,8 +171,7 @@ namespace dxvk {
       // Cache based on current position.
       Vector3 newPos = surface.objectToWorld[3].xyz();
       if (RtxOptions::Get()->instanceUseBoundingBox()) {
-        const AxisAlignedBoundingBox& boundingBox = getBlas()->input.getGeometryData().boundingBox;
-        newPos = (translationMatrix((boundingBox.minPos + boundingBox.maxPos) * 0.5f) * surface.objectToWorld).data[3].xyz();
+        newPos = (surface.objectToWorld * Vector4(getBlas()->input.getGeometryData().boundingBox.getCentroid(), 1.0f)).xyz();
       }
 
       m_linkedBlas->getSpatialMap().move(m_spatialCachePos, newPos, this);
@@ -187,8 +186,7 @@ namespace dxvk {
     if (!m_isCreatedByRenderer) {
       m_spatialCachePos = surface.objectToWorld[3].xyz();
       if (RtxOptions::Get()->instanceUseBoundingBox()) {
-        const AxisAlignedBoundingBox& boundingBox = getBlas()->input.getGeometryData().boundingBox;
-        m_spatialCachePos = (translationMatrix((boundingBox.minPos + boundingBox.maxPos) * 0.5f) * surface.objectToWorld).data[3].xyz();
+        m_spatialCachePos = (surface.objectToWorld * Vector4(getBlas()->input.getGeometryData().boundingBox.getCentroid(), 1.0f)).xyz();
       }
 
       m_linkedBlas->getSpatialMap().insert(m_spatialCachePos, this);
@@ -655,7 +653,7 @@ namespace dxvk {
 
     Vector3 worldPosition = transform[3].xyz();
     if (RtxOptions::Get()->instanceUseBoundingBox()) {
-      worldPosition = (translationMatrix((blas.input.getGeometryData().boundingBox.minPos + blas.input.getGeometryData().boundingBox.maxPos) * 0.5f) * transform).data[3].xyz();
+      worldPosition = (transform * Vector4(blas.input.getGeometryData().boundingBox.getCentroid(), 1.0f)).xyz();
     }
 
     const float uniqueObjectDistanceSqr = RtxOptions::Get()->getUniqueObjectDistanceSqr();
@@ -674,8 +672,7 @@ namespace dxvk {
             const Matrix4 instanceTransform = instance->getTransform();
             if (memcmp(&transform, &instanceTransform, sizeof(instanceTransform)) == 0) {
               if (RtxOptions::Get()->instanceUseBoundingBox()) {
-                const auto& otherBoundingBox = instance->getBlas()->input.getGeometryData().boundingBox;
-                const Vector3 otherWorldPos = (translationMatrix((otherBoundingBox.minPos + otherBoundingBox.maxPos) * 0.5f) * instance->getTransform()).data[3].xyz();
+                const Vector3 otherWorldPos = (instance->getTransform() * Vector4(instance->getBlas()->input.getGeometryData().boundingBox.getCentroid(), 1.0f)).xyz();
 
                 if (worldPosition == otherWorldPos) {
                   return const_cast<RtInstance*>(instance);

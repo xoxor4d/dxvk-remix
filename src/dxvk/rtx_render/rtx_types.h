@@ -133,6 +133,10 @@ struct AxisAlignedBoundingBox {
     }
   }
 
+  const Vector3 getCentroid() const {
+    return (minPos + maxPos) * 0.5f;
+  }
+
   const XXH64_hash_t calculateHash() const {
     return XXH3_64bits(this, sizeof(AxisAlignedBoundingBox));
   }

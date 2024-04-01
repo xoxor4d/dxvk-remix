@@ -88,7 +88,7 @@ DrawCallCache::CacheState DrawCallCache::get(const DrawCallState& drawCall, Blas
 
   Vector3 newWorldPosition = Vector3(newTransform[3][0], newTransform[3][1], newTransform[3][2]);
   if (RtxOptions::Get()->instanceUseBoundingBox()) {
-    newWorldPosition = (translationMatrix((drawCall.getGeometryData().boundingBox.minPos + drawCall.getGeometryData().boundingBox.maxPos) * 0.5f) * newTransform).data[3].xyz();
+    newWorldPosition = (newTransform * Vector4(drawCall.getGeometryData().boundingBox.getCentroid(), 1.0f)).xyz();
   }
 
   for (auto bucketIter = range.first; bucketIter != range.second; bucketIter++) {
@@ -117,7 +117,7 @@ DrawCallCache::CacheState DrawCallCache::get(const DrawCallState& drawCall, Blas
     Matrix4 oldTransform = blas.input.getTransformData().objectToWorld;
     Vector3 worldPosition = Vector3(oldTransform[3][0], oldTransform[3][1], oldTransform[3][2]);
     if (RtxOptions::Get()->instanceUseBoundingBox()) {
-      worldPosition = (translationMatrix((blas.input.getGeometryData().boundingBox.minPos + blas.input.getGeometryData().boundingBox.maxPos) * 0.5f) * oldTransform).data[3].xyz();
+      worldPosition = (oldTransform * Vector4(blas.input.getGeometryData().boundingBox.getCentroid(), 1.0f)).xyz();
     }
 
     score -= lengthSqr(newWorldPosition - worldPosition);
