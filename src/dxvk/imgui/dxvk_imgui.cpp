@@ -1555,6 +1555,10 @@ namespace dxvk {
             { CameraType::ViewModel,        "ViewModel" },
             { CameraType::Portal0,          "Portal0" },
             { CameraType::Portal1,          "Portal1" },
+            { CameraType::Portal2,          "Portal2" },
+            { CameraType::Portal3,          "Portal3" },
+            { CameraType::Portal4,          "Portal4" },
+            { CameraType::Portal5,          "Portal5" },
             { CameraType::Sky,              "Sky" },
             { CameraType::RenderToTexture,  "RenderToTexture" },
           };
@@ -2641,6 +2645,7 @@ namespace dxvk {
     if (IMGUI_ADD_TOOLTIP(ImGui::BeginTabItem("Step 1: Categorize Textures", nullptr, tab_item_flags), "Select texture definitions for Remix")) {
       spacing();
       RemixGui::Checkbox("Preserve discarded textures", &RtxOptions::keepTexturesForTaggingObject());
+      RemixGui::Checkbox("Always Recalculate Hashes", &RtxOptions::alwaysRecalculateTextureHashesObject());
       separator();
 
       // set thumbnail size

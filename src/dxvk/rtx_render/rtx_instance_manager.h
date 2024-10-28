@@ -249,13 +249,20 @@ private:
   XXH64_hash_t m_materialDataHash = kEmptyHash;
   XXH64_hash_t m_texcoordHash = kEmptyHash;
   XXH64_hash_t m_indexHash = kEmptyHash;
+
+  // Per-drawcall renderstate tweaks that affect material properties (e.g., emissive strength)
+  // These must match for instances to be considered similar
+  uint32_t m_remixTextureCategoryFlagsFromD3D = 0u; // RS 42
+  uint32_t m_remixModifierFromD3D = 0u; // RS 149
+  XXH64_hash_t m_remixHashFromD3D = 0; // RS 150
+  float m_remixFloatRS169 = 0.0f;
+
   VkAccelerationStructureInstanceKHR m_vkInstance;
   VkGeometryFlagsKHR m_geometryFlags = 0;
   uint32_t m_firstBillboard = 0;
   uint32_t m_billboardCount = 0;
 
   CategoryFlags m_categoryFlags;
-
 
   // This can be used to access all lights and instances that originate from the same draw call.
   // Left as nullptr if the draw call does not have replacement data.

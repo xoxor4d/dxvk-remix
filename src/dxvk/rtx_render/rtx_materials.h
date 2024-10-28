@@ -79,6 +79,38 @@ static_assert((int)AlphaTestType::kNotEqual == (int)VkCompareOp::VK_COMPARE_OP_N
 static_assert((int)AlphaTestType::kGreaterOrEqual == (int)VkCompareOp::VK_COMPARE_OP_GREATER_OR_EQUAL);
 static_assert((int)AlphaTestType::kAlways == (int)VkCompareOp::VK_COMPARE_OP_ALWAYS);
 
+enum REMIX_MODIFIER_FROM_D3D : std::uint16_t {
+  REMIX_MODIFIER_FROM_D3D_NONE = 0,
+  REMIX_MODIFIER_FROM_D3D_EMISSIVE_TWEAK = 1 << 0,
+  REMIX_MODIFIER_FROM_D3D_EMISSIVE_FORCE_ON_WITH_ALBEDO = 1 << 1,
+  REMIX_MODIFIER_FROM_D3D_BIK = 1 << 2,
+  REMIX_MODIFIER_FROM_D3D_FREE03 = 1 << 3,
+  REMIX_MODIFIER_FROM_D3D_FREE04 = 1 << 4,
+  REMIX_MODIFIER_FROM_D3D_FREE05 = 1 << 5,
+  REMIX_MODIFIER_FROM_D3D_FREE06 = 1 << 6,
+  REMIX_MODIFIER_FROM_D3D_FREE07 = 1 << 7,
+  REMIX_MODIFIER_FROM_D3D_FREE08 = 1 << 8,
+  REMIX_MODIFIER_FROM_D3D_FREE09 = 1 << 9,
+  REMIX_MODIFIER_FROM_D3D_FREE10 = 1 << 10,
+  REMIX_MODIFIER_FROM_D3D_FREE11 = 1 << 11,
+  REMIX_MODIFIER_FROM_D3D_FREE12 = 1 << 12,
+  REMIX_MODIFIER_FROM_D3D_FREE13 = 1 << 13,
+  REMIX_MODIFIER_FROM_D3D_FREE14 = 1 << 14,
+  REMIX_MODIFIER_FROM_D3D_FREE15 = 1 << 15,
+};
+
+enum REMIX_MODIFIER_TO_OPAQUE_SHADER : std::uint8_t {
+  REMIX_MODIFIER_TO_OPAQUE_SHADER_NONE = 0,
+  REMIX_MODIFIER_TO_OPAQUE_SHADER_DO_NOT_USE = 1 << 0,
+  REMIX_MODIFIER_TO_OPAQUE_SHADER_FREE1 = 1 << 1,
+  REMIX_MODIFIER_TO_OPAQUE_SHADER_FREE2 = 1 << 2,
+  REMIX_MODIFIER_TO_OPAQUE_SHADER_FREE3 = 1 << 3,
+  REMIX_MODIFIER_TO_OPAQUE_SHADER_FREE4 = 1 << 4,
+  REMIX_MODIFIER_TO_OPAQUE_SHADER_EMISSIVE_SCALE = 1 << 5,
+  REMIX_MODIFIER_TO_OPAQUE_SHADER_EMISSIVE_USE_ALBEDO = 1 << 6,
+  REMIX_MODIFIER_TO_OPAQUE_SHADER_BIK = 1 << 7,
+};
+
 // Note: "Temporary" hacks to get RtxOptions data from this header file as we cannot include rtx_options directly
 // due to cyclic includes. This should be removed once the rtx_materials implementation is moved to a source file.
 bool getEnableDiffuseLayerOverrideHack();
@@ -586,6 +618,7 @@ struct RtOpaqueSurfaceMaterial {
     uint32_t samplerIndex, float displaceIn, float displaceOut,
     uint32_t subsurfaceMaterialIndex, bool isRaytracedRenderTarget, bool isHairCard,
     uint16_t samplerFeedbackStamp,
+    uint8_t d3dModifierFlags, float freeFloat01, uint32_t bikRTextureIndex, uint32_t bikBTextureIndex, uint32_t samplerIndex1, uint32_t samplerIndex2,
     uint32_t secondaryTextureIndex = 0
   ) :
     m_albedoOpacityTextureIndex{ albedoOpacityTextureIndex }, m_secondaryTextureIndex{secondaryTextureIndex}, m_normalTextureIndex{ normalTextureIndex },
@@ -598,7 +631,8 @@ struct RtOpaqueSurfaceMaterial {
     m_ignoreAlphaChannel { ignoreAlphaChannel }, m_enableThinFilm { enableThinFilm }, m_alphaIsThinFilmThickness { alphaIsThinFilmThickness },
     m_thinFilmThicknessConstant { thinFilmThicknessConstant }, m_samplerIndex{ samplerIndex }, m_displaceIn{ displaceIn },
     m_displaceOut{ displaceOut }, m_subsurfaceMaterialIndex(subsurfaceMaterialIndex), m_isRaytracedRenderTarget(isRaytracedRenderTarget),
-    m_isHairCard(isHairCard), m_samplerFeedbackStamp{ samplerFeedbackStamp }
+    m_isHairCard(isHairCard), m_samplerFeedbackStamp{ samplerFeedbackStamp },
+    m_d3dModifierFlags { d3dModifierFlags }, m_freeFloat01 { freeFloat01 }, m_bikRTextureIndex { bikRTextureIndex }, m_bikBTextureIndex { bikBTextureIndex }, m_samplerIndex1{ samplerIndex1 }, m_samplerIndex2{ samplerIndex2 }
   {
     updateCachedData();
     updateCachedHash();
@@ -635,8 +669,36 @@ struct RtOpaqueSurfaceMaterial {
       flags |= OPAQUE_SURFACE_MATERIAL_FLAG_IS_HAIR_CARD;
     }
 
-    float displaceIn = m_displaceIn * getDisplacementInFactor();
-    float displaceOut = m_displaceOut * getDisplacementOutFactor();
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_OPAQUE_SHADER_FREE1) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_01;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_OPAQUE_SHADER_FREE2) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_02;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_OPAQUE_SHADER_FREE3) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_03;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_OPAQUE_SHADER_FREE4) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_04;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_OPAQUE_SHADER_EMISSIVE_SCALE) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_EMISSIVE_SCALE;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_OPAQUE_SHADER_EMISSIVE_USE_ALBEDO) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_EMISSIVE_FORCE_ON_WITH_ALBEDO;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_OPAQUE_SHADER_BIK) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_BIK;
+    }
+
+    float displaceIn = m_displaceIn * getDisplacementFactor();
+    float displaceOut = m_displaceOut * getDisplacementFactor();
     uint32_t heightTextureIndex = m_heightTextureIndex;
     if (hasValidDisplacement()) {
       flags |= OPAQUE_SURFACE_MATERIAL_FLAG_HAS_DISPLACEMENT;
@@ -694,7 +756,14 @@ struct RtOpaqueSurfaceMaterial {
     // data[26]
     writeGPUHelperExplicit<2>(data, offset, m_samplerFeedbackStamp);
 
-    writeGPUPadding<10>(data, offset);
+    // data[27-30]
+    writeGPUHelperExplicit<2>(data, offset, m_samplerIndex1);
+    writeGPUHelperExplicit<2>(data, offset, m_samplerIndex2);
+    writeGPUHelperExplicit<2>(data, offset, m_bikRTextureIndex);
+    writeGPUHelperExplicit<2>(data, offset, m_bikBTextureIndex);
+
+    writeGPUHelper(data, offset, glm::packHalf1x16(m_freeFloat01));
+    //writeGPUPadding<2>(data, offset);
     assert(offset - oldOffset == kSurfaceMaterialGPUSize);
   }
 
@@ -724,6 +793,14 @@ struct RtOpaqueSurfaceMaterial {
 
   uint32_t getSamplerIndex() const {
     return m_samplerIndex;
+  }
+
+  uint32_t getSamplerIndex1() const {
+    return m_samplerIndex1;
+  }
+
+  uint32_t getSamplerIndex2() const {
+    return m_samplerIndex2;
   }
 
   uint32_t getAlbedoOpacityTextureIndex() const {
@@ -757,6 +834,14 @@ struct RtOpaqueSurfaceMaterial {
   // Albedo ManagedTexture stamp; used to associate textures for streaming priority.
   uint16_t getSamplerFeedbackStamp() const {
     return m_samplerFeedbackStamp;
+  }
+
+  uint32_t getBikRTextureIndex() const {
+    return m_bikRTextureIndex;
+  }
+
+  uint32_t getBikBTextureIndex() const {
+    return m_bikBTextureIndex;
   }
 
   float getAnisotropy() const {
@@ -795,6 +880,14 @@ struct RtOpaqueSurfaceMaterial {
     return m_isRaytracedRenderTarget;
   }
 
+  uint32_t getD3DModifierFlags() const {
+    return m_d3dModifierFlags;
+  }
+
+  float getFreeFloat01() const {
+    return m_freeFloat01;
+  }
+
   template<typename Fn>
   void forEachTextureIndex(Fn&& fn) const {
     fn(m_albedoOpacityTextureIndex);
@@ -810,7 +903,7 @@ struct RtOpaqueSurfaceMaterial {
 private:
   void updateCachedHash() {
     static_assert(
-      sizeof(*this) == 120,
+      sizeof(*this) == 144,
       "add new member for hashing if needed: add a MEMBER into the struct + add a VALUE into the list-init"
     );
     struct HashStruct {
@@ -840,6 +933,12 @@ private:
       uint32_t isHairCard;                // NOTE: uint32_t to avoid padding
       uint32_t samplerFeedbackStamp;      // NOTE: uint32_t to avoid padding
       uint32_t secondaryTextureIndex;
+      uint32_t m_d3dModifierFlags;
+      float m_freeFloat01;
+      uint32_t m_bikRTextureIndex;
+      uint32_t m_bikBTextureIndex;
+      uint32_t m_samplerIndex1;
+      uint32_t m_samplerIndex2;
       // NOTE: There must be NO padding between members, as the struct is used for hashing
     };
     static_assert(alignof(HashStruct) == 4 && sizeof(HashStruct) % 4 == 0);
@@ -870,6 +969,12 @@ private:
       m_isHairCard,
       m_samplerFeedbackStamp,
       m_secondaryTextureIndex,
+      m_d3dModifierFlags,
+      m_freeFloat01,
+      m_bikRTextureIndex,
+      m_bikBTextureIndex,
+      m_samplerIndex1,
+      m_samplerIndex2,
     };
     m_cachedHash = XXH3_64bits(&hashData, sizeof(hashData));
   }
@@ -921,6 +1026,13 @@ private:
   bool m_isHairCard;
 
   uint16_t m_samplerFeedbackStamp;
+
+  uint8_t m_d3dModifierFlags;
+  float m_freeFloat01;
+  uint32_t m_bikRTextureIndex;
+  uint32_t m_bikBTextureIndex;
+  uint32_t m_samplerIndex1;
+  uint32_t m_samplerIndex2;
 
   XXH64_hash_t m_cachedHash;
 
@@ -1045,6 +1157,7 @@ private:
       float thinWallThickness;
       uint32_t useDiffuseLayer; // NOTE: uint32_t to avoid padding
       uint32_t samplerIndex;
+      uint32_t d3dModifierFlags;
       // NOTE: There must be NO padding between members, as the struct is used for hashing
     };
     static_assert(alignof(HashStruct) == 4 && sizeof(HashStruct) % 4 == 0);
@@ -1062,6 +1175,7 @@ private:
       m_thinWallThickness,
       m_useDiffuseLayer,
       m_samplerIndex,
+      m_d3dModifierFlags,
     };
     m_cachedHash = XXH3_64bits(&hashData, sizeof(hashData));
   }
@@ -1101,6 +1215,8 @@ private:
   bool m_isThinWalled;
   float m_thinWallThickness;
   bool m_useDiffuseLayer;
+
+  uint8_t m_d3dModifierFlags;
 
   XXH64_hash_t m_cachedHash;
 
@@ -1756,16 +1872,28 @@ struct LegacyMaterialData {
     return colorTextures[0];
   }
 
-  const TextureRef& getColorTexture2() const {
+  const TextureRef& getColorTexture1() const {
     return colorTextures[1];
+  }
+
+  const TextureRef& getColorTexture2() const {
+    return colorTextures[2];
+  }
+
+  const TextureRef& getColorTexture3() const {
+    return colorTextures[2];
   }
 
   const Rc<DxvkSampler>& getSampler() const {
     return samplers[0];
   }
 
-  const Rc<DxvkSampler>& getSampler2() const {
+  const Rc<DxvkSampler>& getSampler1() const {
     return samplers[1];
+  }
+
+  const Rc<DxvkSampler>& getSampler2() const {
+    return samplers[2];
   }
 
   const D3DMATERIAL9& getLegacyMaterial() const {
@@ -1838,6 +1966,23 @@ struct LegacyMaterialData {
   bool isTextureFactorBlend = false;
   bool isVertexColorBakedLighting = true;
 
+  uint32_t remixTextureCategoryFlagsFromD3D = 0u; // RS 42
+  uint32_t remixModifierFromD3D = 0u; // RS 149
+  XXH64_hash_t remixHashFromD3D = 0; // RS 150
+  float remixTempFloat01FromD3D = 0.0f; // RS 169
+  float remixTempFloat02FromD3D = 0.0f; // RS 177
+  uint32_t remixPackedFloat4_RS210FromD3D = 0u; // RS 210 - Packed DWORD containing 2x uint16_t (lower 16 bits = packedParams1, upper 16 bits = packedParams2)
+  float remixFloatRS211FromD3D = 0.0f; // RS 211
+  float remixFloatRS212FromD3D = 0.0f; // RS 212
+  float remixFloatRS213FromD3D = 0.0f; // RS 213
+  float remixFloatRS214FromD3D = 0.0f; // RS 214
+  float remixFloatRS215FromD3D = 0.0f; // RS 215
+  float remixFloatRS216FromD3D = 0.0f; // RS 216
+  float remixFloatRS217FromD3D = 0.0f; // RS 217
+  float remixFloatRS218FromD3D = 0.0f; // RS 218
+  float remixFloatRS219FromD3D = 0.0f; // RS 219
+  uint32_t remixHashModifierFromD3D = 0u; // RS 220
+
   void setHashOverride(XXH64_hash_t hash) {
     m_cachedHash = hash;
   }
@@ -1855,9 +2000,19 @@ private:
     // plain data hash used by the RtSurfaceMaterial for storage in map-like data structures, but rather
     // one used to identify a material and compare to user-provided hashes.
     m_cachedHash = colorTextures[0].getImageHash();
+
+    // Re-hash existing hash with seed via unused D3D RenderState
+    if (remixHashModifierFromD3D) {
+      m_cachedHash = XXH64(&m_cachedHash, sizeof(m_cachedHash), remixHashModifierFromD3D);
+    }
+
+    // Custom hash set via unused D3D RenderState
+    else if (remixHashFromD3D) {
+      m_cachedHash = remixHashFromD3D;
+    }
   }
 
-  const static uint32_t kMaxSupportedTextures = 2;
+  const static uint32_t kMaxSupportedTextures = 3;
   TextureRef colorTextures[kMaxSupportedTextures] = {};
   Rc<DxvkSampler> samplers[kMaxSupportedTextures] = {};
   static_assert(kInvalidResourceSlot == 0 && "Below initialization of all array members is only valid for a value of 0.");
@@ -2009,6 +2164,8 @@ struct MaterialData {
       if constexpr (std::is_same_v<T, OpaqueMaterialData>) {
         OpaqueMaterialData tmp;
         tmp.getAlbedoOpacityTexture() = input.getColorTexture();
+        tmp.getBikRTexture() = input.getColorTexture1();
+        tmp.getBikBTexture() = input.getColorTexture2();
         if (auto s = input.getSampler().ptr()) {
           tmp.getFilterMode() = lss::Mdl::Filter::vkToMdl(s->info().magFilter);
           tmp.getWrapModeU() = lss::Mdl::WrapMode::vkToMdl(s->info().addressModeU);

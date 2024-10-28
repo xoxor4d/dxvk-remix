@@ -156,7 +156,7 @@ namespace dxvk {
   namespace {
     template<int RtInstanceSize> struct CheckRtInstanceSize {
       // The second line of the build error should contain the new size of RtInstance in the template argument, i.e. `dxvk::CheckRtInstanceSize<newSize>`
-      static_assert(RtInstanceSize == 776, "RtInstance size has changed.  Fix the copy constructor above this message, then update the expected size.");
+      static_assert(RtInstanceSize == 800, "RtInstance size has changed.  Fix the copy constructor above this message, then update the expected size.");
     };
     CheckRtInstanceSize<sizeof(RtInstance)> _rtInstanceSizeTest;
   }
@@ -195,7 +195,7 @@ namespace dxvk {
     m_geometryFlags = src.m_geometryFlags;
     m_firstBillboard = src.m_firstBillboard;
     m_billboardCount = src.m_billboardCount;
-    m_categoryFlags = src.m_categoryFlags;
+    m_remixTextureCategoryFlagsFromD3D = src.m_remixTextureCategoryFlagsFromD3D;
 
     // Intentionally NOT synced (identity / lifecycle / per-build state):
     //   m_id, m_instanceVectorId, m_cacheIdentity, m_isMarkedForGC, m_isUnlinkedForGC,
@@ -1064,6 +1064,22 @@ namespace dxvk {
         currentInstance.m_texcoordHash = drawCall.getGeometryData().hashes[HashComponents::VertexTexcoord];
         currentInstance.m_indexHash = drawCall.getGeometryData().hashes[HashComponents::Indices];
 
+        // Store per-drawcall renderstate tweaks that affect material properties
+       // These must match for instances to be considered similar (e.g., different emissive strengths)
+        currentInstance.m_remixTextureCategoryFlagsFromD3D = drawCall.getMaterialData().remixTextureCategoryFlagsFromD3D;
+        currentInstance.m_remixModifierFromD3D = drawCall.getMaterialData().remixModifierFromD3D;
+
+        currentInstance.m_remixHashFromD3D = drawCall.getMaterialData().remixHashFromD3D;
+
+        // modifier with seed - useful if we can identify a certain state of multiple drawcalls on the game side 
+        // but have no unique texture identifier to create a proper hash with
+        if (drawCall.getMaterialData().remixHashModifierFromD3D) {
+          currentInstance.m_remixHashFromD3D = XXH64(&currentInstance.m_materialDataHash, sizeof(currentInstance.m_materialDataHash), drawCall.getMaterialData().remixHashModifierFromD3D);
+        }
+
+        // emissive scalar - does not seem to make a difference having that here - might need to trigger currentInstance.surface.hasMaterialChanged ?
+        currentInstance.m_remixFloatRS169 = drawCall.getMaterialData().remixTempFloat01FromD3D;
+
         // Surface meta data
         currentInstance.surface.isEmissive = false;
         currentInstance.surface.isMatte = false;
@@ -1150,7 +1166,23 @@ namespace dxvk {
         // So instead of offsetting the digits or making them live in unordered TLAS (either of which would solve the problem), we offset the screen background backwards.
         const float worldSpaceUiBackgroundOffset = RtxOptions::worldSpaceUiBackgroundOffset();
         if (worldSpaceUiBackgroundOffset != 0.f && currentInstance.testCategoryFlags(InstanceCategories::WorldMatte)) {
-          objectToWorld[3] += objectToWorld[2] * worldSpaceUiBackgroundOffset;
+          // Determine offset direction based on AABB: offset along the axis with smallest extent (surface normal for flat planes)
+          const AxisAlignedBoundingBox& boundingBox = drawCall.getGeometryData().boundingBox;
+          if (boundingBox.isValid()) {
+            const Vector3 aabbSize = boundingBox.maxPos - boundingBox.minPos;
+            // Find the axis with the smallest extent (thickness direction)
+            uint32_t smallestAxis = 0;
+            if (aabbSize.y < aabbSize[smallestAxis]) {
+              smallestAxis = 1; // Y-axis
+            }
+            if (aabbSize.z < aabbSize[smallestAxis]) {
+              smallestAxis = 2; // Z-axis
+            }
+            // Get the world-space direction of the smallest axis from the transform matrix
+            const Vector3 surfaceNormal = safeNormalize(Vector3(objectToWorld[smallestAxis].data), Vector3(0.0f, 0.0f, 1.0f));
+            // Offset along the surface normal
+            objectToWorld[3] += Vector4(surfaceNormal * worldSpaceUiBackgroundOffset, 0.0f);
+          }
         }
 
         // Update the transform based on what state we're in
@@ -1635,7 +1667,12 @@ namespace dxvk {
           --i;
         }
       } else {
-        const Vector3 instancePosition = instance->getTransform()[3].xyz();
+        Vector3 instancePosition = instance->getTransform()[3].xyz();
+
+        // This can be used if the world transform is baked into the vertices
+        if (RtxOptions::enableAlwaysCalculateAABB()) {
+          instancePosition = instance->getBlas()->input.getGeometryData().boundingBox.getCentroid();
+        }
 
         if (!isInsidePlayerModel(playerModelPosition, instancePosition)) {
           // Note: just use the OPAQUE flag here, which works for Portal with current assets.
@@ -1657,7 +1694,9 @@ namespace dxvk {
     bool* out_PlayerModelIsVirtual,
     const SingleRayPortalDirectionInfo** out_NearPortalInfo,
     const SingleRayPortalDirectionInfo** out_FarPortalInfo) const {
-    auto& rayPortalPair = *rayPortalManager.getRayPortalPairInfos().begin();
+
+    auto pairIndex = m_virtualInstancePortalIndex / 2;
+    auto& rayPortalPair = rayPortalManager.getRayPortalPairInfos()[pairIndex];
 
     *out_PlayerModelIsVirtual = false;
     int portalIndexForVirtualInstances = -1;
@@ -1774,6 +1813,11 @@ namespace dxvk {
 
     // Get the position from the transform matrix - works for Portal
     Vector3 playerModelPosition = bodyInstance->getTransform()[3].xyz();
+
+    // This can be used if the world transform is baked into the vertices
+    if (RtxOptions::enableAlwaysCalculateAABB()) {
+      playerModelPosition = bodyInstance->getBlas()->input.getGeometryData().boundingBox.getCentroid();
+    }
 
     // Detect instances that are too far away from the body, make them regular objects.
     // This fixes the guns placed on pedestals to be picked up.
@@ -1925,11 +1969,9 @@ namespace dxvk {
 
     // Virtual instances for the view model and the player model are generated for the closest portal to the camera.
 
-    static_assert(maxRayPortalCount == 2);
-    auto& rayPortalPair = *rayPortalManager.getRayPortalPairInfos().begin();
-
-    if (!rayPortalPair.has_value())
+    if (!rayPortalManager.areAnyRayPortalPairsActive()) {
       return;
+    }
 
     const Vector3& camPos = cameraManager.getCamera(CameraType::Main).getPosition(/* freecam = */ false);
 
@@ -1941,19 +1983,23 @@ namespace dxvk {
     // such as when portals are close to each other in a corner arrangement
     float minDistanceToPortal = FLT_MAX;
 
-    for (uint i = 0; i < 2; i++) {
-      const auto& rayPortal = rayPortalPair->pairInfos[i];
-      const Vector3 dirToPortalCentroid = rayPortal.entryPortalInfo.centroid - camPos;
-      const float distanceToPortal = length(dirToPortalCentroid);
+    for (auto& portalPair : rayPortalManager.getRayPortalPairInfos()) {
+      if (portalPair.has_value()) {
+        for (uint i = 0; i < 2; i++) {
+          const auto& rayPortal = portalPair->pairInfos[i];
+          const Vector3 dirToPortalCentroid = rayPortal.entryPortalInfo.centroid - camPos;
+          const float distanceToPortal = length(dirToPortalCentroid);
 
-      if (distanceToPortal <= kMaxDistanceToPortal &&
-          distanceToPortal < minDistanceToPortal) {
-        minDistanceToPortal = distanceToPortal;
-        m_virtualInstancePortalIndex = rayPortal.entryPortalInfo.portalIndex;
+          if (distanceToPortal <= kMaxDistanceToPortal &&
+              distanceToPortal < minDistanceToPortal) {
+            minDistanceToPortal = distanceToPortal;
+            m_virtualInstancePortalIndex = rayPortal.entryPortalInfo.portalIndex;
+          }
+        }
       }
     }
-
   }
+
 
   void InstanceManager::createRayPortalVirtualViewModelInstances(const std::vector<RtInstance*>& viewModelReferenceInstances,
                                                                  const CameraManager& cameraManager,
@@ -1982,7 +2028,9 @@ namespace dxvk {
       return;
     }
 
-    const SingleRayPortalDirectionInfo& closestPortalInfo = rayPortalManager.getRayPortalPairInfos()[0]->pairInfos[m_virtualInstancePortalIndex];
+    auto pairIndex = m_virtualInstancePortalIndex / 2;
+    auto pairPortalIndex = m_virtualInstancePortalIndex % 2;
+    const SingleRayPortalDirectionInfo& closestPortalInfo = rayPortalManager.getRayPortalPairInfos()[pairIndex]->pairInfos[pairPortalIndex];
     
     const uint32_t frameId = m_device->getCurrentFrameId();
 
@@ -2011,7 +2059,8 @@ namespace dxvk {
       virtualInstance->setFrameLastUpdated(frameId);
 
       // Virtual instances are to be visible only in their corresponding portal spaces
-      static_assert(maxRayPortalCount == 2);
+      //static_assert(maxRayPortalCount == 2);
+      // View model virtual instance
       virtualInstance->m_vkInstance.mask = OBJECT_MASK_VIEWMODEL_VIRTUAL;
     
       // Update virtual instance transforms given the reference and the portal transform
