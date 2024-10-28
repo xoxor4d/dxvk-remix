@@ -39,7 +39,12 @@ void updateRayMaskForRayOriginFromViewModelSurface(inout uint8_t rayMask, Portal
     // View model is visible in this portal space since it originated from viewModel surface, 
     // so don't need to check  for active portal space index for virtual view model
     case PORTAL_SPACE_PORTAL_0:
-    case PORTAL_SPACE_PORTAL_1: rayMask |= OBJECT_MASK_VIEWMODEL_VIRTUAL;
+    case PORTAL_SPACE_PORTAL_1: 
+    //case PORTAL_SPACE_PORTAL_2: 
+    //case PORTAL_SPACE_PORTAL_3: 
+    //case PORTAL_SPACE_PORTAL_4: 
+    //case PORTAL_SPACE_PORTAL_5: 
+      rayMask |= OBJECT_MASK_VIEWMODEL_VIRTUAL;
       break;
     // ViewModel is not enabled beyond immediate portal space
     case PORTAL_SPACE_PORTAL_COMBINED:

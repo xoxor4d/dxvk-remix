@@ -1390,7 +1390,12 @@ namespace dxvk {
           --i;
         }
       } else {
-        const Vector3 instancePosition = instance->getTransform()[3].xyz();
+        Vector3 instancePosition = instance->getTransform()[3].xyz();
+
+        // This can be used if the world transform is baked into the vertices
+        if (RtxOptions::Get()->enableAlwaysCalculateAABB()) {
+          instancePosition = instance->getBlas()->input.getGeometryData().boundingBox.getCentroid();
+        }
 
         if (!isInsidePlayerModel(playerModelPosition, instancePosition)) {
           // Note: just use the OPAQUE flag here, which works for Portal with current assets.
@@ -1412,7 +1417,9 @@ namespace dxvk {
     bool* out_PlayerModelIsVirtual,
     const SingleRayPortalDirectionInfo** out_NearPortalInfo,
     const SingleRayPortalDirectionInfo** out_FarPortalInfo) const {
-    auto& rayPortalPair = *rayPortalManager.getRayPortalPairInfos().begin();
+
+    auto pairIndex = m_virtualInstancePortalIndex / 2;
+    auto& rayPortalPair = rayPortalManager.getRayPortalPairInfos()[pairIndex];
 
     *out_PlayerModelIsVirtual = false;
     int portalIndexForVirtualInstances = -1;
@@ -1518,6 +1525,11 @@ namespace dxvk {
 
     // Get the position from the transform matrix - works for Portal
     Vector3 playerModelPosition = bodyInstance->getTransform()[3].xyz();
+
+    // This can be used if the world transform is baked into the vertices
+    if (RtxOptions::Get()->enableAlwaysCalculateAABB()) {
+      playerModelPosition = bodyInstance->getBlas()->input.getGeometryData().boundingBox.getCentroid();
+    }
 
     // Detect instances that are too far away from the body, make them regular objects.
     // This fixes the guns placed on pedestals to be picked up.
@@ -1653,11 +1665,9 @@ namespace dxvk {
 
     // Virtual instances for the view model and the player model are generated for the closest portal to the camera.
 
-    static_assert(maxRayPortalCount == 2);
-    auto& rayPortalPair = *rayPortalManager.getRayPortalPairInfos().begin();
-
-    if (!rayPortalPair.has_value())
+    if (!rayPortalManager.areAnyRayPortalPairsActive()) {
       return;
+    }
 
     const Vector3& camPos = cameraManager.getCamera(CameraType::Main).getPosition(/* freecam = */ false);
 
@@ -1669,19 +1679,23 @@ namespace dxvk {
     // such as when portals are close to each other in a corner arrangement
     float minDistanceToPortal = FLT_MAX;
 
-    for (uint i = 0; i < 2; i++) {
-      const auto& rayPortal = rayPortalPair->pairInfos[i];
-      const Vector3 dirToPortalCentroid = rayPortal.entryPortalInfo.centroid - camPos;
-      const float distanceToPortal = length(dirToPortalCentroid);
+    for (auto& portalPair : rayPortalManager.getRayPortalPairInfos()) {
+      if (portalPair.has_value()) {
+        for (uint i = 0; i < 2; i++) {
+          const auto& rayPortal = portalPair->pairInfos[i];
+          const Vector3 dirToPortalCentroid = rayPortal.entryPortalInfo.centroid - camPos;
+          const float distanceToPortal = length(dirToPortalCentroid);
 
-      if (distanceToPortal <= kMaxDistanceToPortal &&
-          distanceToPortal < minDistanceToPortal) {
-        minDistanceToPortal = distanceToPortal;
-        m_virtualInstancePortalIndex = rayPortal.entryPortalInfo.portalIndex;
+          if (distanceToPortal <= kMaxDistanceToPortal &&
+              distanceToPortal < minDistanceToPortal) {
+            minDistanceToPortal = distanceToPortal;
+            m_virtualInstancePortalIndex = rayPortal.entryPortalInfo.portalIndex;
+          }
+        }
       }
     }
-
   }
+
 
   void InstanceManager::createRayPortalVirtualViewModelInstances(const std::vector<RtInstance*>& viewModelReferenceInstances,
                                                                  const CameraManager& cameraManager,
@@ -1698,7 +1712,9 @@ namespace dxvk {
     if (!RtxOptions::ViewModel::enableVirtualInstances())
       return;
 
-    const SingleRayPortalDirectionInfo& closestPortalInfo = rayPortalManager.getRayPortalPairInfos()[0]->pairInfos[m_virtualInstancePortalIndex];
+    auto pairIndex = m_virtualInstancePortalIndex / 2;
+    auto pairPortalIndex = m_virtualInstancePortalIndex % 2;
+    const SingleRayPortalDirectionInfo& closestPortalInfo = rayPortalManager.getRayPortalPairInfos()[pairIndex]->pairInfos[pairPortalIndex];
     
     const uint32_t frameId = m_device->getCurrentFrameId();
 
@@ -1719,7 +1735,7 @@ namespace dxvk {
       virtualInstance->markForGarbageCollection();
 
       // Virtual instances are to be visible only in their corresponding portal spaces
-      static_assert(maxRayPortalCount == 2);
+      //static_assert(maxRayPortalCount == 2);
       // View model virtual instance
       virtualInstance->m_vkInstance.mask = OBJECT_MASK_VIEWMODEL_VIRTUAL;
     

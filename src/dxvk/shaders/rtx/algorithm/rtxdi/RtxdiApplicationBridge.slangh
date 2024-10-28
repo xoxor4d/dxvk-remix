@@ -486,7 +486,9 @@ bool RAB_ShouldDiscardEnlargedPixel(inout RAB_RandomSamplerState rng, RAB_Surfac
     return false;
   
   f16vec3 triangleNormal = surface.minimalSurfaceInteraction.triangleNormal;
-  if (surface.portalSpace == PORTAL_SPACE_PORTAL_0 || surface.portalSpace == PORTAL_SPACE_PORTAL_1)
+  if (surface.portalSpace == PORTAL_SPACE_PORTAL_0 || surface.portalSpace == PORTAL_SPACE_PORTAL_1 /*||
+      surface.portalSpace == PORTAL_SPACE_PORTAL_2 || surface.portalSpace == PORTAL_SPACE_PORTAL_3 ||
+      surface.portalSpace == PORTAL_SPACE_PORTAL_4 || surface.portalSpace == PORTAL_SPACE_PORTAL_5*/)
   {
     RayPortalHitInfo rayPortalHitInfo = cb.rayPortalHitInfos[(uint)getOpposingRayPortalIndex(surface.portalSpace)];
     if (rayPortalHitInfoIsActive(rayPortalHitInfo))

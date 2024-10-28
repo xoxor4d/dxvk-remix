@@ -194,6 +194,10 @@ namespace dxvk {
     if (enablePortalVolumes) {
       volumeArgs.cameras[froxelVolumePortal0] = cameraManager.getCamera(CameraType::Portal0).getVolumeShaderConstants();
       volumeArgs.cameras[froxelVolumePortal1] = cameraManager.getCamera(CameraType::Portal1).getVolumeShaderConstants();
+      volumeArgs.cameras[froxelVolumePortal2] = cameraManager.getCamera(CameraType::Portal2).getVolumeShaderConstants();
+      volumeArgs.cameras[froxelVolumePortal3] = cameraManager.getCamera(CameraType::Portal3).getVolumeShaderConstants();
+      volumeArgs.cameras[froxelVolumePortal4] = cameraManager.getCamera(CameraType::Portal4).getVolumeShaderConstants();
+      volumeArgs.cameras[froxelVolumePortal5] = cameraManager.getCamera(CameraType::Portal5).getVolumeShaderConstants();
     }
 
     // Validate the froxel max distance against the camera

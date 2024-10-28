@@ -72,6 +72,10 @@ void updateStateOnPortalCrossing(inout PortalSpace2BitsType portalSpace,
   }
   case PORTAL_SPACE_PORTAL_0:
   case PORTAL_SPACE_PORTAL_1: 
+  //case PORTAL_SPACE_PORTAL_2:
+  //case PORTAL_SPACE_PORTAL_3: 
+  //case PORTAL_SPACE_PORTAL_4:
+  //case PORTAL_SPACE_PORTAL_5: 
     uint8_t prevEntryRayPortalIndex = portalSpace - PORTAL_SPACE_PORTAL_0;
     if (rayPortalIndex == prevEntryRayPortalIndex)
     {

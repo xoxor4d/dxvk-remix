@@ -861,7 +861,11 @@ namespace dxvk {
     const CameraManager& cameraManager = getSceneManager().getCameraManager();
     const bool enablePortalVolumes = RtxOptions::Get()->enableVolumetricsInPortals() &&
       cameraManager.isCameraValid(CameraType::Portal0) &&
-      cameraManager.isCameraValid(CameraType::Portal1);
+      cameraManager.isCameraValid(CameraType::Portal1) &&
+      cameraManager.isCameraValid(CameraType::Portal2) &&
+      cameraManager.isCameraValid(CameraType::Portal3) &&
+      cameraManager.isCameraValid(CameraType::Portal4) &&
+      cameraManager.isCameraValid(CameraType::Portal5);
     
     // Note: Ensure the number of lights can fit into the ray tracing args.
     assert(getSceneManager().getLightManager().getActiveCount() <= std::numeric_limits<uint16_t>::max());
