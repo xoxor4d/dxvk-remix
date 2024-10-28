@@ -521,6 +521,14 @@ void geometryResolverVertexOutputDebugView(
       break;
     case PORTAL_SPACE_PORTAL_1: typeColor = f16vec3(0.0f, 1.0f, 0.0f);        // Green
       break;
+    //case PORTAL_SPACE_PORTAL_2: typeColor = f16vec3(0.0f, 0.0f, 1.0f);        // Blue
+    //  break;
+    //case PORTAL_SPACE_PORTAL_3: typeColor = f16vec3(1.0f, 1.0f, 0.0f);        // Yellow
+    //  break;
+    //case PORTAL_SPACE_PORTAL_4: typeColor = f16vec3(0.0f, 1.0f, 1.0f);        // Teal
+    //  break;
+    //case PORTAL_SPACE_PORTAL_5: typeColor = f16vec3(1.0f, 0.0f, 1.0f);        // Pink
+    //  break;
     case PORTAL_SPACE_PORTAL_COMBINED: typeColor = f16vec3(0.0f, 0.0f, 1.0f); // Blue
       break;
     }

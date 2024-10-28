@@ -34,6 +34,10 @@ uint portalSpaceToVolumeHint(PortalSpace2BitsType portalSpace)
   {
     case PORTAL_SPACE_PORTAL_0: return froxelVolumePortal0;
     case PORTAL_SPACE_PORTAL_1: return froxelVolumePortal1;
+    //case PORTAL_SPACE_PORTAL_2: return froxelVolumePortal2;
+    //case PORTAL_SPACE_PORTAL_3: return froxelVolumePortal3;
+    //case PORTAL_SPACE_PORTAL_4: return froxelVolumePortal4;
+    //case PORTAL_SPACE_PORTAL_5: return froxelVolumePortal5;
     default: return froxelVolumeMain;
   }
 }
