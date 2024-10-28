@@ -21,7 +21,7 @@ namespace dxvk {
   // We only look at RT 0 currently.
   const uint32_t kRenderTargetIndex = 0;
 
-  #define CATEGORIES_REQUIRE_DRAW_CALL_STATE  InstanceCategories::Sky, InstanceCategories::Terrain
+  #define CATEGORIES_REQUIRE_DRAW_CALL_STATE  InstanceCategories::Sky/*, InstanceCategories::Terrain*/
   #define CATEGORIES_REQUIRE_GEOMETRY_COPY    InstanceCategories::Terrain, InstanceCategories::WorldUI
 
   D3D9Rtx::D3D9Rtx(D3D9DeviceEx* d3d9Device, bool enableDrawCallConversion)
@@ -1096,10 +1096,11 @@ namespace dxvk {
         }
       }
 
-      if (!m_forceGeometryCopy && RtxOptions::alwaysCopyDecalGeometries()) {
-        // Only poke decal hashes when option is enabled.
-        m_forceGeometryCopy |= m_activeDrawCallState.testCategoryFlags(CATEGORIES_REQUIRE_GEOMETRY_COPY);
-      }
+      // do not copy WorldUI or terrain because we "mis-use" these categories  
+      //if (!m_forceGeometryCopy && RtxOptions::alwaysCopyDecalGeometries()) {
+      //  // Only poke decal hashes when option is enabled.
+      //  m_forceGeometryCopy |= m_activeDrawCallState.testCategoryFlags(CATEGORIES_REQUIRE_GEOMETRY_COPY);
+      //}
     }
 
     m_texcoordIndex = d3d9State().textureStages[firstStage][DXVK_TSS_TEXCOORDINDEX];

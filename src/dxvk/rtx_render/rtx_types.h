@@ -564,7 +564,7 @@ struct DrawCallState {
   }
 
   const CategoryFlags getCategoryFlags() const {
-    return categories;
+    return categories | materialData.remixTextureCategoryFlagsFromD3D;
   }
 
   bool finalizePendingFutures(const RtCamera* pLastCamera);

@@ -115,6 +115,10 @@ public:
                 "improve stage + mesh viewability in tools.\n"
                 "Hashes are unaffected.");
 
+  RTX_OPTION("rtx.capture", bool, captureApiLights, true,
+                "Capture lights that were created via the RemixApi. These lights can not be modified\n"
+                "and their only purpose is to illuminate the scene in the toolkit.");
+
   GameCapturer(DxvkDevice* const pDevice, SceneManager& sceneManager, AssetExporter& exporter);
   ~GameCapturer();
 

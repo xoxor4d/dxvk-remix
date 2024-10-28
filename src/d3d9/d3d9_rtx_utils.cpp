@@ -221,6 +221,24 @@ namespace dxvk {
 
     // Allow the users to configure vertex color as baked lighting for legacy draw calls.
     materialData.isVertexColorBakedLighting = RtxOptions::vertexColorIsBakedLighting();
+
+    // usage of unused renderstates - unused values are set to 0xfefefefe
+    materialData.remixTextureCategoryFlagsFromD3D = d3d9State.renderStates[42] != 0xfefefefe ? d3d9State.renderStates[42] : 0u;
+    materialData.remixModifierFromD3D = d3d9State.renderStates[149] != 0xfefefefe ? d3d9State.renderStates[149] : 0u;
+    materialData.remixHashFromD3D = d3d9State.renderStates[150] != 0xfefefefe ? d3d9State.renderStates[150] : 0u;
+    materialData.remixFloatRS169FromD3D = d3d9State.renderStates[169] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[169]) : 0.0f;
+    materialData.remixFloatRS177FromD3D = d3d9State.renderStates[177] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[177]) : 0.0f;
+    materialData.remixFloatRS210FromD3D = d3d9State.renderStates[210] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[210]) : 0.0f;
+    materialData.remixFloatRS211FromD3D = d3d9State.renderStates[211] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[211]) : 0.0f;
+    materialData.remixFloatRS212FromD3D = d3d9State.renderStates[212] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[212]) : 0.0f;
+    materialData.remixFloatRS213FromD3D = d3d9State.renderStates[213] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[213]) : 0.0f;
+    materialData.remixFloatRS214FromD3D = d3d9State.renderStates[214] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[214]) : 0.0f;
+    materialData.remixFloatRS215FromD3D = d3d9State.renderStates[215] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[215]) : 0.0f;
+    materialData.remixFloatRS216FromD3D = d3d9State.renderStates[216] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[216]) : 0.0f;
+    materialData.remixFloatRS217FromD3D = d3d9State.renderStates[217] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[217]) : 0.0f;
+    materialData.remixFloatRS218FromD3D = d3d9State.renderStates[218] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[218]) : 0.0f;
+    materialData.remixFloatRS219FromD3D = d3d9State.renderStates[219] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[219]) : 0.0f;
+    materialData.remixFloatRS220FromD3D = d3d9State.renderStates[220] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[220]) : 0.0f;
   }
 
 

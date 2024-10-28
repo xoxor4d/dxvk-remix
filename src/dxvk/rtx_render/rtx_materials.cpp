@@ -65,6 +65,13 @@ template<> OpaqueMaterialData LegacyMaterialData::as() const {
   if (getColorTexture2().isValid()) {
     opaqueMat.setSecondaryTexture(getColorTexture2());
   }
+  // For BIK video materials, also forward the additional texture stages from the legacy D3D9 material.
+  // Note: Unlike RayPortal, this is keyed off the RS149 modifier so we don't accidentally treat
+  // arbitrary multi-texture materials as BIK.
+  if (remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_BIK) {
+    opaqueMat.getBikRTexture() = getColorTexture1();
+    opaqueMat.getBikBTexture() = getColorTexture2();
+  }
   // Indicate that we have an exact sampler to use on this material, directly from game
   if (getSampler().ptr()) {
     opaqueMat.setSamplerOverride(getSampler());
