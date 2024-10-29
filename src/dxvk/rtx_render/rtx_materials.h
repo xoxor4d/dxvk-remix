@@ -1451,6 +1451,8 @@ struct LegacyMaterialData {
   uint32_t tFactor = 0xffffffff;  // Value for D3DRS_TEXTUREFACTOR, default value of is opaque white
   D3DMATERIAL9 d3dMaterial = {};
   bool isTextureFactorBlend = false;
+  uint32_t  remixTextureCategoryFlagsFromD3D = 0u;
+  XXH64_hash_t remixHashFromD3D = 0;
 
   void setHashOverride(XXH64_hash_t hash) {
     m_cachedHash = hash;
@@ -1469,6 +1471,11 @@ private:
     // plain data hash used by the RtSurfaceMaterial for storage in map-like data structures, but rather
     // one used to identify a material and compare to user-provided hashes.
     m_cachedHash = colorTextures[0].getImageHash();
+
+    // Custom hash set via unused D3D RenderState
+    if (remixHashFromD3D) {
+      m_cachedHash = remixHashFromD3D;
+    }
   }
 
   const static uint32_t kMaxSupportedTextures = 2;
