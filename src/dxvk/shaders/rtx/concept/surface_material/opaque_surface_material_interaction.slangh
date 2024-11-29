@@ -811,7 +811,16 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   {
     // Todo: Remove this hack when a proper legacy material model is created, or find some better solution to it (such as setting emissive information on the CPU side).
     derivedEmissiveColor = originalAlbedo;
-    derivedEmissiveIntensity = float16_t(2.0f); // Note: Arbitrary constant, should be set on the CPU side instead and controllable.
+
+    // Hack
+    if (thinFilmEnabled)
+    {
+      derivedEmissiveIntensity = opaqueSurfaceMaterial.emissiveIntensity;
+    }
+    else
+    {
+      derivedEmissiveIntensity = float16_t(2.0f); // Note: Arbitrary constant, should be set on the CPU side instead and controllable.
+    }
   }
   else if (surface.isEmissiveBlend && cb.enableEmissiveBlendEmissiveOverride)
   {
@@ -819,7 +828,16 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     // This is so that when "emissive" style blending is used it looks more correct in a physically based way based on the influence from the mode in question.
     // Todo: Move this all once separate Surface Materials for D3D9 compatability and normal usage are created.
     derivedEmissiveColor = originalAlbedo;
-    derivedEmissiveIntensity = emissiveBlendOverrideInfluence * uint16BitsToHalf(cb.emissiveBlendOverrideEmissiveIntensity);
+
+  	// Hack
+    if (thinFilmEnabled)
+    {
+      derivedEmissiveIntensity = emissiveBlendOverrideInfluence * opaqueSurfaceMaterial.emissiveIntensity;
+    }
+    else
+    {
+      derivedEmissiveIntensity = emissiveBlendOverrideInfluence * uint16BitsToHalf(cb.emissiveBlendOverrideEmissiveIntensity);
+    }
   }
   else
   {

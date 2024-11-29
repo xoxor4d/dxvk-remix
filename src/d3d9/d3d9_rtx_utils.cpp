@@ -178,6 +178,7 @@ namespace dxvk {
 
     if (RtxOptions::Get()->useUnusedRenderstates()) {
       materialData.remixTextureCategoryFlagsFromD3D = d3d9State.renderStates[42] != 0xfefefefe ? d3d9State.renderStates[42] : 0u; // D3DRENDERSTATETYPE index 42 is not in use - unused values are set to 0xfefefefe
+      materialData.emissiveColorConstantFromD3D = d3d9State.renderStates[149] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[149]) : -1.0f; // D3DRENDERSTATETYPE index 149 is not in use - unused values are set to 0xfefefefe
       materialData.remixHashFromD3D = d3d9State.renderStates[150] != 0xfefefefe ? d3d9State.renderStates[150] : 0u; // D3DRENDERSTATETYPE index 150 is not in use - unused values are set to 0xfefefefe
     }
 
