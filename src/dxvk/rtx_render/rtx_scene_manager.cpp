@@ -1037,9 +1037,40 @@ namespace dxvk {
         thinFilmEnable = defaults.enableThinFilm();
         enableEmissive = defaults.enableEmissive();
 
-        if (legacyMaterialData.emissiveColorConstantFromD3D >= 0.0f) {
-          emissiveIntensity = legacyMaterialData.emissiveColorConstantFromD3D;
+        //thinFilmEnable = defaults.enableThinFilm();
+        alphaIsThinFilmThickness = defaults.alphaIsThinFilmThickness();
+        thinFilmThicknessConstant = defaults.thinFilmThicknessConstant();
+
+        if (legacyMaterialData.emissiveColorConstantFromD3D >= 0.0f) 
+        {
+          //emissiveIntensity = legacyMaterialData.emissiveColorConstantFromD3D;
           thinFilmEnable = true;
+
+          // unpack the two f16 floats
+          uint u16_1 = (legacyMaterialData.l4d2SheetUVFromD3D >> 16) & 0xFFFF; // Extract the upper 16 bits
+          uint u16_2 = legacyMaterialData.l4d2SheetUVFromD3D & 0xFFFF;        // Extract the lower 16 bits
+          roughnessConstant = (float) u16_1 / 65535.0f; // x
+          metallicConstant = (float) u16_2 / 65535.0f; // y
+          //emissiveColorConstant.x = (float) u16_1 / 65535.0f; // x
+          //emissiveColorConstant.y = (float) u16_2 / 65535.0f; // y
+
+          // ^
+          u16_1 = (legacyMaterialData.l4d2GradSelectFromD3D >> 16) & 0xFFFF; // Extract the upper 16 bits
+          u16_2 = legacyMaterialData.l4d2GradSelectFromD3D & 0xFFFF;        // Extract the lower 16 bits
+          emissiveColorConstant.x = (float) u16_1 / 65535.0f; // x
+          emissiveColorConstant.y = (float) u16_2 / 65535.0f; // y
+
+          //emissiveIntensity = (float) legacyMaterialData.l4d2SkinTintGradientFromD3D + ((float)legacyMaterialData.l4d2ColorTintGradientFromD3D * 10.0f);
+          // ^ already done in l4d
+          emissiveIntensity = (float)legacyMaterialData.l4d2SkinTintGradientFromD3D;
+
+
+
+          //albedoOpacityConstant = Vector4(1.0f, 0.0f, 0.0f, 1.0f);
+
+          //albedoOpacityConstant.x = (float) legacyMaterialData.l4d2SkinTintGradientFromD3D;
+          //albedoOpacityConstant.y = (float) legacyMaterialData.l4d2ColorTintGradientFromD3D;
+          //displaceIn = (float)legacyMaterialData.l4d2SheetIndexFromD3D;
           enableEmissive = true;
         }
 
@@ -1052,6 +1083,10 @@ namespace dxvk {
           if (defaults.useAlbedoTextureIfPresent()) {
             // NOTE: Do not patch original sampler to preserve filtering behavior of the legacy material
             trackTexture(ctx, legacyMaterialData.getColorTexture(), albedoOpacityTextureIndex, hasTexcoords);
+
+            if (thinFilmEnable && &legacyMaterialData.getColorTexture2()) {
+              trackTexture(ctx, legacyMaterialData.getColorTexture2(), tangentTextureIndex, hasTexcoords);
+            }
           }
         }
 
@@ -1067,11 +1102,9 @@ namespace dxvk {
         if (!ignoreAlphaChannel) {
           ignoreAlphaChannel = defaults.ignoreAlphaChannel();
         }
+      }
 
-        //thinFilmEnable = defaults.enableThinFilm();
-        alphaIsThinFilmThickness = defaults.alphaIsThinFilmThickness();
-        thinFilmThicknessConstant = defaults.thinFilmThicknessConstant();
-      } else if (renderMaterialDataType == MaterialDataType::Opaque) {
+      else if (renderMaterialDataType == MaterialDataType::Opaque) {
         const auto& opaqueMaterialData = renderMaterialData.getOpaqueMaterialData();
 
         if (RtxOptions::Get()->getWhiteMaterialModeEnabled()) {
@@ -1210,6 +1243,7 @@ namespace dxvk {
     m_preCreationSurfaceMaterialMap[preCreationHash] = index;
     return m_surfaceMaterialCache.at(index);
   }
+#pragma optimize("", on)
 
   std::optional<XXH64_hash_t> SceneManager::findLegacyTextureHashByObjectPickingValue(uint32_t objectPickingValue) {
     std::lock_guard lock { m_drawCallMeta.mutex };

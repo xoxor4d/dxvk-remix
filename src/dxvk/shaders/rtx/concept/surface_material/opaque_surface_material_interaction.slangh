@@ -444,7 +444,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   // it has been directly enabled by the material itself.
   const bool thinFilmEnabled = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_USE_THIN_FILM_LAYER;
 
-  opaqueSurfaceMaterialInteraction.flags |= thinFilmEnabled ? OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_USE_THIN_FILM_LAYER : 0;
+  //opaqueSurfaceMaterialInteraction.flags |= thinFilmEnabled ? OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_USE_THIN_FILM_LAYER : 0;
 
 #ifdef OPAQUE_MATERIAL_USE_POM
   if (cb.pomMode != DisplacementMode::Off && opaqueSurfaceMaterial.hasValidDisplacement())
@@ -520,9 +520,68 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
   // Note: Set thin film thickness constant fallback only if the thin film is enabled as a non-zero value here is responsible for indicating
   // if the thin film is in use by later code.
-  if (thinFilmEnabled)
+  /*if (thinFilmEnabled)
   {
     thinFilmThickness = opaqueSurfaceMaterial.thinFilmThicknessConstant;
+  }*/
+
+  if (thinFilmEnabled)
+  {
+      f16vec4 gradientSampleA;
+      f16vec4 gradientSampleB;
+      f16vec4 spriteSample;
+      
+
+		// 256x16
+		// skin tint 0-7
+		// cloth 8-15
+      //Sample_A.color = $gradienttexture.sample($basetexture.alphaChannel.sample(u, v), 1 / 32 + PalletRowSelector_A * 1 / 16) • Generally used for Clothing
+      //Sample_B.color = $gradienttexture.sample($basetexture.alphaChannel.sample(u, v), 1 / 32 + PalletRowSelector_B * 1 / 16 + 0.5)
+
+      vec2 savedCoordinates = surfaceInteraction.textureCoordinates;
+
+
+      float skin_idx = (float)((int)floor(opaqueSurfaceMaterial.emissiveIntensity) % 10);
+      float cloth_idx = floor((opaqueSurfaceMaterial.emissiveIntensity - skin_idx) / 10.0f);
+
+      // get sprite (2x2) :: tex2D(BaseTextureSampler, i.texcoord.xy * float2(0.5f, 0.5f) + g_vUVTransform.xy);
+      surfaceInteraction.textureCoordinates.x = surfaceInteraction.textureCoordinates.x * 0.5f + opaqueSurfaceMaterial.roughnessConstant; //opaqueSurfaceMaterial.roughnessConstant;
+      surfaceInteraction.textureCoordinates.y = surfaceInteraction.textureCoordinates.y * 0.5f + opaqueSurfaceMaterial.metallicConstant; //opaqueSurfaceMaterial.metallicConstant;
+      surfaceMaterialInteractionTextureReadHelper(opaqueSurfaceMaterial.albedoOpacityTextureIndex, opaqueSurfaceMaterial.samplerIndex, surfaceInteraction, spriteSample);
+
+      // remove lower half (0-127) of r + g + b channels
+      f16vec3 upper_masks = float3(spriteSample.rg, albedoOpacitySample.b) * 2.0f + -1.0f;
+
+
+      // blood
+      float blood_mask = saturate(upper_masks.g);
+
+      // grad select for blood
+      float g_vGradSelect_r = opaqueSurfaceMaterial.emissiveColorConstant.x;
+      float g_vGradSelect_g = opaqueSurfaceMaterial.emissiveColorConstant.y;
+
+      float temp1 = 1.0f / (-g_vGradSelect_r + g_vGradSelect_g);
+      float temp0 = saturate((blood_mask + -g_vGradSelect_r) * temp1);
+      temp1 = temp0 * -2.0f + 3.0f;
+      temp0 = saturate(temp1 * temp0 * temp0);
+
+      f16vec3 blood_col = /*2.0f +*/ f16vec3(0.15f, 0.0f, 0.00f) + (float)((int)cb.debugKnob.x);
+      blood_col = temp0 /*blood_mask*/ * blood_col /*+ 1.0f*/ + (float)((int)cb.debugKnob.y);
+
+      // skin grad sample
+      surfaceInteraction.textureCoordinates.x = albedoOpacitySample.a; // luminance
+      surfaceInteraction.textureCoordinates.y = (1.0f / 32.0f) + (skin_idx) /*opaqueSurfaceMaterial.albedoOpacityConstant.g*/ /*opaqueSurfaceMaterial.displaceOut*/ * (1.0f / 16.0f); // skin
+      surfaceMaterialInteractionTextureReadHelper(opaqueSurfaceMaterial.tangentTextureIndex, opaqueSurfaceMaterial.samplerIndex, surfaceInteraction, gradientSampleA);
+
+      // cloth grad sample
+      surfaceInteraction.textureCoordinates.y = (1.0f / 32.0f) + (cloth_idx) /*(float)((int)opaqueSurfaceMaterial.albedoOpacityConstant.r)*/ /*(float)((int)cb.debugKnob.x)*/ /*opaqueSurfaceMaterial.albedoOpacityConstant.r*/ /*opaqueSurfaceMaterial.displaceIn*/ * (1.0f / 16.0f) + 0.5f; // cloth
+      surfaceMaterialInteractionTextureReadHelper(opaqueSurfaceMaterial.tangentTextureIndex, opaqueSurfaceMaterial.samplerIndex, surfaceInteraction, gradientSampleB);
+
+      f16vec3 col = lerp(gradientSampleB.rgb, gradientSampleA.rgb, albedoOpacitySample.b);
+
+      surfaceInteraction.textureCoordinates = savedCoordinates;
+      albedoOpacitySample.rgb = saturate(col.rgb + blood_col);
+  	// do stuff to albedo here
   }
 
   if (albedoOpacityLoaded)
@@ -536,12 +595,12 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     // alpha as thin film thickness flag is only set on the CPU if the use thin film flag is true.
     // Also, the alpha channel of the texture should always be linear even if it is using a sRGB encoding (as the alpha channel in such encodings remains linear),
     // so no special compensation has to be done here (unlike the albedo which may need to have software gamma correction skipped when reading from sRGB textures).
-    if (opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_ALPHA_IS_THIN_FILM_THICKNESS)
+    /*if (opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_ALPHA_IS_THIN_FILM_THICKNESS)
     {
       thinFilmThickness = albedoOpacitySample.a;
       opacity = float16_t(1.0f);
     }
-    else
+    else*/
     {
       opacity = albedoOpacitySample.a;
       thinFilmThickness = float16_t(0.0f);
@@ -695,6 +754,9 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   // Load Roughness
 
   float16_t roughness = opaqueSurfaceMaterial.roughnessConstant;
+  if (thinFilmEnabled) {
+      roughness = 0.7f;
+  }
 
   if (roughnessLoaded)
   {
@@ -713,6 +775,9 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   // Load Metallic
 
   float16_t metallic = opaqueSurfaceMaterial.metallicConstant;
+  if (thinFilmEnabled) {
+      metallic = 0.0f;
+  }
 
   if (metallicLoaded)
   {
@@ -724,6 +789,11 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   // Load Emissive Color
 
   f16vec3 emissiveColor = opaqueSurfaceMaterial.emissiveColorConstant;
+
+  if (thinFilmEnabled)
+  {
+      emissiveColor = f16vec3(0.h, 0.h, 0.h);
+  }
 
   if (emissiveColorLoaded)
   {
@@ -765,16 +835,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   {
     // Todo: Remove this hack when a proper legacy material model is created, or find some better solution to it (such as setting emissive information on the CPU side).
     derivedEmissiveColor = originalAlbedo;
-
-    // Hack
-    if (thinFilmEnabled)
-    {
-      derivedEmissiveIntensity = opaqueSurfaceMaterial.emissiveIntensity;
-    }
-    else
-    {
-      derivedEmissiveIntensity = float16_t(2.0f); // Note: Arbitrary constant, should be set on the CPU side instead and controllable.
-    }
+  	derivedEmissiveIntensity = float16_t(2.0f); // Note: Arbitrary constant, should be set on the CPU side instead and controllable.
   }
   else if (surface.isEmissiveBlend && cb.enableEmissiveBlendEmissiveOverride)
   {
@@ -782,16 +843,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     // This is so that when "emissive" style blending is used it looks more correct in a physically based way based on the influence from the mode in question.
     // Todo: Move this all once separate Surface Materials for D3D9 compatability and normal usage are created.
     derivedEmissiveColor = originalAlbedo;
-
-  	// Hack
-    if (thinFilmEnabled)
-    {
-      derivedEmissiveIntensity = emissiveBlendOverrideInfluence * opaqueSurfaceMaterial.emissiveIntensity;
-    }
-    else
-    {
-      derivedEmissiveIntensity = emissiveBlendOverrideInfluence * uint16BitsToHalf(cb.emissiveBlendOverrideEmissiveIntensity);
-    }
+  	derivedEmissiveIntensity = emissiveBlendOverrideInfluence * uint16BitsToHalf(cb.emissiveBlendOverrideEmissiveIntensity);
   }
   else
   {
@@ -881,13 +933,13 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   opaqueSurfaceMaterialInteraction.albedo = gBufferMemoryPolymorphicSurfaceMaterialInteraction.albedo;
   // Note: Opacity set to 1 when thin film is enabled (as we unfortunately cannot read from the opacity constant here and there
   // is no extra room in this GBuffer encoding to store both the opacity and the thin film thickness).
-  opaqueSurfaceMaterialInteraction.opacity = thinFilmEnabled ? float16_t(1.0f) : opacityOrThinFilmThickness;
+  opaqueSurfaceMaterialInteraction.opacity = opacityOrThinFilmThickness;
   opaqueSurfaceMaterialInteraction.baseReflectivity = gBufferMemoryPolymorphicSurfaceMaterialInteraction.baseReflectivity;
   opaqueSurfaceMaterialInteraction.isotropicRoughness = isotropicRoughness;
   opaqueSurfaceMaterialInteraction.anisotropicRoughness = anisotropicRoughness;
   opaqueSurfaceMaterialInteraction.emissiveRadiance = emissiveColor * emissiveIntensity;
   // Note: Thickness set to 0 when thin film is disabled for the same reason the opacity is set to 1 when it is enabled.
-  opaqueSurfaceMaterialInteraction.thinFilmThickness = thinFilmEnabled ? opacityOrThinFilmThickness : float16_t(0.0f);
+  opaqueSurfaceMaterialInteraction.thinFilmThickness = float16_t(0.0f);
 
   // We don't store this in the G-buffer
   opaqueSurfaceMaterialInteraction.normalDetail = float16_t(0.0f);
