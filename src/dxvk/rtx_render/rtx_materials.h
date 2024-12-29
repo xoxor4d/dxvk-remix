@@ -1355,6 +1355,10 @@ struct LegacyMaterialData {
     return colorTextures[1];
   }
 
+  const TextureRef& getColorTexture3() const {
+    return colorTextures[2];
+  }
+
   const Rc<DxvkSampler>& getSampler() const {
     return samplers[0];
   }
@@ -1482,7 +1486,7 @@ private:
     }
   }
 
-  const static uint32_t kMaxSupportedTextures = 2;
+  const static uint32_t kMaxSupportedTextures = 3;
   TextureRef colorTextures[kMaxSupportedTextures] = {};
   Rc<DxvkSampler> samplers[kMaxSupportedTextures] = {};
   static_assert(kInvalidResourceSlot == 0 && "Below initialization of all array members is only valid for a value of 0.");

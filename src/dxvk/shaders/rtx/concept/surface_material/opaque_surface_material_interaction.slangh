@@ -530,11 +530,12 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
       f16vec4 gradientSampleA;
       f16vec4 gradientSampleB;
       f16vec4 spriteSample;
-      
+      f16vec4 detailSample;
 
-		// 256x16
-		// skin tint 0-7
-		// cloth 8-15
+
+	  // 256x16
+	  // skin tint 0-7
+	  // cloth 8-15
       //Sample_A.color = $gradienttexture.sample($basetexture.alphaChannel.sample(u, v), 1 / 32 + PalletRowSelector_A * 1 / 16) • Generally used for Clothing
       //Sample_B.color = $gradienttexture.sample($basetexture.alphaChannel.sample(u, v), 1 / 32 + PalletRowSelector_B * 1 / 16 + 0.5)
 
@@ -553,6 +554,20 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
       f16vec3 upper_masks = float3(spriteSample.rg, albedoOpacitySample.b) * 2.0f + -1.0f;
 
 
+      // # -------
+      // detail
+
+  	  // sample detailmap
+      // would normally sample using surfaceInteraction.textureCoordinates.wz but remix only uses a vec2 for tc's ...
+      // instead we use the same sprite index that is used for everything else ^
+      surfaceMaterialInteractionTextureReadHelper(opaqueSurfaceMaterial.metallicTextureIndex, opaqueSurfaceMaterial.samplerIndex, surfaceInteraction, detailSample);
+
+      float lumSqrt = albedoOpacitySample.a * albedoOpacitySample.a;
+      detailSample.rgb = detailSample.rgb * float3(lumSqrt, lumSqrt, lumSqrt);
+
+      float detail_mask = saturate(upper_masks.r);
+
+      // # -------
       // blood
       float blood_mask = saturate(upper_masks.g);
 
@@ -560,13 +575,16 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
       float g_vGradSelect_r = opaqueSurfaceMaterial.emissiveColorConstant.x;
       float g_vGradSelect_g = opaqueSurfaceMaterial.emissiveColorConstant.y;
 
-      float temp1 = 1.0f / (-g_vGradSelect_r + g_vGradSelect_g);
-      float temp0 = saturate((blood_mask + -g_vGradSelect_r) * temp1);
-      temp1 = temp0 * -2.0f + 3.0f;
+      float temp0 = saturate((blood_mask + -g_vGradSelect_r) * (1.0f / (-g_vGradSelect_r + g_vGradSelect_g)));
+      float temp1 = temp0 * -2.0f + 3.0f;
       temp0 = saturate(temp1 * temp0 * temp0);
 
-      f16vec3 blood_col = /*2.0f +*/ f16vec3(0.15f, 0.0f, 0.00f) + (float)((int)cb.debugKnob.x);
-      blood_col = temp0 /*blood_mask*/ * blood_col /*+ 1.0f*/ + (float)((int)cb.debugKnob.y);
+      // float3(cb.debugKnob.x, cb.debugKnob.x, cb.debugKnob.x)
+      // white bg with blood colored stains (so we can mul with albedo)
+      f16vec3 bloodcolor = float3(0.15f, 0.0f, 0.00f) - float3(1.0f, 1.0f, 1.0f);
+      bloodcolor = float3(temp0, temp0, temp0) * bloodcolor + float3(1, 1, 1);
+
+      // # -------
 
       // skin grad sample
       surfaceInteraction.textureCoordinates.x = albedoOpacitySample.a; // luminance
@@ -577,10 +595,18 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
       surfaceInteraction.textureCoordinates.y = (1.0f / 32.0f) + (cloth_idx) /*(float)((int)opaqueSurfaceMaterial.albedoOpacityConstant.r)*/ /*(float)((int)cb.debugKnob.x)*/ /*opaqueSurfaceMaterial.albedoOpacityConstant.r*/ /*opaqueSurfaceMaterial.displaceIn*/ * (1.0f / 16.0f) + 0.5f; // cloth
       surfaceMaterialInteractionTextureReadHelper(opaqueSurfaceMaterial.tangentTextureIndex, opaqueSurfaceMaterial.samplerIndex, surfaceInteraction, gradientSampleB);
 
-      f16vec3 col = lerp(gradientSampleB.rgb, gradientSampleA.rgb, albedoOpacitySample.b);
+      // mix albedo & blood
+      f16vec3 albedo = lerp(gradientSampleB.rgb, gradientSampleA.rgb, albedoOpacitySample.b);
+      albedoOpacitySample.rgb = albedo.rgb * bloodcolor; //saturate(col.rgb + blood_col);
+      //albedoOpacitySample.rgb += detailSample.rgb;
 
+      // add detail
+      detailSample.rgb = detailSample.rgb * float3(2.0f + cb.debugKnob.x, 2.0f + cb.debugKnob.y, 2.0f + cb.debugKnob.z) + -albedoOpacitySample.rgb;
+      albedoOpacitySample.rgb = float3(detail_mask, detail_mask, detail_mask) * detailSample.rgb + albedoOpacitySample.rgb;
+
+      // restore texcoords
       surfaceInteraction.textureCoordinates = savedCoordinates;
-      albedoOpacitySample.rgb = saturate(col.rgb + blood_col);
+      
   	// do stuff to albedo here
   }
 
@@ -778,20 +804,19 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   if (thinFilmEnabled) {
       metallic = 0.0f;
   }
-
-  if (metallicLoaded)
+  else
   {
-    metallic = metallicSample.x;
+      if (metallicLoaded) {
+          metallic = metallicSample.x;
+      }
   }
-    
+
   metallic = saturate(metallic * cb.opaqueMaterialArgs.metallicScale + cb.opaqueMaterialArgs.metallicBias);
 
   // Load Emissive Color
 
   f16vec3 emissiveColor = opaqueSurfaceMaterial.emissiveColorConstant;
-
-  if (thinFilmEnabled)
-  {
+  if (thinFilmEnabled) {
       emissiveColor = f16vec3(0.h, 0.h, 0.h);
   }
 

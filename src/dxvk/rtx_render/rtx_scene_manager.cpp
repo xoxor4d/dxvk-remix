@@ -1087,6 +1087,10 @@ namespace dxvk {
             if (thinFilmEnable && &legacyMaterialData.getColorTexture2()) {
               trackTexture(ctx, legacyMaterialData.getColorTexture2(), tangentTextureIndex, hasTexcoords);
             }
+
+            if (thinFilmEnable && &legacyMaterialData.getColorTexture3()) {
+              trackTexture(ctx, legacyMaterialData.getColorTexture3(), metallicTextureIndex, hasTexcoords);
+            }
           }
         }
 
