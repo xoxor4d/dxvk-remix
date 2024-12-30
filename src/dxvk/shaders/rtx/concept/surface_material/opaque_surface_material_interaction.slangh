@@ -567,13 +567,17 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     thinFilmThickness = opaqueSurfaceMaterial.thinFilmThicknessConstant;
   }*/
 
+  float infected_roughness = 0.7f;
+  float infected_normal_boost = 0.0f;
+
   if (thinFilmEnabled)
   {
+      infected_normal_boost = opaqueSurfaceMaterial.emissiveColorConstant.z;
+
       f16vec4 gradientSampleA;
       f16vec4 gradientSampleB;
       f16vec4 spriteSample;
       f16vec4 detailSample;
-
 
 	  // 256x16
 	  // skin tint 0-7
@@ -593,8 +597,8 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
       surfaceMaterialInteractionTextureReadHelper(opaqueSurfaceMaterial.albedoOpacityTextureIndex, opaqueSurfaceMaterial.samplerIndex, surfaceInteraction, spriteSample);
 
       // remove lower half (0-127) of r + g + b channels
-      f16vec3 upper_masks = float3(spriteSample.rg, albedoOpacitySample.b) * 2.0f + -1.0f;
-
+      f16vec2 upper_masks = spriteSample.rg * 2.0f + -1.0f; // needs saturate
+      f16vec2 lower_masks = spriteSample.rg * 2.0f; // needs saturate
 
       // # -------
       // detail
@@ -608,6 +612,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
       detailSample.rgb = detailSample.rgb * float3(lumSqrt, lumSqrt, lumSqrt);
 
       float detail_mask = saturate(upper_masks.r);
+      detail_mask = pow(detail_mask, 0.8f);
 
       // # -------
       // blood
@@ -620,10 +625,28 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
       float temp0 = saturate((blood_mask + -g_vGradSelect_r) * (1.0f / (-g_vGradSelect_r + g_vGradSelect_g)));
       float temp1 = temp0 * -2.0f + 3.0f;
       temp0 = saturate(temp1 * temp0 * temp0);
+      //temp0 = pow(temp0, 1.0f + cb.debugKnob.y);
+
+      //blood_roughness = temp0 * cb.debugKnob.z * -1.0f;
+      infected_roughness = temp0 * 0.5f * -1.0f;
+      //infected_roughness = pow(infected_roughness, 1.0f + cb.debugKnob.z);
+
+      float specular_mask = saturate(lower_masks.r);
+      specular_mask = pow(specular_mask, 1.7f); // + 0.7 good
+      //specular_mask *= cb.debugKnob.w;
+      specular_mask *= 0.8f * opaqueSurfaceMaterial.anisotropy; // roughness boost (0.2 when wet)
+
+      infected_roughness = saturate(infected_roughness + specular_mask);
+
+
+      float detail_spec = saturate(1.0f - lerp(0.0f, detailSample.a, detail_mask));
+      detail_spec = saturate(pow(detail_spec, 2.9f) * 0.9f);
+      infected_roughness = saturate(infected_roughness * detail_spec);
+      
 
       // float3(cb.debugKnob.x, cb.debugKnob.x, cb.debugKnob.x)
       // white bg with blood colored stains (so we can mul with albedo)
-      f16vec3 bloodcolor = float3(0.15f, 0.0f, 0.00f) - float3(1.0f, 1.0f, 1.0f);
+      f16vec3 bloodcolor = float3(0.24f, 0.13f, 0.13f) - float3(1.0f, 1.0f, 1.0f); // 0.15f 0 0 
       bloodcolor = float3(temp0, temp0, temp0) * bloodcolor + float3(1, 1, 1);
 
       // # -------
@@ -639,11 +662,17 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
       // mix albedo & blood
       f16vec3 albedo = lerp(gradientSampleB.rgb, gradientSampleA.rgb, albedoOpacitySample.b);
+      //albedo = pow(albedo, 1.0f + cb.debugKnob.y);
+
       albedoOpacitySample.rgb = albedo.rgb * bloodcolor; //saturate(col.rgb + blood_col);
       //albedoOpacitySample.rgb += detailSample.rgb;
 
-      // add detail
-      detailSample.rgb = detailSample.rgb * float3(2.0f + cb.debugKnob.x, 2.0f + cb.debugKnob.y, 2.0f + cb.debugKnob.z) + -albedoOpacitySample.rgb;
+      // add detail // float3(2.0f + cb.debugKnob.x, 2.0f + cb.debugKnob.y, 2.0f + cb.debugKnob.z)
+      detailSample.rgb = detailSample.rgb * float3(2.0f, 2.0f, 2.0f) + -albedoOpacitySample.rgb;
+      //detailSample.r = powf(detailSample.r, 1.0f + cb.debugKnob.y);
+      //detailSample.g = powf(detailSample.g, 1.0f + cb.debugKnob.y);
+      //detailSample.b = powf(detailSample.b, 1.0f + cb.debugKnob.y);
+
       albedoOpacitySample.rgb = float3(detail_mask, detail_mask, detail_mask) * detailSample.rgb + albedoOpacitySample.rgb;
 
       // restore texcoords
@@ -784,7 +813,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     else // Decode encoded normal sample
     {
       // Note: Using f16 from texture to decode from is fine as the original texture is only 8 bits of precision.
-      tangentNormal = unsignedOctahedralToHemisphereDirection(vec2(normalSample.xy), cb.opaqueMaterialArgs.normalIntensity);
+      tangentNormal = unsignedOctahedralToHemisphereDirection(vec2(normalSample.xy), cb.opaqueMaterialArgs.normalIntensity + infected_normal_boost);
     }
     
     const f16mat3 tangentToWorld = transpose(worldToTangent);
@@ -827,7 +856,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
   float16_t roughness = opaqueSurfaceMaterial.roughnessConstant;
   if (thinFilmEnabled) {
-      roughness = 0.7f;
+      roughness = infected_roughness;
   }
 
   if (roughnessLoaded)
@@ -848,7 +877,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
   float16_t metallic = opaqueSurfaceMaterial.metallicConstant;
   if (thinFilmEnabled) {
-      metallic = 0.0f;
+      metallic = 0.4f;
   }
   else
   {
@@ -894,7 +923,8 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   opaqueSurfaceMaterialInteraction.baseReflectivity = surface.isMatte ? f16vec3(0) : calcBaseReflectivity(albedo, metallic, opacity);
    
   // Note: Roughness loaded from texture is a perceptual roughness value (for optimal encoding), so this works as intended.
-  calcRoughness(roughness, opaqueSurfaceMaterial.anisotropy,
+  // Disable anisotropy when drawing infected - constant used for something else
+  calcRoughness(roughness, thinFilmEnabled ? 0.0f : opaqueSurfaceMaterial.anisotropy,
     opaqueSurfaceMaterialInteraction.isotropicRoughness,
     opaqueSurfaceMaterialInteraction.anisotropicRoughness);
 

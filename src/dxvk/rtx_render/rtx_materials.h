@@ -1435,6 +1435,10 @@ struct LegacyMaterialData {
     return colorTextures[2];
   }
 
+  const TextureRef& getColorTexture4() const {
+    return colorTextures[3];
+  }
+
   const Rc<DxvkSampler>& getSampler() const {
     return samplers[0];
   }
@@ -1513,6 +1517,12 @@ struct LegacyMaterialData {
     return colorTextureSlot[slot];
   }
 
+  enum REMIX_MODIFIER_FROM_D3D : std::uint32_t {
+    REMIX_MODIFIER_FROM_D3D_NONE = 0,
+    REMIX_MODIFIER_FROM_D3D_INFECTED = 1 << 0,
+    //EMISSIVE_TWEAK = 1 << 1,
+  };
+
   bool alphaTestEnabled = false;
   uint8_t alphaTestReferenceValue = 0;
   VkCompareOp alphaTestCompareOp = VkCompareOp::VK_COMPARE_OP_ALWAYS;
@@ -1531,12 +1541,13 @@ struct LegacyMaterialData {
   uint32_t tFactor = 0xffffffff;  // Value for D3DRS_TEXTUREFACTOR, default value of is opaque white
   D3DMATERIAL9 d3dMaterial = {};
   bool isTextureFactorBlend = false;
-  uint32_t  remixTextureCategoryFlagsFromD3D = 0u;
-  XXH64_hash_t remixHashFromD3D = 0;
-  float emissiveColorConstantFromD3D = -1.0f;
-  uint32_t l4d2SheetUVFromD3D = 0xffffffff;
-  int l4d2SkinTintGradientFromD3D = 0;
-  uint32_t l4d2GradSelectFromD3D = 0xffffffff;
+  uint32_t remixTextureCategoryFlagsFromD3D = 0u; // RS 42
+  uint32_t modifierFromD3D = 0u; // RS 149
+  XXH64_hash_t remixHashFromD3D = 0u; // RS 150
+  uint32_t l4d2NormalRoughnessBoostFromD3D = 0u; // RS 169
+  uint32_t l4d2SheetUVFromD3D = 0u; // RS 177
+  uint32_t l4d2SkinTintGradientFromD3D = 0u; // RS 196
+  uint32_t l4d2GradSelectFromD3D = 0u; // RS 197
 
   void setHashOverride(XXH64_hash_t hash) {
     m_cachedHash = hash;
@@ -1562,7 +1573,7 @@ private:
     }
   }
 
-  const static uint32_t kMaxSupportedTextures = 3;
+  const static uint32_t kMaxSupportedTextures = 4;
   TextureRef colorTextures[kMaxSupportedTextures] = {};
   Rc<DxvkSampler> samplers[kMaxSupportedTextures] = {};
   static_assert(kInvalidResourceSlot == 0 && "Below initialization of all array members is only valid for a value of 0.");
