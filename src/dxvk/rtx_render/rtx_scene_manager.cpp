@@ -540,6 +540,38 @@ namespace dxvk {
         replacementMaterial.emplace(MaterialData(*pReplacementMaterial));
         // merge in the input material from game
         replacementMaterial->mergeLegacyMaterial(input.getMaterialData());
+
+        // L4D2 infected shader -- same needs to be done in SceneManager::createSurfaceMaterial
+        if (input.getMaterialData().modifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_INFECTED)
+        {
+          const auto& legacy = input.getMaterialData();
+          auto& op = replacementMaterial.value().getOpaqueMaterialData();
+          op.getTangentTexture() = legacy.getColorTexture2(); // gradient map
+          op.getMetallicTexture() = legacy.getColorTexture3(); // detail map
+
+          // unpack the two f16 floats - sprite texcoords
+          uint u16_1 = (legacy.l4d2SheetUVFromD3D >> 16) & 0xFFFF;  // upper 16 bits
+          uint u16_2 = legacy.l4d2SheetUVFromD3D & 0xFFFF;          // lower 16 bits
+          op.getRoughnessConstant() = (float) u16_1 / 65535.0f; // x
+          op.getMetallicConstant() = (float) u16_2 / 65535.0f;  // y
+
+          // ^ - gradient select (blood)
+          u16_1 = (legacy.l4d2GradSelectFromD3D >> 16) & 0xFFFF;  // upper 16 bits
+          u16_2 = legacy.l4d2GradSelectFromD3D & 0xFFFF;          // lower 16 bits
+          op.getEmissiveColorConstant().x = (float) u16_1 / 65535.0f; // x
+          op.getEmissiveColorConstant().y = (float) u16_2 / 65535.0f; // y
+
+          // ^ normal and roughness boost l4d2NormalRoughnessBoostFromD3D
+          u16_1 = (legacy.l4d2NormalRoughnessBoostFromD3D >> 16) & 0xFFFF;  // upper 16 bits
+          u16_2 = legacy.l4d2NormalRoughnessBoostFromD3D & 0xFFFF;          // lower 16 bits
+          op.getEmissiveColorConstant().z = (float) u16_1 / 65535.0f; // normal boost
+          op.getAnisotropyConstant() = (float) u16_2 / 65535.0f; // roughness boost
+
+          op.getEmissiveIntensity() = (float)legacy.l4d2SkinTintGradientFromD3D;
+          op.getEnableEmission() = true; // needed to transmit ^
+          op.getEnableThinFilm() = true; // shader trigger
+        }
+
         // bind as a material override for this draw
         overrideMaterialData = &replacementMaterial.value();
       }
@@ -1041,36 +1073,32 @@ namespace dxvk {
         alphaIsThinFilmThickness = defaults.alphaIsThinFilmThickness();
         thinFilmThicknessConstant = defaults.thinFilmThicknessConstant();
 
-        if (legacyMaterialData.emissiveColorConstantFromD3D >= 0.0f) 
+        // opaque handled in SceneManager::submitDrawState 
+        if (legacyMaterialData.modifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_INFECTED)
         {
           //emissiveIntensity = legacyMaterialData.emissiveColorConstantFromD3D;
           thinFilmEnable = true;
 
-          // unpack the two f16 floats
-          uint u16_1 = (legacyMaterialData.l4d2SheetUVFromD3D >> 16) & 0xFFFF; // Extract the upper 16 bits
-          uint u16_2 = legacyMaterialData.l4d2SheetUVFromD3D & 0xFFFF;        // Extract the lower 16 bits
+          // unpack the two f16 floats - sprite texcoords
+          uint u16_1 = (legacyMaterialData.l4d2SheetUVFromD3D >> 16) & 0xFFFF;  // upper 16 bits
+          uint u16_2 = legacyMaterialData.l4d2SheetUVFromD3D & 0xFFFF;          // lower 16 bits
           roughnessConstant = (float) u16_1 / 65535.0f; // x
-          metallicConstant = (float) u16_2 / 65535.0f; // y
-          //emissiveColorConstant.x = (float) u16_1 / 65535.0f; // x
-          //emissiveColorConstant.y = (float) u16_2 / 65535.0f; // y
+          metallicConstant = (float) u16_2 / 65535.0f;  // y
 
-          // ^
-          u16_1 = (legacyMaterialData.l4d2GradSelectFromD3D >> 16) & 0xFFFF; // Extract the upper 16 bits
-          u16_2 = legacyMaterialData.l4d2GradSelectFromD3D & 0xFFFF;        // Extract the lower 16 bits
+          // ^ - gradient select (blood)
+          u16_1 = (legacyMaterialData.l4d2GradSelectFromD3D >> 16) & 0xFFFF;  // upper 16 bits
+          u16_2 = legacyMaterialData.l4d2GradSelectFromD3D & 0xFFFF;          // lower 16 bits
           emissiveColorConstant.x = (float) u16_1 / 65535.0f; // x
           emissiveColorConstant.y = (float) u16_2 / 65535.0f; // y
 
-          //emissiveIntensity = (float) legacyMaterialData.l4d2SkinTintGradientFromD3D + ((float)legacyMaterialData.l4d2ColorTintGradientFromD3D * 10.0f);
-          // ^ already done in l4d
+          // ^ normal and roughness boost l4d2NormalRoughnessBoostFromD3D
+          u16_1 = (legacyMaterialData.l4d2NormalRoughnessBoostFromD3D >> 16) & 0xFFFF;  // upper 16 bits
+          u16_2 = legacyMaterialData.l4d2NormalRoughnessBoostFromD3D & 0xFFFF;          // lower 16 bits
+          emissiveColorConstant.z = (float) u16_1 / 65535.0f; // normal boost
+          anisotropy = (float) u16_2 / 65535.0f; // roughness boost
+
           emissiveIntensity = (float)legacyMaterialData.l4d2SkinTintGradientFromD3D;
-
-
-
-          //albedoOpacityConstant = Vector4(1.0f, 0.0f, 0.0f, 1.0f);
-
-          //albedoOpacityConstant.x = (float) legacyMaterialData.l4d2SkinTintGradientFromD3D;
-          //albedoOpacityConstant.y = (float) legacyMaterialData.l4d2ColorTintGradientFromD3D;
-          //displaceIn = (float)legacyMaterialData.l4d2SheetIndexFromD3D;
+          // needed or the above does not work
           enableEmissive = true;
         }
 
@@ -1084,12 +1112,17 @@ namespace dxvk {
             // NOTE: Do not patch original sampler to preserve filtering behavior of the legacy material
             trackTexture(ctx, legacyMaterialData.getColorTexture(), albedoOpacityTextureIndex, hasTexcoords);
 
-            if (thinFilmEnable && &legacyMaterialData.getColorTexture2()) {
-              trackTexture(ctx, legacyMaterialData.getColorTexture2(), tangentTextureIndex, hasTexcoords);
-            }
+            if (thinFilmEnable)
+            {
+              // gradient map
+              if (&legacyMaterialData.getColorTexture2()) {
+                trackTexture(ctx, legacyMaterialData.getColorTexture2(), tangentTextureIndex, hasTexcoords);
+              }
 
-            if (thinFilmEnable && &legacyMaterialData.getColorTexture3()) {
-              trackTexture(ctx, legacyMaterialData.getColorTexture3(), metallicTextureIndex, hasTexcoords);
+              // detail map
+              if (&legacyMaterialData.getColorTexture3()) {
+                trackTexture(ctx, legacyMaterialData.getColorTexture3(), metallicTextureIndex, hasTexcoords);
+              }
             }
           }
         }
@@ -1110,7 +1143,6 @@ namespace dxvk {
 
       else if (renderMaterialDataType == MaterialDataType::Opaque) {
         const auto& opaqueMaterialData = renderMaterialData.getOpaqueMaterialData();
-
         if (RtxOptions::Get()->getWhiteMaterialModeEnabled()) {
           albedoOpacityConstant = kWhiteModeAlbedo;
           metallicConstant = 0.f;
@@ -1135,10 +1167,6 @@ namespace dxvk {
         emissiveColorConstant = opaqueMaterialData.getEmissiveColorConstant();
         enableEmissive = opaqueMaterialData.getEnableEmission();
         thinFilmEnable = opaqueMaterialData.getEnableThinFilm();
-
-        if (thinFilmEnable) {
-          enableEmissive = true;
-        }
 
         anisotropy = opaqueMaterialData.getAnisotropyConstant();
         alphaIsThinFilmThickness = opaqueMaterialData.getAlphaIsThinFilmThickness();
