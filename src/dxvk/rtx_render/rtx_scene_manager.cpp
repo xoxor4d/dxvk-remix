@@ -1332,7 +1332,7 @@ namespace dxvk {
     }
     return m_surfaceMaterialCache.at(index);
   }
-#pragma optimize("", on)
+//#pragma optimize("", on)
 
   std::optional<XXH64_hash_t> SceneManager::findLegacyTextureHashByObjectPickingValue(uint32_t objectPickingValue) {
     std::lock_guard lock { m_drawCallMeta.mutex };
