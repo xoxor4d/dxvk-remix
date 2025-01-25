@@ -539,7 +539,7 @@ namespace dxvk {
         // merge in the input material from game
         replacementMaterial->mergeLegacyMaterial(input.getMaterialData());
 
-        // L4D2 infected shader -- same needs to be done in SceneManager::createSurfaceMaterial
+        // #l4d2 infected shader -- same needs to be done in SceneManager::createSurfaceMaterial
         if (input.getMaterialData().modifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_INFECTED)
         {
           const auto& legacy = input.getMaterialData();
@@ -1086,13 +1086,18 @@ namespace dxvk {
         emissiveIntensity = defaults.emissiveIntensity();
         thinFilmEnable = defaults.enableThinFilm();
         enableEmissive = defaults.enableEmissive();
-
-        //thinFilmEnable = defaults.enableThinFilm();
         alphaIsThinFilmThickness = defaults.alphaIsThinFilmThickness();
         thinFilmThicknessConstant = defaults.thinFilmThicknessConstant();
 
-        // opaque handled in SceneManager::submitDrawState 
-        if (legacyMaterialData.modifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_INFECTED)
+        if (legacyMaterialData.modifierFromD3D & LegacyMaterialData::EMISSIVE_TWEAK)
+        {
+          emissiveIntensity = legacyMaterialData.emissiveColorConstantFromD3D;
+          alphaIsThinFilmThickness = true;
+          enableEmissive = true;
+        }
+
+        // #l4d2 opaque handled in SceneManager::submitDrawState 
+        else if (legacyMaterialData.modifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_INFECTED)
         {
           //emissiveIntensity = legacyMaterialData.emissiveColorConstantFromD3D;
           thinFilmEnable = true;
@@ -1130,6 +1135,7 @@ namespace dxvk {
             // NOTE: Do not patch original sampler to preserve filtering behavior of the legacy material
             trackTexture(ctx, legacyMaterialData.getColorTexture(), albedoOpacityTextureIndex, hasTexcoords);
 
+            // #l4d2
             if (thinFilmEnable)
             {
               // gradient map
@@ -1192,6 +1198,12 @@ namespace dxvk {
 
         anisotropy = opaqueMaterialData.getAnisotropyConstant();
         alphaIsThinFilmThickness = opaqueMaterialData.getAlphaIsThinFilmThickness();
+
+        // #l4d2
+        if (alphaIsThinFilmThickness) {
+          enableEmissive = true;
+        }
+
         thinFilmThicknessConstant = opaqueMaterialData.getThinFilmThicknessConstant();
         displaceIn = opaqueMaterialData.getDisplaceIn();
         displaceOut = opaqueMaterialData.getDisplaceOut();
@@ -1332,7 +1344,6 @@ namespace dxvk {
     }
     return m_surfaceMaterialCache.at(index);
   }
-//#pragma optimize("", on)
 
   std::optional<XXH64_hash_t> SceneManager::findLegacyTextureHashByObjectPickingValue(uint32_t objectPickingValue) {
     std::lock_guard lock { m_drawCallMeta.mutex };

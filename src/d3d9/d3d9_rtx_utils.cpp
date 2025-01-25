@@ -182,6 +182,7 @@ namespace dxvk {
       materialData.remixTextureCategoryFlagsFromD3D = d3d9State.renderStates[42] != 0xfefefefe ? d3d9State.renderStates[42] : 0u;
       materialData.modifierFromD3D = d3d9State.renderStates[149] != 0xfefefefe ? d3d9State.renderStates[149] : 0u;
       materialData.remixHashFromD3D = d3d9State.renderStates[150] != 0xfefefefe ? d3d9State.renderStates[150] : 0u;
+      materialData.emissiveColorConstantFromD3D = d3d9State.renderStates[149] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[149]) : 0.0f;
       materialData.l4d2NormalRoughnessBoostFromD3D = d3d9State.renderStates[169] != 0xfefefefe ? d3d9State.renderStates[169] : 0u;
       materialData.l4d2SheetUVFromD3D = d3d9State.renderStates[177] != 0xfefefefe ? d3d9State.renderStates[177] : 0u;
       materialData.l4d2SkinTintGradientFromD3D = d3d9State.renderStates[196] != 0xfefefefe ? d3d9State.renderStates[196] : 0u;

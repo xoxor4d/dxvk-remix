@@ -1520,7 +1520,7 @@ struct LegacyMaterialData {
   enum REMIX_MODIFIER_FROM_D3D : std::uint32_t {
     REMIX_MODIFIER_FROM_D3D_NONE = 0,
     REMIX_MODIFIER_FROM_D3D_INFECTED = 1 << 0,
-    //EMISSIVE_TWEAK = 1 << 1,
+    EMISSIVE_TWEAK = 1 << 1,
   };
 
   bool alphaTestEnabled = false;
@@ -1544,6 +1544,7 @@ struct LegacyMaterialData {
   uint32_t remixTextureCategoryFlagsFromD3D = 0u; // RS 42
   uint32_t modifierFromD3D = 0u; // RS 149
   XXH64_hash_t remixHashFromD3D = 0u; // RS 150
+  float emissiveColorConstantFromD3D = 0.0f; // RS 164
   uint32_t l4d2NormalRoughnessBoostFromD3D = 0u; // RS 169
   uint32_t l4d2SheetUVFromD3D = 0u; // RS 177
   uint32_t l4d2SkinTintGradientFromD3D = 0u; // RS 196
