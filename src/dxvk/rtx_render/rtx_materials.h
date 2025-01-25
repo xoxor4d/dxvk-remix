@@ -443,9 +443,14 @@ struct RtOpaqueSurfaceMaterial {
 
       // Note: Only consider setting alpha as thin film thickness flag if the thin film is enabled, GPU relies on
       // this logical ordering.
-      if (m_alphaIsThinFilmThickness) {
+      /*if (m_alphaIsThinFilmThickness) {
         flags |= OPAQUE_SURFACE_MATERIAL_FLAG_ALPHA_IS_THIN_FILM_THICKNESS;
-      }
+      }*/
+    }
+
+    // #l4d2 :>
+    if (m_alphaIsThinFilmThickness) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_ALPHA_IS_THIN_FILM_THICKNESS;
     }
 
     if (m_ignoreAlphaChannel) {
