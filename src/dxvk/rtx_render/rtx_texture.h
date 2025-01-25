@@ -143,21 +143,12 @@ namespace dxvk {
     }
 
     XXH64_hash_t getImageHash() const {
-      XXH64_hash_t result = 0;
-      if (const DxvkImageView* resolvedImageView = getImageView()) {
-        result = resolvedImageView->image()->getHash();
-      }
+      const DxvkImageView* resolvedImageView = getImageView();
 
-      if (result == 0 && m_managedTexture.ptr() != nullptr) {
-        // NOTE: only replacement textures should have an m_managedTexture pointer.  To avoid changing game texture
-        // hashes, all ImageHash modifications should be inside this block.
-        const XXH64_hash_t assetDataHash = m_managedTexture->assetData->hash();
-        result = XXH64(&assetDataHash, sizeof(assetDataHash), result);
-        // Needed to distinguish materials that load the same file different ways (i.e. raw vs sRGB)
-        result = XXH64(&m_uniqueKey, sizeof(m_uniqueKey), result);
-      }
+      if (resolvedImageView)
+        return resolvedImageView->image()->getHash();
 
-      return result;
+      return 0;
     }
 
     size_t getUniqueKey() const {

@@ -197,10 +197,7 @@
       m_##name = clamp(m_##name, ranges.Min##name, ranges.Max##name);
 
 #define WRITE_TEXTURE_HASH(name, usd_attr, type, minVal, maxVal, defaultVal) \
-      {                                                                      \
-        XXH64_hash_t imageHash = m_##name.getImageHash();                    \
-        h = XXH64(&imageHash, sizeof(imageHash), h);                         \
-      }
+      h ^= m_##name.getImageHash();
 
 #define WRITE_CONSTANT_HASH(name, usd_attr, type, minVal, maxVal, defaultVal) \
       h = XXH64(&m_##name, sizeof(m_##name), h);
