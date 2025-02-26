@@ -181,7 +181,12 @@ namespace dxvk {
     {
       materialData.remixTextureCategoryFlagsFromD3D = d3d9State.renderStates[42] != 0xfefefefe ? d3d9State.renderStates[42] : 0u;
       materialData.modifierFromD3D = d3d9State.renderStates[149] != 0xfefefefe ? d3d9State.renderStates[149] : 0u;
-      materialData.remixHashFromD3D = d3d9State.renderStates[150] != 0xfefefefe ? d3d9State.renderStates[150] : 0u;
+      //materialData.remixHashFromD3D = d3d9State.renderStates[150] != 0xfefefefe ? d3d9State.renderStates[150] : 0u;
+
+      if (d3d9State.renderStates[150] != 0 && d3d9State.renderStates[150] != 0xfefefefe) { // D3DRENDERSTATETYPE index 150 is not in use - unused values are set to 0xfefefefe
+        materialData.setHashOverride(d3d9State.renderStates[150]);
+      }
+
       materialData.emissiveColorConstantFromD3D = d3d9State.renderStates[164] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[164]) : 0.0f;
       materialData.l4d2NormalRoughnessBoostFromD3D = d3d9State.renderStates[169] != 0xfefefefe ? d3d9State.renderStates[169] : 0u;
       materialData.l4d2SheetUVFromD3D = d3d9State.renderStates[177] != 0xfefefefe ? d3d9State.renderStates[177] : 0u;

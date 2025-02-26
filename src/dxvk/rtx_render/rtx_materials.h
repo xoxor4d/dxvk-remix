@@ -1481,6 +1481,11 @@ struct LegacyMaterialData {
 
   void setHashOverride(XXH64_hash_t hash) {
     m_cachedHash = hash;
+    m_isHashOverridden = true;
+  }
+
+  bool isHashOverridden() const {
+    return m_isHashOverridden;
   }
 
 private:
@@ -1495,11 +1500,8 @@ private:
     // incorporate more textures used to identify a material uniquely. Note this is not the same as the
     // plain data hash used by the RtSurfaceMaterial for storage in map-like data structures, but rather
     // one used to identify a material and compare to user-provided hashes.
-    m_cachedHash = colorTextures[0].getImageHash();
-
-    // Custom hash set via unused D3D RenderState
-    if (remixHashFromD3D) {
-      m_cachedHash = remixHashFromD3D;
+    if (!m_isHashOverridden) {
+      m_cachedHash = colorTextures[0].getImageHash();
     }
   }
 
@@ -1510,6 +1512,7 @@ private:
   uint32_t colorTextureSlot[kMaxSupportedTextures] = { kInvalidResourceSlot };
 
   XXH64_hash_t m_cachedHash = kEmptyHash;
+  bool m_isHashOverridden = false;
 };
 
 struct MaterialData {
