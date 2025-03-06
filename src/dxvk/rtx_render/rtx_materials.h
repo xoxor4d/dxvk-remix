@@ -1530,6 +1530,9 @@ struct LegacyMaterialData {
   uint32_t  remixTextureCategoryFlagsFromD3D = 0u;
   XXH64_hash_t remixHashFromD3D = 0;
   float emissiveColorConstantFromD3D = -1.0f;
+  uint32_t l4d2SheetUVFromD3D = 0xffffffff;
+  int l4d2SkinTintGradientFromD3D = 0;
+  uint32_t l4d2GradSelectFromD3D = 0xffffffff;
 
   void setHashOverride(XXH64_hash_t hash) {
     m_cachedHash = hash;

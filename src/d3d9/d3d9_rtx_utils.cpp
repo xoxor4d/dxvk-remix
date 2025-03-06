@@ -176,10 +176,16 @@ namespace dxvk {
 
     materialData.alphaBlendEnabled = d3d9State.renderStates[D3DRS_ALPHABLENDENABLE] != FALSE;
 
-    if (RtxOptions::Get()->useUnusedRenderstates()) {
-      materialData.remixTextureCategoryFlagsFromD3D = d3d9State.renderStates[42] != 0xfefefefe ? d3d9State.renderStates[42] : 0u; // D3DRENDERSTATETYPE index 42 is not in use - unused values are set to 0xfefefefe
-      materialData.emissiveColorConstantFromD3D = d3d9State.renderStates[149] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[149]) : -1.0f; // D3DRENDERSTATETYPE index 149 is not in use - unused values are set to 0xfefefefe
-      materialData.remixHashFromD3D = d3d9State.renderStates[150] != 0xfefefefe ? d3d9State.renderStates[150] : 0u; // D3DRENDERSTATETYPE index 150 is not in use - unused values are set to 0xfefefefe
+    // unused renderstates - unused values are set to 0xfefefefe
+    if (RtxOptions::Get()->useUnusedRenderstates()) 
+    {
+      materialData.remixTextureCategoryFlagsFromD3D = d3d9State.renderStates[42] != 0xfefefefe ? d3d9State.renderStates[42] : 0u;
+      materialData.emissiveColorConstantFromD3D = d3d9State.renderStates[149] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[149]) : -1.0f;
+      materialData.remixHashFromD3D = d3d9State.renderStates[150] != 0xfefefefe ? d3d9State.renderStates[150] : 0u;
+
+      materialData.l4d2SheetUVFromD3D = d3d9State.renderStates[177] != 0xfefefefe ? d3d9State.renderStates[177] : 0u;
+      materialData.l4d2SkinTintGradientFromD3D = d3d9State.renderStates[196] != 0xfefefefe ? d3d9State.renderStates[196] : 0u;
+      materialData.l4d2GradSelectFromD3D = d3d9State.renderStates[197] != 0xfefefefe ? d3d9State.renderStates[197] : 0u;
     }
 
     if (materialData.alphaBlendEnabled) {
