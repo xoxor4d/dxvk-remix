@@ -161,7 +161,6 @@ namespace dxvk {
     // We still need to clear caches even if the scene wasn't rendered
     m_bufferCache.clear();
     m_surfaceMaterialCache.clear();
-    m_preCreationSurfaceMaterialMap.clear();
     m_surfaceMaterialExtensionCache.clear();
     m_volumeMaterialCache.clear();
     
@@ -482,9 +481,6 @@ namespace dxvk {
       m_uniqueObjectSearchDistance = RtxOptions::uniqueObjectDistance();
       m_drawCallCache.rebuildSpatialMaps();
     }
-
-    // Not currently safe to cache these across frames (due to texture indices and rtx options potentially changing)
-    m_preCreationSurfaceMaterialMap.clear();
   }
 
   void SceneManager::onFrameEndNoRTX() {
@@ -516,10 +512,10 @@ namespace dxvk {
           if (pFogReplacement->getType() != MaterialDataType::Translucent) {
             Logger::warn(str::format("Fog replacement materials must be translucent.  Ignoring material for ", std::hex, m_fog.getHash()));
           } else {
-            uint32_t id = UINT32_MAX;
-            createSurfaceMaterial(ctx, *pFogReplacement, input, &id);
-            assert(id != UINT32_MAX);
-            m_startInMediumMaterialIndex_inCache = id;
+            std::optional<RtSurfaceMaterial> surfaceMaterial {};
+
+            createSurfaceMaterial(ctx, surfaceMaterial, *pFogReplacement, input);
+            m_startInMediumMaterialIndex = m_surfaceMaterialCache.track(*surfaceMaterial);
           }
         } else if (m_fog.mode == D3DFOG_NONE) {
           // render the first unreplaced fog.
@@ -944,8 +940,17 @@ namespace dxvk {
 
     // Note: Use either the specified override Material Data or the original draw calls state's Material Data to create a Surface Material if no override is specified
     const auto renderMaterialDataType = renderMaterialData.getType();
-    const RtSurfaceMaterial& surfaceMaterial = createSurfaceMaterial(ctx, renderMaterialData, drawCallState);
-    RtInstance* instance = m_instanceManager.processSceneObject(m_cameraManager, m_rayPortalManager, *pBlas, drawCallState, renderMaterialData, surfaceMaterial);
+    std::optional<RtSurfaceMaterial> surfaceMaterial{};
+
+    createSurfaceMaterial(ctx, surfaceMaterial, renderMaterialData, drawCallState);
+
+    assert(surfaceMaterial.has_value());
+    assert(surfaceMaterial->validate());
+
+    // Cache this
+    m_surfaceMaterialCache.track(*surfaceMaterial);
+
+    RtInstance* instance = m_instanceManager.processSceneObject(m_cameraManager, m_rayPortalManager, *pBlas, drawCallState, renderMaterialData, *surfaceMaterial);
 
     // Check if a light should be created for this Material
     if (instance && RtxOptions::Get()->shouldConvertToLight(drawCallState.getMaterialData().getHash())) {
@@ -981,10 +986,10 @@ namespace dxvk {
     return instance ? instance->getId() : UINT64_MAX;
   }
 
-  const RtSurfaceMaterial& SceneManager::createSurfaceMaterial( Rc<DxvkContext> ctx, 
-                                                                const MaterialData& renderMaterialData,
-                                                                const DrawCallState& drawCallState,
-                                                                uint32_t* out_indexInCache) {
+  void SceneManager::createSurfaceMaterial( Rc<DxvkContext> ctx, 
+                                            std::optional<RtSurfaceMaterial>& surfaceMaterial,
+                                            const MaterialData& renderMaterialData,
+                                            const DrawCallState& drawCallState) {
     ScopedCpuProfileZone();
     const bool hasTexcoords = drawCallState.hasTextureCoordinates();
     const auto renderMaterialDataType = renderMaterialData.getType();
@@ -997,7 +1002,7 @@ namespace dxvk {
     Rc<DxvkSampler> sampler = originalSampler;
     // If the original sampler if valid and the new rendering material is not legacy type
     // go ahead with patching and maybe merging the sampler states
-    if (originalSampler != nullptr && renderMaterialDataType != MaterialDataType::Legacy) {
+    if(originalSampler != nullptr && renderMaterialDataType != MaterialDataType::Legacy) {
       DxvkSamplerCreateInfo samplerInfo = originalSampler->info(); // Use sampler create info struct as convenience
       renderMaterialData.populateSamplerInfo(samplerInfo);
 
@@ -1006,29 +1011,6 @@ namespace dxvk {
                              samplerInfo.borderColor);
     }
     uint32_t samplerIndex = trackSampler(sampler);
-    uint32_t samplerIndex2 = UINT32_MAX;
-    if (renderMaterialDataType == MaterialDataType::RayPortal) {
-      samplerIndex2 = trackSampler(drawCallState.getMaterialData().getSampler2());
-    }
-
-    XXH64_hash_t preCreationHash = renderMaterialData.getHash();
-    if (renderMaterialDataType == MaterialDataType::Legacy) {
-      preCreationHash = XXH64(&renderMaterialData.getLegacyMaterialData(), sizeof(LegacyMaterialData), preCreationHash);
-    }
-    preCreationHash = XXH64(&samplerIndex, sizeof(samplerIndex), preCreationHash);
-    preCreationHash = XXH64(&samplerIndex2, sizeof(samplerIndex2), preCreationHash);
-    preCreationHash = XXH64(&hasTexcoords, sizeof(hasTexcoords), preCreationHash);
-    preCreationHash = XXH64(&drawCallState.isUsingRaytracedRenderTarget, sizeof(drawCallState.isUsingRaytracedRenderTarget), preCreationHash);
-
-    auto iter = m_preCreationSurfaceMaterialMap.find(preCreationHash);
-    if (iter != m_preCreationSurfaceMaterialMap.end()) {
-      if (out_indexInCache) {
-        *out_indexInCache = iter->second;
-      }
-      return m_surfaceMaterialCache.at(iter->second);
-    }
-
-    std::optional<RtSurfaceMaterial> surfaceMaterial;
 
     if (renderMaterialDataType == MaterialDataType::Legacy || renderMaterialDataType == MaterialDataType::Opaque || drawCallState.isUsingRaytracedRenderTarget) {
       uint32_t albedoOpacityTextureIndex = kSurfaceMaterialInvalidTextureIndex;
@@ -1320,6 +1302,8 @@ namespace dxvk {
       uint32_t maskTextureIndex2 = kSurfaceMaterialInvalidTextureIndex;
       trackTexture(rayPortalMaterialData.getMaskTexture2(), maskTextureIndex2, hasTexcoords, false);
 
+      uint32_t samplerIndex2 = trackSampler(drawCallState.getMaterialData().getSampler2());
+
       uint8_t rayPortalIndex = rayPortalMaterialData.getRayPortalIndex();
       float rotationSpeed = rayPortalMaterialData.getRotationSpeed();
       bool enableEmissive = rayPortalMaterialData.getEnableEmission();
@@ -1332,17 +1316,6 @@ namespace dxvk {
 
       surfaceMaterial.emplace(rayPortalSurfaceMaterial);
     }
-
-    assert(surfaceMaterial.has_value());
-    assert(surfaceMaterial->validate());
-
-    // Cache this
-    const uint32_t index = m_surfaceMaterialCache.track(*surfaceMaterial);
-    m_preCreationSurfaceMaterialMap[preCreationHash] = index;
-    if (out_indexInCache) {
-      *out_indexInCache = index;
-    }
-    return m_surfaceMaterialCache.at(index);
   }
 
   std::optional<XXH64_hash_t> SceneManager::findLegacyTextureHashByObjectPickingValue(uint32_t objectPickingValue) {
