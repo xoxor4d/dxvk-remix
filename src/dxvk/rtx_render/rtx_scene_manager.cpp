@@ -1115,19 +1115,19 @@ namespace dxvk {
         } else {
           if (defaults.useAlbedoTextureIfPresent()) {
             // NOTE: Do not patch original sampler to preserve filtering behavior of the legacy material
-            trackTexture(ctx, legacyMaterialData.getColorTexture(), albedoOpacityTextureIndex, hasTexcoords);
+            trackTexture(legacyMaterialData.getColorTexture(), albedoOpacityTextureIndex, hasTexcoords);
 
             // #l4d2
             if (thinFilmEnable)
             {
               // gradient map
               if (&legacyMaterialData.getColorTexture2()) {
-                trackTexture(ctx, legacyMaterialData.getColorTexture2(), tangentTextureIndex, hasTexcoords);
+                trackTexture(legacyMaterialData.getColorTexture2(), tangentTextureIndex, hasTexcoords);
               }
 
               // detail map
               if (&legacyMaterialData.getColorTexture3()) {
-                trackTexture(ctx, legacyMaterialData.getColorTexture3(), metallicTextureIndex, hasTexcoords);
+                trackTexture(legacyMaterialData.getColorTexture3(), metallicTextureIndex, hasTexcoords);
               }
             }
           }
