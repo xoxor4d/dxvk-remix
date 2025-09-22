@@ -255,7 +255,8 @@ namespace dxvk {
       case D3DDECLUSAGE_COLOR:
         if (element.UsageIndex == 0 &&
             !RtxOptions::ignoreAllVertexColorBakedLighting() &&
-            !lookupHash(RtxOptions::ignoreBakedLightingTextures(), m_activeDrawCallState.materialData.colorTextures[0].getImageHash())) {
+            !lookupHash(RtxOptions::ignoreBakedLightingTextures(), m_activeDrawCallState.materialData.colorTextures[0].getImageHash()) &&
+            !CategoryFlags(m_activeDrawCallState.materialData.remixTextureCategoryFlagsFromD3D).test(InstanceCategories::IgnoreBakedLighting)) {
           targetBuffer = &geoData.color0Buffer;
         }
         break;

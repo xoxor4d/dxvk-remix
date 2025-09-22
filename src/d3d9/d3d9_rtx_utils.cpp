@@ -221,6 +221,13 @@ namespace dxvk {
 
     // Allow the users to configure vertex color as baked lighting for legacy draw calls.
     materialData.isVertexColorBakedLighting = RtxOptions::vertexColorIsBakedLighting();
+
+    // usage of unused renderstates - unused values are set to 0xfefefefe
+    materialData.remixTextureCategoryFlagsFromD3D = d3d9State.renderStates[42] != 0xfefefefe ? d3d9State.renderStates[42] : 0u;
+    materialData.remixModifierFromD3D = d3d9State.renderStates[149] != 0xfefefefe ? d3d9State.renderStates[149] : 0u;
+    materialData.remixHashFromD3D = d3d9State.renderStates[150] != 0xfefefefe ? d3d9State.renderStates[150] : 0u;
+    materialData.remixTempFloat01FromD3D = d3d9State.renderStates[169] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[169]) : 0.0f;
+    materialData.remixTempFloat02FromD3D = d3d9State.renderStates[177] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[177]) : 0.0f;
   }
 
 
