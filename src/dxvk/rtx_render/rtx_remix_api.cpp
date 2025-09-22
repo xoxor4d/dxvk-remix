@@ -729,33 +729,34 @@ namespace {
 
     CategoryFlags toRtCategories(remixapi_InstanceCategoryFlags flags) {
       CategoryFlags result { 0 };
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_WORLD_UI                 ){ result.set(InstanceCategories::WorldUI               ); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_WORLD_MATTE              ){ result.set(InstanceCategories::WorldMatte            ); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_SKY                      ){ result.set(InstanceCategories::Sky                   ); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE                   ){ result.set(InstanceCategories::Ignore                ); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_LIGHTS            ){ result.set(InstanceCategories::IgnoreLights          ); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_ANTI_CULLING      ){ result.set(InstanceCategories::IgnoreAntiCulling     ); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_MOTION_BLUR       ){ result.set(InstanceCategories::IgnoreMotionBlur      ); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_OPACITY_MICROMAP  ){ result.set(InstanceCategories::IgnoreOpacityMicromap ); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_ALPHA_CHANNEL     ){ result.set(InstanceCategories::IgnoreAlphaChannel    ); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_HIDDEN                   ){ result.set(InstanceCategories::Hidden                ); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_PARTICLE                 ){ result.set(InstanceCategories::Particle              ); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_BEAM                     ){ result.set(InstanceCategories::Beam                  ); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_STATIC             ){ result.set(InstanceCategories::DecalStatic           ); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_DYNAMIC            ){ result.set(InstanceCategories::DecalDynamic          ); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_SINGLE_OFFSET      ){ result.set(InstanceCategories::DecalSingleOffset     ); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_NO_OFFSET          ){ result.set(InstanceCategories::DecalNoOffset         ); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_ALPHA_BLEND_TO_CUTOUT    ){ result.set(InstanceCategories::AlphaBlendToCutout    ); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_TERRAIN                  ){ result.set(InstanceCategories::Terrain               ); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_ANIMATED_WATER           ){ result.set(InstanceCategories::AnimatedWater         ); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_MODEL){ result.set(InstanceCategories::ThirdPersonPlayerModel); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_BODY ){ result.set(InstanceCategories::ThirdPersonPlayerBody ); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_BAKED_LIGHTING    ){ result.set(InstanceCategories::IgnoreBakedLighting   ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_WORLD_UI                 ){ result.set(InstanceCategories::WorldUI                ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_WORLD_MATTE              ){ result.set(InstanceCategories::WorldMatte             ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_SKY                      ){ result.set(InstanceCategories::Sky                    ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE                   ){ result.set(InstanceCategories::Ignore                 ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_LIGHTS            ){ result.set(InstanceCategories::IgnoreLights           ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_ANTI_CULLING      ){ result.set(InstanceCategories::IgnoreAntiCulling      ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_MOTION_BLUR       ){ result.set(InstanceCategories::IgnoreMotionBlur       ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_OPACITY_MICROMAP  ){ result.set(InstanceCategories::IgnoreOpacityMicromap  ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_ALPHA_CHANNEL     ){ result.set(InstanceCategories::IgnoreAlphaChannel     ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_HIDDEN                   ){ result.set(InstanceCategories::Hidden                 ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_PARTICLE                 ){ result.set(InstanceCategories::Particle               ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_BEAM                     ){ result.set(InstanceCategories::Beam                   ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_STATIC             ){ result.set(InstanceCategories::DecalStatic            ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_DYNAMIC            ){ result.set(InstanceCategories::DecalDynamic           ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_SINGLE_OFFSET      ){ result.set(InstanceCategories::DecalSingleOffset      ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_NO_OFFSET          ){ result.set(InstanceCategories::DecalNoOffset          ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_ALPHA_BLEND_TO_CUTOUT    ){ result.set(InstanceCategories::AlphaBlendToCutout     ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_TERRAIN                  ){ result.set(InstanceCategories::Terrain                ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_ANIMATED_WATER           ){ result.set(InstanceCategories::AnimatedWater          ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_MODEL){ result.set(InstanceCategories::ThirdPersonPlayerModel ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_BODY ){ result.set(InstanceCategories::ThirdPersonPlayerBody  ); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_BAKED_LIGHTING    ){ result.set(InstanceCategories::IgnoreBakedLighting    ); }
       if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_TRANSPARENCY_LAYER){ result.set(InstanceCategories::IgnoreTransparencyLayer); }
       if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_PARTICLE_EMITTER)         { result.set(InstanceCategories::ParticleEmitter); }
-      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_LEGACY_EMISSIVE)           { result.set(InstanceCategories::SmoothNormals); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_SMOOTH_NORMALS)            { result.set(InstanceCategories::SmoothNormals); }
+      if (flags & REMIXAPI_INSTANCE_CATEGORY_BIT_DISABLE_BACKFACE_CULLING) { result.set(InstanceCategories::DisableBackfaceCulling); }
       
-      static_assert((int)InstanceCategories::Count == 25, "Instance categories changed, please update Remix SDK");
+      static_assert((int)InstanceCategories::Count == 27, "Instance categories changed, please update Remix SDK");
       return result;
     }
 
@@ -1507,13 +1508,13 @@ namespace {
 
     *out_handle = handle;
     // Auto-register for persistent instancing on device
-    {
+    /*{
       auto devLock = remixDevice->LockDevice();
       remixDevice->EmitCs([cHandle = handle](dxvk::DxvkContext* ctx) {
         auto& lightMgr = ctx->getCommonObjects()->getSceneManager().getLightManager();
         lightMgr.registerPersistentExternalLight(cHandle);
       });
-    }
+    }*/
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 
@@ -1572,10 +1573,10 @@ namespace {
     if (!remixDevice) {
       return REMIXAPI_ERROR_CODE_REMIX_DEVICE_WAS_NOT_REGISTERED;
     }
-    {
+   /* {
       std::lock_guard lock { s_mutex };
       s_pendingLightDestroys.push_back(handle);
-    }
+    }*/
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 
@@ -1591,7 +1592,7 @@ namespace {
     }
 
     // beginScene on first API submission per frame (lights-only frames)
-    dxvk::fork_hooks::notifyBeginScene();
+    //dxvk::fork_hooks::notifyBeginScene();
 
     // async load
     std::lock_guard lock { s_mutex };
@@ -2074,7 +2075,7 @@ namespace {
       return REMIXAPI_ERROR_CODE_REMIX_DEVICE_WAS_NOT_REGISTERED;
     }
     // Apply pending creates, updates and auto-instance persistent lights once per frame
-    std::vector<PendingLightCreate> creates;
+/*    std::vector<PendingLightCreate> creates;
     std::vector<PendingLightUpdate> updates;
     std::vector<PendingDomeUpdate> domeUpdates;
     std::vector<remixapi_LightHandle> destroys;
@@ -2182,13 +2183,13 @@ namespace {
       applyPendingMeshCreatesOnCs(ctx, meshCreates);
 
       lightMgr.queueAutoInstancePersistent();
-    });
+    });*/
 
     // Forward any pending screen overlay to the render thread for this frame.
-    dxvk::fork_hooks::presentScreenOverlayFlush(remixDevice);
+    //dxvk::fork_hooks::presentScreenOverlayFlush(remixDevice);
 
     // endScene callback before native present (fork-owned state)
-    dxvk::fork_hooks::presentEndSceneDispatch();
+    //dxvk::fork_hooks::presentEndSceneDispatch();
 
     HRESULT hr = remixDevice->Present(NULL, NULL, info ? info->hwndOverride : NULL, NULL);
     if (FAILED(hr)) {
@@ -2265,7 +2266,7 @@ extern "C"
       return REMIXAPI_ERROR_CODE_REMIX_DEVICE_WAS_NOT_REGISTERED;
     }
     // Drain pending work and apply on render thread at a safe point
-    std::vector<PendingLightCreate> creates;
+/*    std::vector<PendingLightCreate> creates;
     std::vector<PendingLightUpdate> updates;
     std::vector<PendingDomeUpdate> domeUpdates;
     std::vector<remixapi_LightHandle> destroys;
@@ -2364,10 +2365,10 @@ extern "C"
 
       // Ensure persistent auto-instancing happens every frame
       lightMgr.queueAutoInstancePersistent();
-    });
+    });*/
 
     // Forward any pending screen overlay to the render thread for this frame.
-    dxvk::fork_hooks::presentScreenOverlayFlush(remixDevice);
+    //dxvk::fork_hooks::presentScreenOverlayFlush(remixDevice);
 
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
@@ -2383,7 +2384,7 @@ extern "C"
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
     }
     // Handle dome light update if present in pNext chain
-    if (auto extDome = pnext::find<remixapi_LightInfoDomeEXT>(info)) {
+/*    if (auto extDome = pnext::find<remixapi_LightInfoDomeEXT>(info)) {
       auto cTransform = convert::tomat4(extDome->transform);
       auto cTexturePath = convert::topath(extDome->colorTexture);
       auto cRadiance = convert::tovec3(info->radiance);
@@ -2412,7 +2413,7 @@ extern "C"
     {
       std::lock_guard lock { s_mutex };
       s_pendingLightUpdates.push_back(PendingLightUpdate{ handle, std::move(rt) });
-    }
+    }*/
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 

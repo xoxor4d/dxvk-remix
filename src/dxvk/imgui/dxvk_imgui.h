@@ -67,7 +67,8 @@ namespace dxvk {
     enum class Theme {
       Toolkit,
       Legacy,
-      Nvidia
+      Nvidia,
+      Gta4,
     };
 
     ImGUI(DxvkDevice* device);
@@ -266,6 +267,9 @@ namespace dxvk {
     void setToolkitStyle(ImGuiStyle* dst);
     // Sets Nvidia inspired UI theme
     void setNvidiaStyle(ImGuiStyle* dst);
+    // Sets Gta4 inspired UI theme
+    void setGta4Style(ImGuiStyle* dst);
+
     // Custom style
     void setupStyle(ImGuiStyle* dst = NULL);
 
@@ -289,7 +293,7 @@ namespace dxvk {
                     args.onChangeCallback = &onThemeChange, args.flags = RtxOptionFlags::UserSetting);
     RTX_OPTION_ARGS("rtx.gui", float, backgroundAlpha, 1.f, "A value controlling the alpha of the GUI background.",
                     args.onChangeCallback = &onBackgroundAlphaChange, args.minValue = 0.0f, args.maxValue = 1.0f, args.flags = RtxOptionFlags::UserSetting);
-    RTX_OPTION_ARGS("rtx.gui", Theme, themeGui, Theme::Toolkit, "A setting controlling the active GUI theme.",
+    RTX_OPTION_ARGS("rtx.gui", Theme, themeGui, Theme::Gta4, "A setting controlling the active GUI theme.",
                     args.onChangeCallback = &onThemeChange, args.flags = RtxOptionFlags::UserSetting);
     RTX_OPTION_ARGS("rtx.gui", bool, largeUiMode, false, "Toggles between Large and Regular GUI Scale Modes.",
                     args.onChangeCallback = &onThemeChange, args.flags = RtxOptionFlags::UserSetting);
