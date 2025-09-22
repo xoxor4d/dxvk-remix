@@ -1143,6 +1143,9 @@ namespace dxvk {
       float subsurfaceMaxSampleRadius = 0.0f;
 
       bool ignoreAlphaChannel = false;
+      bool freeFlag01 = false;
+      bool freeFlag02 = false;
+      bool freeFlag03 = false;
 
       constexpr Vector4 kWhiteModeAlbedo = Vector4(0.7f, 0.7f, 0.7f, 1.0f);
 
@@ -1184,6 +1187,19 @@ namespace dxvk {
       displaceOut = opaqueMaterialData.getDisplaceOut();
 
       ignoreAlphaChannel = opaqueMaterialData.getIgnoreAlphaChannel();
+
+      if (drawCallState.materialData.remixModifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR) {
+        emissiveIntensity = opaqueMaterialData.getEmissiveIntensity() * RtxOptions::emissiveIntensity() * drawCallState.materialData.remixTempFloat01FromD3D;
+      }
+
+      if (drawCallState.materialData.remixModifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR) {
+        roughnessConstant = drawCallState.materialData.remixTempFloat02FromD3D;
+        freeFlag01 = true;
+      }
+
+      if (drawCallState.materialData.remixModifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_ENABLE_VERTEX_COLOR) {
+        freeFlag02 = true;
+      }
 
       subsurfaceMeasurementDistance = opaqueMaterialData.getSubsurfaceMeasurementDistance() * RtxOptions::SubsurfaceScattering::surfaceThicknessScale();
 
@@ -1253,7 +1269,7 @@ namespace dxvk {
         ignoreAlphaChannel, thinFilmEnable, alphaIsThinFilmThickness,
         thinFilmThicknessConstant, samplerIndex, displaceIn, displaceOut, 
         subsurfaceMaterialIndex, isUsingRaytracedRenderTarget,
-        samplerFeedbackStamp,
+        samplerFeedbackStamp, freeFlag01, freeFlag02, freeFlag03
       };
 
       if (opaqueSurfaceMaterial.hasValidDisplacement()) {
