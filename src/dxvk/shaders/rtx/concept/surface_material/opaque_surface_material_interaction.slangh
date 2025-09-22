@@ -1,4 +1,4 @@
-/*
+﻿/*
 * Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
 *
 * Permission is hereby granted, free of charge, to any person obtaining a
@@ -22,6 +22,13 @@
 #pragma once
 
 #include "opaque_surface_material_blending.slangh"
+#include "rtx/external/simplex_noise.slangh"
+#include "rtx/concept/camera/camera.slangh"
+#include "rtx/concept/ray/ray.h"
+#include "rtx/concept/ray/ray_helper.slangh"
+#include "rtx/concept/surface/surface.slangh"
+#include "rtx/pass/instance_definitions.h"
+#include "rtx/pass/common_bindings.slangh"
 
 // Opaque Surface Material Interaction Constants
 
@@ -39,6 +46,121 @@ static const float roughnessThreshold = float(0.001f);
 #define OPAQUE_MATERIAL_USE_BOUNDED_VNDF_SAMPLING 1
 
 // Opaque Surface Material Interaction Helper Functions
+
+// Helper function to get stable coordinates for raindrop calculations
+// For objects with rotation in objectToWorld, transforms to object space
+// For skinned meshes (where rotation is in bone transforms), uses tangent space instead
+vec3 getStablePositionForRaindrops(Surface surface, SurfaceInteraction surfaceInteraction, vec3 worldPosition)
+{
+    float3 right   = surface.objectToWorld[0].xyz;
+    float3 up      = surface.objectToWorld[1].xyz;
+    float3 forward = surface.objectToWorld[2].xyz;
+
+    float3 T = float3(
+        surface.objectToWorld[0].w,
+        surface.objectToWorld[1].w,
+        surface.objectToWorld[2].w
+    );
+
+    mat3 R = mat3(right, up, forward);
+    
+    // Check if the rotation matrix is significant (not close to identity)
+    // For skinned meshes, R might be identity or very close to it
+    float3 identityCheck = abs(right - float3(1,0,0)) + abs(up - float3(0,1,0)) + abs(forward - float3(0,0,1));
+    bool hasRotation = length(identityCheck) > 0.1f;
+    
+    if (hasRotation)
+    {
+        // Object has rotation in objectToWorld - transform to object space
+        mat3 invR = transpose(R);
+        return mul(invR, worldPosition - T);
+    }
+    else
+    {
+        // Skinned mesh or no rotation - use tangent space for stable coordinates
+        // Transform world position relative to triangle's local coordinate system
+        const mat3 worldToTangent = mat3(
+            surfaceInteraction.triangleTangent,
+            surfaceInteraction.triangleBitangent,
+            surfaceInteraction.triangleNormal
+        );
+        vec3 localPos = worldPosition - surfaceInteraction.position;
+        return mul(worldToTangent, localPos);
+    }
+}
+
+// Helper function to check if there's geometry above the surface (occlusion check for wetness)
+// Returns a factor from 0.0 (fully occluded/can't get wet) to 1.0 (fully exposed/can get wet)
+// Note: Always uses world Z-up direction since rain falls straight down due to gravity
+// Filters out non-static objects (vertex shader animated) and alpha-tested objects (foliage)
+// Continues ray through non-static/alpha-tested objects to find valid static occlusion beyond them
+float checkUpwardOcclusion(vec3 surfacePosition, float maxDistance)
+{
+  // Always use world Z-up direction (rain falls straight down)
+  vec3 upwardDirection = vec3(0.0f, 0.0f, 1.0f);
+  
+  // Offset ray origin slightly above surface to avoid self-intersection
+  vec3 rayOrigin = surfacePosition + upwardDirection * 0.01f;
+  
+  // Create ray description
+  RayDesc rayDesc;
+  rayDesc.Origin = rayOrigin;
+  rayDesc.Direction = upwardDirection;
+  rayDesc.TMin = 0.0f;
+  rayDesc.TMax = maxDistance;
+  
+  // Trace ray to check for occlusion
+  // Use OBJECT_MASK_OPAQUE to check opaque geometry
+  // Use RAY_FLAG_FORCE_NON_OPAQUE to treat all hits as candidates so we can filter them
+  // This allows the ray to continue through non-static/alpha-tested objects
+  uint rayFlags = RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES | RAY_FLAG_CULL_BACK_FACING_TRIANGLES;
+  uint8_t rayMask = OBJECT_MASK_OPAQUE;
+  
+  RayQuery<0> rayQuery = RayQuery<0>();
+  rayQuery.TraceRayInline(topLevelAS, rayFlags, rayMask, rayDesc);
+  
+  // Process candidates and only commit valid static, fully opaque hits
+  // This allows the ray to continue through non-static/alpha-tested objects
+  while (rayQuery.Proceed())
+  {
+    // Check each candidate hit
+    if (rayQuery.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
+    {
+      // Get instance custom index and geometry index for this candidate
+      uint customIndex = rayQuery.CandidateInstanceID();
+      uint geometryIndex = rayQuery.CandidateGeometryIndex();
+      
+      // Calculate surface index from customIndex (same as calculateSurfaceIndex)
+      uint surfaceIndex = (customIndex & CUSTOM_INDEX_SURFACE_MASK) + geometryIndex;
+      
+      // Look up surface data
+      Surface hitSurface = surfaces[nonuniformEXT(surfaceIndex)];
+      
+      // Only commit static, fully opaque objects
+      // Skip non-static (vertex shader animated) and alpha-tested objects (foliage)
+      bool isStatic = hitSurface.isStatic;
+      bool isFullyOpaque = hitSurface.isFullyOpaque;
+      
+      if (isStatic && isFullyOpaque)
+      {
+        // Valid occlusion candidate - commit this hit
+        rayQuery.CommitNonOpaqueTriangleHit();
+      }
+      // Otherwise, don't commit - ray will continue to next candidate
+    }
+  }
+  
+  // Check if we committed any valid hit
+  if (rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
+  {
+    // Found valid static, fully opaque occlusion above
+    // Surface can't get wet
+    return 0.0f;
+  }
+  
+  // No valid occlusion found - surface can get wet
+  return 1.0f;
+}
 
 #ifdef OPAQUE_MATERIAL_USE_POM
 // Parallax Occlusion Mapping Helper Functions
@@ -563,6 +685,28 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
   opaqueSurfaceMaterialInteraction.flags |= thinFilmEnabled ? OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_USE_THIN_FILM_LAYER : 0;
 
+  const bool d3dModRoughnessScalar = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_ROUGHNESS_SCALAR;
+  const bool d3dModEnableVertexColor = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_ENABLE_VERTEX_COLOR;
+  const bool d3dModDecalDirt = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_DECAL_DIRT;
+  const bool d3dModRemVertexColorKeepAlpha = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_REM_VERTEX_COLOR_KEEP_ALPHA;
+  const bool d3dModVehicleDecalDirt = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_VEHICLE_DECAL_DIRT;
+  const bool d3dModGlobalUvModifier = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_GLOBAL_UV_MODIFIER;
+  const bool d3dFlag07 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_07;
+  const bool d3dFlag08 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_08;
+
+  if (d3dModRemVertexColorKeepAlpha)
+  {
+    surfaceInteraction.vertexColor.rgb = f16vec3(1.0);
+  }
+
+  if (d3dModGlobalUvModifier)
+  {
+      vec3 coords = vec3(surfaceInteraction.textureCoordinates, 1.0f);
+      vec3 globUV0 = vec3(opaqueSurfaceMaterial.m_freeFloat03,           opaqueSurfaceMaterial.m_freeFloat04,           opaqueSurfaceMaterial.albedoOpacityConstant.x);
+      vec3 globUV1 = vec3(opaqueSurfaceMaterial.albedoOpacityConstant.y, opaqueSurfaceMaterial.albedoOpacityConstant.z, opaqueSurfaceMaterial.albedoOpacityConstant.w);
+      surfaceInteraction.textureCoordinates = vec2(dot(coords, globUV0), dot(coords, globUV1));
+  }
+
 #ifdef OPAQUE_MATERIAL_USE_POM
   if (cb.pomMode != DisplacementMode::Off && opaqueSurfaceMaterial.hasValidDisplacement())
   {
@@ -698,7 +842,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   if (applyTextureOperations) 
 #endif
   {
-    if (surface.isVertexColorBakedLighting) {
+    if (surface.isVertexColorBakedLighting && !d3dModEnableVertexColor) {
       // "Normalize" vertex color to remove lighting contribution in different vertices.
       // We assume the diffuse term contributes most lighting. Therefore, vertex color = diffuseColor * (N*L).
       // By dividing the vertex color by its largest component, the result is irrelavant to N*L, but proportional to the 
@@ -710,34 +854,50 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
       surfaceInteraction.vertexColor.rgb = mix(vec3(1), surfaceInteraction.vertexColor.rgb, float(cb.vertexColorStrength));
     }
 
-    // Fixed function texture stage setting
-    vec3 textureArg1 = vec3(1.0), textureArg2 = vec3(1.0);
-    chooseTextureArgument(textureArg1, surface.textureColorArg1Source, albedo, surfaceInteraction.vertexColor.rgb, tFactor.rgb, vec3(1.0));
-    chooseTextureArgument(textureArg2, surface.textureColorArg2Source, albedo, surfaceInteraction.vertexColor.rgb, tFactor.rgb, vec3(1.0));
-    chooseTextureOperationColor(albedo, surface.textureColorOperation, textureArg1, textureArg2);
-    if (surface.isTextureFactorBlend) {
-      albedo *= tFactor.rgb;
+    if (d3dModVehicleDecalDirt)
+    {
+      if (albedo.x > 0.0)
+      {
+        opacity = albedo.r * tFactor.a; // dirtMask.r * dirtLevel
+        albedo = tFactor.rgb;
+      }
+      else
+      {
+        opacity = 0.h;
+      }
     }
+    else
+    {
+      // Fixed function texture stage setting
+      f16vec3 textureArg1 = vec3(1.0), textureArg2 = vec3(1.0);
+      chooseTextureArgument(textureArg1, surface.textureColorArg1Source, albedo, surfaceInteraction.vertexColor.rgb, tFactor.rgb, vec3(1.0));
+      chooseTextureArgument(textureArg2, surface.textureColorArg2Source, albedo, surfaceInteraction.vertexColor.rgb, tFactor.rgb, vec3(1.0));
+      chooseTextureOperationColor(albedo, surface.textureColorOperation, textureArg1, textureArg2);
 
-    // Fixed function texture stage setting (emissive)
-    chooseTextureArgument(textureArg1, surface.textureColorArg1Source, emissiveColor, surfaceInteraction.vertexColor.rgb, tFactor.rgb, vec3(1.0));
-    chooseTextureArgument(textureArg2, surface.textureColorArg2Source, emissiveColor, surfaceInteraction.vertexColor.rgb, tFactor.rgb, vec3(1.0));
-    chooseTextureOperationColor(emissiveColor, surface.textureColorOperation, textureArg1, textureArg2);
-    if (surface.isTextureFactorBlend) {
-      emissiveColor *= tFactor.rgb;
+      if (surface.isTextureFactorBlend) {
+        albedo *= tFactor.rgb;
+      }
+      
+      // Fixed function texture stage setting (emissive)
+      chooseTextureArgument(textureArg1, surface.textureColorArg1Source, emissiveColor, surfaceInteraction.vertexColor.rgb, tFactor.rgb, vec3(1.0));
+      chooseTextureArgument(textureArg2, surface.textureColorArg2Source, emissiveColor, surfaceInteraction.vertexColor.rgb, tFactor.rgb, vec3(1.0));
+      chooseTextureOperationColor(emissiveColor, surface.textureColorOperation, textureArg1, textureArg2);
+      if (surface.isTextureFactorBlend) {
+        emissiveColor *= tFactor.rgb;
+      }
+      
+      // Adjust opacity via texture operations.
+      // Fixed function texture stage state for alpha channel
+      
+      float16_t textureAlphaArg1, textureAlphaArg2;
+      chooseTextureArgument(textureAlphaArg1, surface.textureAlphaArg1Source, opacity, surfaceInteraction.vertexColor.a, tFactor.a, opacity);
+      chooseTextureArgument(textureAlphaArg2, surface.textureAlphaArg2Source, opacity, surfaceInteraction.vertexColor.a, tFactor.a, float16_t(1.0f));
+      chooseTextureOperationAlpha(opacity, surface.textureAlphaOperation, textureAlphaArg1, textureAlphaArg2);
+      
+      // Ensure we perform these opacity calculations after the texture operations have been applied to abledo and alpha.
+      calcOpaqueSurfaceMaterialOpacity(
+        albedo, opacity, surface, opacity, emissiveBlendOverrideInfluence, cb.wboitEnabled);
     }
-    
-    // Adjust opacity via texture operations.
-    // Fixed function texture stage state for alpha channel
-
-    float textureAlphaArg1, textureAlphaArg2;
-    chooseTextureArgument(textureAlphaArg1, surface.textureAlphaArg1Source, opacity, surfaceInteraction.vertexColor.a, tFactor.a, opacity);
-    chooseTextureArgument(textureAlphaArg2, surface.textureAlphaArg2Source, opacity, surfaceInteraction.vertexColor.a, tFactor.a, float(1.0f));
-    chooseTextureOperationAlpha(opacity, surface.textureAlphaOperation, textureAlphaArg1, textureAlphaArg2);
-    
-    // Ensure we perform these opacity calculations after the texture operations have been applied to abledo and alpha.
-    calcOpaqueSurfaceMaterialOpacity(
-      albedo, opacity, surface, opacity, emissiveBlendOverrideInfluence, cb.wboitEnabled);
   }
 
   if (opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_IGNORE_ALPHA_CHANNEL)
@@ -839,6 +999,667 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 #endif  
   // Apply material modifiers
   roughness = saturate(roughness * cb.opaqueMaterialArgs.roughnessScale + cb.opaqueMaterialArgs.roughnessBias);
+
+  #if 1
+  if (d3dModRoughnessScalar)
+  {
+    uint packedBits1 = uint(opaqueSurfaceMaterial.m_wetnessParams1);
+    uint packedBits2 = uint(opaqueSurfaceMaterial.m_wetnessParams2);
+    
+    float scalar = (float((packedBits1 >> 10) & 0x3F) * (4.0f / 63.0f)); // 0-4 range
+    scalar -= 2.0f; // remap [0,4] → [-2,+2]
+
+    float zNormal = (float((packedBits1 >> 5) & 0x1F) / 31.0f);
+    float blendWidth = (float((packedBits1) & 0x1F) / 31.0f);
+    float raindropScale = float(packedBits2 & 0xFF) * (10.0f / 255.0f);
+    uint wetnessFlags = (packedBits2 >> 8) & 0xFF;
+
+    const bool enableWetnessVariation = wetnessFlags & (1u << 0);
+    const bool enableRaindrops = wetnessFlags & (1u << 1);
+    const bool useTextureCoordsForRaindrops = wetnessFlags & (1u << 2);
+    const bool useExpRaindrops = wetnessFlags & (1u << 3);
+    const bool raindropsHalfDensity = wetnessFlags & (1u << 4);
+    const bool enablePuddleLayer = wetnessFlags & (1u << 5);
+    const bool enableOcclusionCheck = wetnessFlags & (1u << 6);
+    const bool useSmoothOcclusion = wetnessFlags & (1u << 7);
+
+    float16_t originalNormalZ = surfaceInteraction.interpolatedNormal.z; //normal.z;
+    float16_t wetblend = saturate(smoothstep(zNormal - blendWidth, zNormal + blendWidth, originalNormalZ));
+
+    const float16_t wetblendBase = wetblend;            // preserves smooth world blending (normal-based)
+    float16_t wetblendForRoughness = wetblendBase;      // allows puddle logic to add detail without destroying base blend
+
+    float raindropScaleMult = (raindropScale > 0.0f ? max(raindropScale, 0.1f) : 3.0f);
+    float animationSpeedMult = 0.4f;
+    float raindropStrength = 5.0f;
+    float raindropRoughnessScale = 2.7f;
+    float raindropNormalScale = 0.5f;
+    float raindropVisibilityMult = 14.0f;
+    
+    float layerRoughnessScale[4];
+    layerRoughnessScale[0] = raindropRoughnessScale;
+    layerRoughnessScale[1] = raindropRoughnessScale;
+    layerRoughnessScale[2] = raindropRoughnessScale;
+    layerRoughnessScale[3] = raindropRoughnessScale;
+    
+    const float16_t maxRaindropDistance = float16_t(35.0f);
+    const float16_t maxPuddleDistance = float16_t(300.0f);
+    
+    float combinedRaindropMask = 0.0f;
+    f16vec3 raindropNormalOffset = f16vec3(0.0h);
+    float combinedRoughnessMask = 0.0f;
+    
+    // Hard cutoff for vertical walls: surfaces with normal.z <= 0.1 are considered vertical and get no wetness
+    // Note: wetblend handles smooth blending via smoothstep(zNormal - blendWidth, zNormal + blendWidth)
+    const float verticalWallThreshold = 0.1f;
+    bool isVerticalWall = originalNormalZ <= float16_t(verticalWallThreshold);
+    
+    float16_t cameraDistanceHalf = float16_t(length(surfaceInteraction.position - cameraGetWorldPosition(cb.camera)));
+    
+    // Calculate occlusion factor for wetness (only check within occlusion distance)
+    // Distance fade: blend from half the distance to full distance for smooth transition
+    // Only check occlusion for horizontal surfaces - vertical walls don't need overhead occlusion checks
+    float16_t occlusionCheckDistance = float16_t(120.0h);
+    float occlusionFactor = 1.0f;
+
+    if (enableOcclusionCheck && !isVerticalWall && cameraDistanceHalf <= float16_t(occlusionCheckDistance))
+    {
+      if (useSmoothOcclusion)
+      {
+        // Smooth occlusion using spatial noise for soft edges
+        // Best used with DLSS Ray Reconstruction to hide noise grain
+        float ditherRadius = 1.8f; // Dither radius in world units
+        float noiseScale = 200.0f; // Noise frequency control
+        
+        // Generate smooth 2D offset using simplex noise
+        // Use different scales for X and Y to get independent smooth variation
+        vec3 noisePos = surfaceInteraction.position * noiseScale;
+        float noiseX = simplexNoise3D(noisePos);
+        float noiseY = simplexNoise3D(noisePos + vec3(127.3f, 311.7f, 74.2f)); // Offset for independent Y noise
+        
+        // Convert from [-1, 1] to offset range
+        vec2 smoothOffset = vec2(noiseX, noiseY) * ditherRadius;
+        
+        // Sample occlusion at smoothly offset position
+        vec3 samplePos = surfaceInteraction.position + vec3(smoothOffset.x, smoothOffset.y, 0.0f);
+        occlusionFactor = checkUpwardOcclusion(samplePos, float(maxPuddleDistance * 2.0f));
+      }
+      else
+      {
+        // Hard cutoff - simple single-ray check with no noise
+        // Clean edges, no grain, works well without ray reconstruction
+        occlusionFactor = checkUpwardOcclusion(surfaceInteraction.position, float(maxPuddleDistance * 2.0f));
+      }
+      
+      // Apply distance-based fade: blend from half distance to full distance
+      float halfDistance = float(occlusionCheckDistance) * 0.5f;
+      float distanceFade = smoothstep(halfDistance, float(occlusionCheckDistance), float(cameraDistanceHalf));
+      occlusionFactor = lerp(occlusionFactor, 1.0f, distanceFade);
+    }
+    
+    // -------
+    // puddles
+
+    if (enableWetnessVariation && !isVerticalWall && wetblendBase > float16_t(0.0f) && cameraDistanceHalf <= float16_t(maxPuddleDistance))
+    {
+      const float puddleNoiseScale = 0.2f;
+      float noiseValue = simplexNoise3D(surfaceInteraction.position * puddleNoiseScale);
+      float puddleMaskRaw = saturate((noiseValue + 1.0f) * 0.5f);
+      
+      const float puddleThreshold = 0.5f;
+      const float puddleContrast = 2.6f;
+      
+      float thresholdRemapped = saturate((puddleMaskRaw - puddleThreshold * 0.5f) / max(1.0f - puddleThreshold * 0.5f, 0.001f));
+      thresholdRemapped = pow(thresholdRemapped, 1.0f / puddleContrast);
+      
+      const float minWetness = 0.5f;
+      float baseWetnessMask = lerp(minWetness, 1.0f, thresholdRemapped);
+      
+      const float largePuddleScale = 0.03f;
+      float largePuddleNoise = simplexNoise3D(surfaceInteraction.position * largePuddleScale);
+      float largePuddleMask = saturate((largePuddleNoise + 1.0f) * 0.5f);
+      largePuddleMask = pow(largePuddleMask, 2.0f);
+      baseWetnessMask = saturate(baseWetnessMask + largePuddleMask * 0.3f);
+      
+      const float streakContrast = 2.4f;
+      vec3 ripplePos = surfaceInteraction.position * 0.5f;
+      float rippleX = abs(simplexNoise3D(vec3(ripplePos.x * 0.2f, ripplePos.y, ripplePos.z * 2.0f)));
+      float rippleZ = abs(simplexNoise3D(vec3(ripplePos.x * 2.0f, ripplePos.y, ripplePos.z * 0.2f)));
+      float rippleMask = saturate((rippleX + rippleZ) * 0.4f);
+      rippleMask = pow(rippleMask, 1.0f / streakContrast);
+      const float rippleStrength = 0.18f;
+      puddleMaskRaw = saturate(baseWetnessMask - rippleMask * rippleStrength);
+      
+      const float puddleStrength = 1.1f;
+      
+      float16_t puddleMask = float16_t(saturate(puddleMaskRaw));
+      // Apply occlusion factor - reduce wetness if surface is covered from above
+      // Only apply occlusion if surface can actually get wet (wetblendBase > 0)
+      if (wetblendBase > float16_t(0.0f))
+      {
+        puddleMask *= float16_t(occlusionFactor);
+      }
+      float16_t puddledWetblend = wetblendBase * puddleMask;
+      wetblendForRoughness = lerp(wetblendBase, puddledWetblend, float16_t(puddleStrength));
+    }
+
+    // -------
+    // reflective puddles layer (sharp puddles with low roughness)
+    
+    if (enablePuddleLayer && !isVerticalWall && wetblendBase > float16_t(0.0f) && cameraDistanceHalf <= float16_t(maxPuddleDistance))
+    {
+      // Hardcoded horizontal threshold for puddles (very flat surfaces only)
+      const float16_t puddleHorizontalThreshold = float16_t(0.98f);
+      if (originalNormalZ >= puddleHorizontalThreshold)
+      {
+        // Scalar influences puddle size, density, and reflectivity
+        // scalar = 0 → fully wet (roughness 0, larger/denser puddles)
+        // scalar = 1 → dry (puddles disappear)
+        // scalar < 0 → not used for global wetness (treat as dry)
+        // scalar ranges from -2 to +2, but only 0-1 range is used for wetness
+        // Map: scalar 0 = fully wet, scalar 1 = dry, scale smoothly in between
+        float wetnessFromScalar = 0.0f;
+        if (scalar >= 0.0f)
+        {
+          wetnessFromScalar = 1.0f - saturate(scalar); // 1.0 when scalar=0 (wet), 0.0 when scalar=1 (dry)
+        }
+        
+        // Hardcoded noise grid scale (larger = larger puddles but fewer)
+        const float baseNoiseScale = 0.15f;
+        const float noiseGridScale = 0.3f;
+        float reflectivePuddleNoiseScale = baseNoiseScale * max(0.1f, noiseGridScale);
+        
+        // Use multiple noise octaves for better puddle distribution
+        float reflectivePuddleNoise = simplexNoise3D(surfaceInteraction.position * reflectivePuddleNoiseScale);
+        
+        // Add a second octave for more variation
+        float reflectivePuddleNoise2 = simplexNoise3D(surfaceInteraction.position * reflectivePuddleNoiseScale * 2.3f) * 0.4f;
+        reflectivePuddleNoise = saturate(reflectivePuddleNoise + reflectivePuddleNoise2);
+        
+        // Hardcoded base density influence
+        // Scalar influences density and size - wetter surfaces get more and larger puddles
+        const float baseDensityInfluenceValue = 0.09f;
+        float baseThreshold = 0.65f;
+        float baseDensityInfluence = baseDensityInfluenceValue;
+        float wetnessDensityInfluence = wetnessFromScalar * 0.25f; // More puddles when wetter
+        float wetnessSizeInfluence = wetnessFromScalar * 0.15f; // Larger puddles when wetter
+        float puddleThreshold = baseThreshold - baseDensityInfluence - wetnessDensityInfluence - wetnessSizeInfluence;
+        
+        // Create puddle mask with smooth but defined edges
+        // Use smoothstep for natural blending like games typically do
+        const float transitionZone = 0.15f; // Larger zone = smoother edges
+        float reflectivePuddleMask = smoothstep(
+          puddleThreshold - transitionZone * 0.5f,
+          puddleThreshold + transitionZone * 0.5f,
+          reflectivePuddleNoise
+        );
+        
+        // Apply additional sharpening for definition while keeping smooth edges
+        reflectivePuddleMask = pow(reflectivePuddleMask, 1.5f);
+        
+        // Scale puddle visibility by wetness - fully wet = full visibility, dry = no puddles
+        reflectivePuddleMask *= wetnessFromScalar;
+        
+        // Apply occlusion factor - reduce puddle visibility if surface is covered from above
+        // Only apply occlusion if surface can actually get wet (wetblendBase > 0)
+        if (wetblendBase > float16_t(0.0f))
+        {
+          reflectivePuddleMask *= occlusionFactor;
+        }
+        
+        // Save the roughness mask before applying horizontal factor
+        // This ensures roughness is applied consistently regardless of slope
+        float roughnessMask = reflectivePuddleMask * saturate(wetblendBase);
+        
+        // Only apply puddles where surface is wet enough and horizontal enough
+        // Use a smooth falloff based on how horizontal the surface is
+        const float horizontalTransitionWidth = 0.2f; // Wider transition for smoother, earlier falloff
+        float horizontalFactor = saturate((originalNormalZ - (puddleHorizontalThreshold - horizontalTransitionWidth)) / max(horizontalTransitionWidth * 2.0f, 0.01f));
+        
+        // Apply horizontal factor to visibility mask only
+        float visibilityMask = reflectivePuddleMask * saturate(wetblendBase) * horizontalFactor;
+        
+        if (visibilityMask > 0.001f)
+        {
+          // Apply wetness: fully wet (wetness=1) → roughness 0, dry (wetness=0) → full roughness
+          float targetRoughness = lerp(roughness, 0.0f, wetnessFromScalar);
+          float16_t puddleRoughness = float16_t(saturate(targetRoughness));
+          
+          // Apply puddle roughness using the roughness mask (without horizontalFactor)
+          // This ensures consistent roughness application regardless of slope near threshold
+          roughness = lerp(roughness, float16_t(puddleRoughness), float16_t(roughnessMask));
+
+          float normalFlattenMask = roughnessMask * wetnessFromScalar;
+          normal = normalize(lerp(normal, surfaceInteraction.interpolatedNormal, float16_t(normalFlattenMask)));
+
+          // Slightly darken albedo
+          albedo.xyz *= lerp(1.0f, 0.85f, normalFlattenMask);
+        }
+      }
+    }
+
+    // ------
+    // raindrops world
+    
+    if (enableRaindrops && !isVerticalWall && cameraDistanceHalf <= float16_t(maxRaindropDistance))
+    {
+        // animation/time
+        float global_time = float(cb.frameIdx) * 0.0333333f * animationSpeedMult;
+    
+        // params
+        const int GRID_NEIGHBOR = 2;
+        float grid_scale = 3.4f * raindropScaleMult + (-4.4f) * (raindropsHalfDensity ? 0.3f : 0.85f); // 0.3 and 0.8
+        float spawn_period = 3.5f + (-2.9f);
+        float drop_life = 1.2f + (-0.9f);
+        float ripple_speed = 1.6f * raindropScaleMult;
+    
+        // droplet tuning
+        float center_radius_base = 0.03f + 0.1f;
+        float center_strength = 0.45f * raindropVisibilityMult + (-3.2f);
+        float ripple_thickness = 0.035f;
+    
+        // ring tuning
+        float dbgW = max(0.25f, abs(0.54f));
+        float ripple_strength = 0.18f * raindropVisibilityMult * dbgW;
+    
+        float normal_scale_center = 1.35f * raindropNormalScale;
+        float normal_scale_ripple = 0.18f * raindropNormalScale;
+    
+        float roughness_center = 0.62f * raindropRoughnessScale;
+        float roughness_ripple = 0.14f * raindropRoughnessScale;
+    
+        // accumulators
+        float accum_visibility = 0.0f;
+        float accum_roughness = 0.0f;
+        f16vec3 accum_normal_offset = f16vec3(0.0h);
+    
+        // coordinate selection (XY plane)
+        vec2 base_uv = useTextureCoordsForRaindrops ?
+                       surfaceInteraction.textureCoordinates :
+                       surfaceInteraction.position.xy;
+    
+        vec2 grid_pos = base_uv * grid_scale;
+        vec2 cell = floor(grid_pos);
+    
+        // sample neighbors
+        for (int oy = -GRID_NEIGHBOR; oy <= GRID_NEIGHBOR; ++oy)
+        {
+            for (int ox = -GRID_NEIGHBOR; ox <= GRID_NEIGHBOR; ++ox)
+            {
+                vec2 ncell = cell + vec2(float(ox), float(oy));
+    
+                vec2 h = hash22(ncell);
+                float seed = h.x;
+    
+                float spawn_offset = seed * spawn_period;
+    
+                // jitter drop center in cell
+                vec2 center_jitter = (hash22(ncell + 17.0f) - 0.5f) * 0.7f;
+                vec2 drop_center = (ncell + 0.5f + center_jitter) / grid_scale;
+    
+                float time_since_spawn = global_time - spawn_offset;
+                float cycle = floor(time_since_spawn / spawn_period);
+                float local_t = time_since_spawn - cycle * spawn_period;
+    
+                float cell_life = drop_life * lerp(0.85f, 1.25f, frac(seed * 7.3f));
+                float cell_ripple_speed = ripple_speed * lerp(0.85f, 1.15f, frac(seed * 3.1f));
+                // radius scales with raindropScaleMult so larger scale -> larger drops
+                float cell_center_radius = center_radius_base * raindropScaleMult *
+                                           lerp(0.85f, 1.25f, frac(seed * 5.2f));
+    
+                if (local_t >= 0.0f && local_t <= cell_life)
+                {
+                    float tnorm = local_t / cell_life;
+                    float ripple_radius = cell_ripple_speed * local_t;
+    
+                    vec2 sample_pos = useTextureCoordsForRaindrops ?
+                                      surfaceInteraction.textureCoordinates.xy :
+                                      surfaceInteraction.position.xy;
+    
+                    float dist = length(sample_pos - drop_center);
+    
+                    // central impact
+                    float center_fade = smoothstep(0.0f, 1.0f, 1.0f - tnorm);
+                    float center_mask = saturate(1.0f - dist / (cell_center_radius + 1e-5f));
+                    center_mask = pow(center_mask, 1.25f) * center_fade;
+    
+                    // ring (robust linear falloff)
+                    float ring_dist = abs(dist - ripple_radius);
+                    float ring_thickness = max(ripple_thickness * (0.5f + 0.5f * tnorm), 0.01f);
+                    float ring_mask = saturate(1.0f - (ring_dist / ring_thickness));
+                    float ring_appearance = smoothstep(0.12f, 0.30f, tnorm);
+                    float ring_fade = 1.0f - smoothstep(0.78f, 0.98f, tnorm);
+                    ring_mask *= ring_appearance * ring_fade;
+    
+                    // amplitudes
+                    float center_amp = center_strength * smoothstep(1.0f, 0.0f, tnorm);
+                    float ring_amp = ripple_strength * lerp(0.7f, 1.0f, tnorm);
+    
+                    float cell_visibility = clamp(center_mask * center_amp + ring_mask * ring_amp * 0.75f, 0.0f, 1.0f);
+    
+                    f16vec3 center_normal = f16vec3(0.0h);
+                    if (center_mask > 0.001f)
+                    {
+                        vec2 radial = (sample_pos - drop_center) / (cell_center_radius + 1e-6f);
+                    
+                        // hemisphere height
+                        float r2 = dot(radial, radial);
+                        float height = sqrt(saturate(1.0f - r2));
+                    
+                        // spherical normal
+                        vec3 cn = normalize(vec3(radial * 0.9f, height));
+                    
+                        // scale
+                        float center_normal_scale = center_mask * center_amp * normal_scale_center * (0.6f);
+                        center_normal = f16vec3(cn * center_normal_scale);
+                    }
+
+                    float rndAngle = frac(seed * 19.7f) * 6.2831853f;
+                    vec3 ring_dir = normalize(vec3(cos(rndAngle), sin(rndAngle), -0.45f));
+
+                    float ring_normal_scale = ring_mask * ring_amp * normal_scale_ripple;
+    
+                    accum_normal_offset += f16vec3(center_normal + ring_dir * ring_normal_scale);
+    
+                    // absolute roughness contribution
+                    float cell_roughness = center_mask * center_amp * roughness_center + ring_mask * ring_amp * roughness_ripple;
+                    accum_roughness += cell_roughness;
+    
+                    // smoother neighbor falloff
+                    float dist_cell = length(ncell - cell);
+                    float cell_weight = saturate(1.0f - (dist_cell * 0.38f));
+    
+                    accum_visibility += cell_visibility * cell_weight;
+                }
+            }
+        }
+    
+        // finalize
+        float final_raindrop_mask = saturate(accum_visibility * (1.4f * raindropVisibilityMult));
+        combinedRaindropMask += final_raindrop_mask * (raindropStrength * 0.85f);
+        
+        // Apply occlusion factor to the final combined mask - disable raindrops if surface is covered from above
+        combinedRaindropMask *= occlusionFactor;
+    
+        float16_t nOffLen = float16_t(length(vec3(accum_normal_offset)));
+        if (nOffLen > 0.0005h)
+        {
+            accum_normal_offset = normalize(accum_normal_offset) * (nOffLen * 0.45h);
+        }
+    
+        // Only apply raindrop effects if occlusion allows (occlusionFactor must be > 0)
+        // occlusionFactor is 0.0 when fully occluded, 1.0 when fully exposed
+        if (combinedRaindropMask > 0.0001f && occlusionFactor > 0.0f)
+        {
+            float16_t raindropNormalIntensity = saturate(originalNormalZ * 2.0h) * float16_t(combinedRaindropMask);
+            normal = normalize(normal + accum_normal_offset * raindropNormalIntensity);
+    
+            // stronger absolute roughness so drops show on smooth materials
+            float16_t raindropRoughnessMask = float16_t(saturate(accum_roughness) * 0.28h);
+            roughness = saturate(roughness + raindropRoughnessMask);
+        }
+    } // end raindrops
+    else if (useExpRaindrops && !isVerticalWall && cameraDistanceHalf <= float16_t(maxRaindropDistance))
+    {
+      // Get stable coordinates for raindrop calculations
+      // Transform world position to local space using available transform information
+      vec3 stablePosition;
+      
+      // Check if object has rotation in objectToWorld
+      float3 right = surface.objectToWorld[0].xyz;
+      float3 up = surface.objectToWorld[1].xyz;
+      float3 forward = surface.objectToWorld[2].xyz;
+      float3 identityCheck = abs(right - float3(1,0,0)) + abs(up - float3(0,1,0)) + abs(forward - float3(0,0,1));
+      bool hasRotation = length(identityCheck) > 0.1f;
+      
+      if (hasRotation)
+      {
+        // Rigid object - transform to object space using objectToWorld
+        mat3 rotationScale = mat3(right, up, forward);
+        // Extract translation by multiplying origin point
+        vec3 translation = mul(surface.objectToWorld, vec4(0.0f, 0.0f, 0.0f, 1.0f));
+        mat3 invRotationScale = inverse(rotationScale);
+        vec3 invTranslation = -mul(invRotationScale, translation);
+        stablePosition = mul(invRotationScale, surfaceInteraction.position) + invTranslation;
+      }
+      else
+      {
+        // Skinned mesh - objectToWorld has no rotation, try using normalObjectToWorld
+        // Extract rotation from normalObjectToWorld (3x3 matrix)
+        mat3 normalRotation = surface.normalObjectToWorld;
+        float3 normalRight = normalRotation[0].xyz;
+        float3 normalUp = normalRotation[1].xyz;
+        float3 normalForward = normalRotation[2].xyz;
+        float3 normalIdentityCheck = abs(normalRight - float3(1,0,0)) + abs(normalUp - float3(0,1,0)) + abs(normalForward - float3(0,0,1));
+        bool normalHasRotation = length(normalIdentityCheck) > 0.1f;
+        
+        if (normalHasRotation)
+        {
+          // Use normalObjectToWorld rotation to transform to local space
+          mat3 invNormalRotation = inverse(normalRotation);
+          // Extract translation from objectToWorld
+          vec3 translation = mul(surface.objectToWorld, vec4(0.0f, 0.0f, 0.0f, 1.0f));
+          vec3 invTranslation = -mul(invNormalRotation, translation);
+          stablePosition = mul(invNormalRotation, surfaceInteraction.position) + invTranslation;
+        }
+        else
+        {
+          // No rotation available - use tangent space
+          // Transform world position relative to object translation to tangent space for stable coordinates
+          const mat3 worldToTangent = mat3(
+            surfaceInteraction.triangleTangent,
+            surfaceInteraction.triangleBitangent,
+            surfaceInteraction.triangleNormal
+          );
+
+          // Extract a reference translation from objectToWorld
+          vec3 translation = mul(surface.objectToWorld, vec4(0.0f, 0.0f, 0.0f, 1.0f));
+          vec3 relativeToTranslation = surfaceInteraction.position - translation;
+          stablePosition = mul(worldToTangent, relativeToTranslation);
+          // Scale to approximate object space scale (tangent space is in world units)
+          stablePosition *= 0.1f;
+        }
+      }
+      
+      // Use stable position (object space or local space)
+      vec3 objectSpacePosition = stablePosition;
+      
+      const float densityBase = 0.9f;
+      const float speedBase = 1.6f;
+      const float radiusBase = 0.1f;
+      const float normalBase = 5.9f;
+      float densityBias = max(0.1f, densityBase + (raindropsHalfDensity ? -0.2f : 0.4f)); // +0.4 lighting density and -0.2 for drizzle?
+      float speedBias = max(0.2f, speedBase);
+      float radiusBias = max(0.02f, radiusBase);
+      float normalBias = max(0.1f, normalBase + 3.0f);
+      
+      const int layerCount = 3;
+      const int neighborRadius = 1;
+      const float dropletCycle = 2.6f;
+      const float growPhase = 0.18f;
+      const float restPhase = 0.32f;
+      const float fadePhase = 1.0f - growPhase - restPhase;
+      const float baseRadiusObj = 0.01f;
+      float animTime = float(cb.frameIdx) * 0.04f * animationSpeedMult * speedBias;
+      
+      [unroll]
+      for (int layer = 0; layer < layerCount; ++layer)
+      {
+        vec2 baseCoord = objectSpacePosition.xy;
+        float baseLayerScale = 4.0f + float(layer) * 1.4f;
+        float layerScale = baseLayerScale * raindropScaleMult * 8.0f;
+        float densityScale = densityBias * (1.0f + float(layer) * 0.3f);
+        float gridScale = layerScale * densityScale;
+        vec2 baseCell = floor(baseCoord * gridScale);
+        float layerWeight = 1.0f / (1.0f + float(layer) * 0.4f);
+        float radiusScale = (baseRadiusObj * radiusBias) * (1.0f + float(layer) * 0.25f);
+        float layerNormalStrengthScale = layerWeight * raindropNormalScale * normalBias;
+        
+        for (int oy = -neighborRadius; oy <= neighborRadius; ++oy)
+        {
+          for (int ox = -neighborRadius; ox <= neighborRadius; ++ox)
+          {
+            vec2 nCell = baseCell + vec2(float(ox), float(oy));
+            vec2 cellSeed = hash22(nCell + float(layer) * 23.0f);
+            int subDrops = 1 + int(cellSeed.x > 0.65f);
+            
+            for (int sub = 0; sub < subDrops; ++sub)
+            {
+              vec2 subSeed = hash22(nCell + vec2(float(sub) * 31.0f + float(layer) * 17.0f, float(sub) * 13.0f));
+              
+              float spawnSeed = frac(subSeed.x + subSeed.y * 1.37f + float(layer) * 0.11f);
+              float cycleValue = (animTime + spawnSeed * dropletCycle) / dropletCycle;
+              float cycleIndex = floor(cycleValue);
+              float cyclePhase = frac(cycleValue);
+              
+              vec2 cycleJitter = (hash22(nCell + vec2(float(layer) * 97.0f, cycleIndex * 0.618f)) - 0.5f) * 0.45f;
+              vec2 dropCenter = (nCell + subSeed + cycleJitter) / gridScale;
+              
+              float envelope;
+              if (cyclePhase < growPhase)
+              {
+                float t = cyclePhase / growPhase;
+                envelope = smoothstep(0.0f, 1.0f, t);
+              }
+              else if (cyclePhase < growPhase + restPhase)
+              {
+                envelope = 1.0f;
+              }
+              else
+              {
+                float fadeT = (cyclePhase - growPhase - restPhase) / fadePhase;
+                envelope = 1.0f - smoothstep(0.0f, 1.0f, saturate(fadeT));
+              }
+              
+              if (envelope <= 1e-3f)
+              {
+                continue;
+              }
+              
+              float randomRadius = lerp(0.75f, 1.4f, frac(subSeed.x * 3.13f));
+              float dropletRadius = radiusScale * randomRadius / max(raindropScaleMult, 0.001f);
+              vec2 radial = baseCoord - dropCenter;
+              
+              float shapeAngle = frac(subSeed.x * 2.17f + subSeed.y * 0.91f) * 6.2831853f;
+              float cosA = cos(shapeAngle);
+              float sinA = sin(shapeAngle);
+              float2x2 rotMat = float2x2(cosA, -sinA, sinA, cosA);
+              vec2 rotated = mul(rotMat, radial);
+              vec2 axisStretch = vec2(lerp(0.65f, 1.35f, frac(subSeed.y * 3.97f)),
+                                      lerp(0.65f, 1.35f, frac(subSeed.x * 5.11f)));
+              vec2 stretched = rotated / axisStretch;
+              float dist = length(stretched);
+              if (dist > dropletRadius * 1.6f)
+              {
+                continue;
+              }
+              
+              float dome = pow(saturate(1.0f - dist / dropletRadius), 1.5f);
+              float ringDist = abs(dist - dropletRadius * 1.15f);
+              float ring = pow(saturate(1.0f - ringDist / (dropletRadius * 0.35f)), 2.2f) * 0.55f;
+              
+              float ringVisiblePhase = growPhase + 0.18f;
+              float ringFade = saturate(1.0f - (cyclePhase - growPhase) / 0.18f);
+              float ringRamp = smoothstep(0.0f, growPhase * 0.6f, cyclePhase);
+              float ringVisibility = envelope * ringRamp * ringFade * step(cyclePhase, ringVisiblePhase);
+              
+              float domeContribution = dome * envelope;
+              float ringContribution = ring * ringVisibility;
+              float dropletContribution = domeContribution + ringContribution;
+              
+              if (dropletContribution <= 1e-4f)
+              {
+                continue;
+              }
+              
+              combinedRaindropMask += dropletContribution * layerWeight * raindropVisibilityMult;
+              combinedRoughnessMask += dropletContribution * layerWeight * layerRoughnessScale[layer];
+              
+              vec2 gradStretched = stretched / max(dist, 1e-4f);
+              vec2 gradRotated = gradStretched / axisStretch;
+              vec2 gradOriginal = mul(transpose(rotMat), gradRotated);
+              vec2 normalizedRadial = gradOriginal;
+              float radialLen = min(length(normalizedRadial), 0.999f);
+              float height = sqrt(saturate(1.0f - radialLen * radialLen));
+              vec3 dropletNormal = normalize(vec3(normalizedRadial * 0.65f, height));
+              raindropNormalOffset += f16vec3(dropletNormal) * float16_t(domeContribution * layerNormalStrengthScale);
+            }
+          }
+        }
+      }
+      
+      combinedRaindropMask = saturate(combinedRaindropMask * raindropStrength);
+      
+      // Apply occlusion factor - disable experimental raindrops if surface is covered from above
+      // Only apply occlusion if surface is actually horizontal (can get wet)
+      if (originalNormalZ > float16_t(zNormal))
+      {
+        combinedRaindropMask *= occlusionFactor;
+      }
+        
+      float16_t normalOffsetLen = float16_t(length(vec3(raindropNormalOffset)));
+      if (normalOffsetLen > 0.001h)
+      {
+        raindropNormalOffset = normalize(raindropNormalOffset) * (normalOffsetLen * 0.5h);
+      }
+      
+      if (originalNormalZ > float16_t(zNormal))
+      {
+        float16_t raindropNormalIntensity = saturate(originalNormalZ * 2.0h) * float16_t(combinedRaindropMask);
+        normal = normalize(normal + raindropNormalOffset * raindropNormalIntensity);
+        
+        float16_t modifiedWetblend = saturate(smoothstep(float16_t(zNormal - blendWidth), float16_t(zNormal + blendWidth), normal.z));
+        if (normal.z > float16_t(zNormal))
+        {
+          wetblend = min(wetblend, modifiedWetblend);
+        }
+        else
+        {
+          wetblend = saturate(smoothstep(float16_t(zNormal - blendWidth), float16_t(zNormal + blendWidth), originalNormalZ));
+        }
+      }
+      
+      float16_t raindropRoughnessMask = float16_t(saturate(combinedRoughnessMask) * 0.15h);
+      roughness = saturate(roughness + raindropRoughnessMask);
+    }
+
+    // Apply wetness roughness modification only to non-vertical surfaces (hard cutoff for vertical walls)
+    if (!isVerticalWall)
+    {
+      roughness = saturate(lerp(roughness, roughness * scalar, wetblendForRoughness));
+      
+      // Apply additional reflectivity boost for fully wet surfaces (low scalar)
+      const float wetnessReflectivityStrength = 0.4f;
+      if (wetnessReflectivityStrength > 0.0f && wetblendForRoughness > float16_t(0.0f))
+      {
+        // When scalar is low (fully wet), reduce roughness more
+        // scalar ranges from -2 to +2, so low scalar means wetter
+        float wetnessFactor = saturate(1.0f - (scalar + 2.0f) / 4.0f); // 1.0 when scalar = -2 (fully wet), 0.0 when scalar = +2 (dry)
+        
+        // Apply additional roughness reduction based on wetness and hardcoded strength
+        float16_t additionalRoughnessReduction = float16_t(wetnessFactor * wetblendForRoughness * wetnessReflectivityStrength);
+        roughness = saturate(roughness * (float16_t(1.0f) - additionalRoughnessReduction));
+      }
+    }
+  }
+  #endif
+
+  if (d3dModDecalDirt && albedoOpacityLoaded)
+  {
+      //f16vec4 maskSample;
+      //surfaceMaterialInteractionTextureReadHelper(opaqueSurfaceMaterial.tangentTextureIndex, opaqueSurfaceMaterial.samplerIndex, surfaceInteraction, maskSample);
+
+      // dot: dp3 r0.x, r0, dirtDecalMask
+      float decalDirtMask = dot(albedoOpacitySample.rgb, opaqueSurfaceMaterial.emissiveColorConstant.rrr); //opaqueSurfaceMaterial.roughnessConstant);
+
+      decalDirtMask = saturate((decalDirtMask - 0.5h) * opaqueSurfaceMaterial.emissiveColorConstant.g + 0.5h);
+
+      // mul by vertex color alpha: mul r0.x, r0.x, vertex_color.w
+      decalDirtMask *= surfaceInteraction.vertexColor.w; 
+      
+      albedo.rgb = opaqueSurfaceMaterial.albedoOpacityConstant.rgb;
+      opacity = decalDirtMask;
+  }
 
   // Load Metallic
 
