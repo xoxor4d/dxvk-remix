@@ -31,6 +31,20 @@
 #include <utility>
 
 namespace RemixGui {
+  
+  inline float m_dbg_float1 = -6.0f;
+  inline float m_dbg_float2 = 6.0f;
+  inline float m_dbg_float3 = 2.0f;
+  inline float m_dbg_float4 = 2.0f;
+  inline float m_dbg_float5 = 0.0f;
+  inline float m_dbg_float6 = 0.0f;
+  inline float m_dbg_float7 = 0.0f;
+  inline float m_dbg_float8 = 0.0f;
+   
+  inline float m_dbg_color1[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+  inline float m_dbg_color2[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+  inline float m_dbg_color3[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+  inline float m_dbg_color4[] = { 0.0f, 0.0f, 0.0f, 0.0f };
 
   IMGUI_API void SetTooltipUnformatted(const char* text);  // Same as SetTooltip, just without text formatting (so percentage signs do not interfere with tooltips when not desired).
   IMGUI_API void SetTooltipUnformattedUnwrapped(const char* text); // Without text wrapping, when newlines need to be manual

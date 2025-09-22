@@ -79,6 +79,50 @@ static_assert((int)AlphaTestType::kNotEqual == (int)VkCompareOp::VK_COMPARE_OP_N
 static_assert((int)AlphaTestType::kGreaterOrEqual == (int)VkCompareOp::VK_COMPARE_OP_GREATER_OR_EQUAL);
 static_assert((int)AlphaTestType::kAlways == (int)VkCompareOp::VK_COMPARE_OP_ALWAYS);
 
+enum REMIX_MODIFIER_FROM_D3D : std::uint16_t {
+  REMIX_MODIFIER_FROM_D3D_NONE = 0,
+  REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR = 1 << 0,
+  REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR = 1 << 1,
+  REMIX_MODIFIER_FROM_D3D_ENABLE_VERTEX_COLOR = 1 << 2,
+  REMIX_MODIFIER_FROM_D3D_DECAL_DIRT = 1 << 3,
+  REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA = 1 << 4,
+  REMIX_MODIFIER_FROM_D3D_VEHICLE_DECAL_DIRT = 1 << 5,
+  REMIX_MODIFIER_FROM_D3D_GLOBAL_UV_MODIFIER = 1 << 6,
+  REMIX_MODIFIER_FROM_D3D_TRANSLUCENT_WORLDPOS_AS_TEXUV = 1 << 7,
+  REMIX_MODIFIER_FROM_D3D_TRANSLUCENT_FADE_NORMAL_UNTIL_DIST = 1 << 8,
+  REMIX_MODIFIER_FROM_D3D_FREE09 = 1 << 9,
+  REMIX_MODIFIER_FROM_D3D_FREE10 = 1 << 10,
+  REMIX_MODIFIER_FROM_D3D_FREE11 = 1 << 11,
+  REMIX_MODIFIER_FROM_D3D_FREE12 = 1 << 12,
+  REMIX_MODIFIER_FROM_D3D_FREE13 = 1 << 13,
+  REMIX_MODIFIER_FROM_D3D_FREE14 = 1 << 14,
+  REMIX_MODIFIER_FROM_D3D_FREE15 = 1 << 15,
+};
+
+enum REMIX_MODIFIER_TO_OPAQUE_SHADER : std::uint8_t {
+  REMIX_MODIFIER_TO_OPAQUE_SHADER_NONE = 0,
+  REMIX_MODIFIER_TO_OPAQUE_SHADER_ROUGHNESS_SCALAR = 1 << 0,
+  REMIX_MODIFIER_TO_OPAQUE_SHADER_ENABLE_VERTEX_COLOR = 1 << 1,
+  REMIX_MODIFIER_TO_OPAQUE_SHADER_DECAL_DIRT = 1 << 2,
+  REMIX_MODIFIER_TO_OPAQUE_SHADER_REM_VERTEX_COLOR_KEEP_ALPHA = 1 << 3,
+  REMIX_MODIFIER_TO_OPAQUE_SHADER_VEHICLE_DECAL_DIRT = 1 << 4,
+  REMIX_MODIFIER_TO_OPAQUE_SHADER_GLOBAL_UV_MODIFIER = 1 << 5,
+  REMIX_MODIFIER_TO_OPAQUE_SHADER_FREE7 = 1 << 6,
+  REMIX_MODIFIER_TO_OPAQUE_SHADER_FREE8 = 1 << 7,
+};
+
+enum REMIX_MODIFIER_TO_TRANSLUCENT_SHADER : std::uint8_t {
+  REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_NONE = 0,
+  REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_ROUGHNESS_SCALAR = 1 << 0,
+  REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_WORLDPOS_AS_TEXUV = 1 << 1,
+  REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_FREE3 = 1 << 2,
+  REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_FREE4 = 1 << 3,
+  REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_FREE5 = 1 << 4,
+  REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_FREE6 = 1 << 5,
+  REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_FREE7 = 1 << 6,
+  REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_FREE8 = 1 << 7,
+};
+
 // Note: "Temporary" hacks to get RtxOptions data from this header file as we cannot include rtx_options directly
 // due to cyclic includes. This should be removed once the rtx_materials implementation is moved to a source file.
 bool getEnableDiffuseLayerOverrideHack();
@@ -547,6 +591,7 @@ struct RtOpaqueSurfaceMaterial {
     uint32_t samplerIndex, float displaceIn, float displaceOut,
     uint32_t subsurfaceMaterialIndex, bool isRaytracedRenderTarget,
     uint16_t samplerFeedbackStamp,
+    uint8_t d3dModifierFlags, uint16_t wetnessParams1, uint16_t wetnessParams2, float freeFloat03, float freeFloat04,
     uint32_t secondaryTextureIndex = 0
   ) :
     m_albedoOpacityTextureIndex{ albedoOpacityTextureIndex }, m_secondaryTextureIndex{secondaryTextureIndex}, m_normalTextureIndex{ normalTextureIndex },
@@ -559,7 +604,8 @@ struct RtOpaqueSurfaceMaterial {
     m_ignoreAlphaChannel { ignoreAlphaChannel }, m_enableThinFilm { enableThinFilm }, m_alphaIsThinFilmThickness { alphaIsThinFilmThickness },
     m_thinFilmThicknessConstant { thinFilmThicknessConstant }, m_samplerIndex{ samplerIndex }, m_displaceIn{ displaceIn },
     m_displaceOut{ displaceOut }, m_subsurfaceMaterialIndex(subsurfaceMaterialIndex), m_isRaytracedRenderTarget(isRaytracedRenderTarget),
-    m_samplerFeedbackStamp{ samplerFeedbackStamp }
+    m_samplerFeedbackStamp{ samplerFeedbackStamp },
+    m_d3dModifierFlags { d3dModifierFlags }, m_wetnessParams1 { wetnessParams1 }, m_wetnessParams2 { wetnessParams2 }, m_freeFloat03 { freeFloat03 }, m_freeFloat04 { freeFloat04 }
   {
     updateCachedData();
     updateCachedHash();
@@ -592,8 +638,40 @@ struct RtOpaqueSurfaceMaterial {
       flags |= OPAQUE_SURFACE_MATERIAL_FLAG_IS_RAYTRACED_RENDER_TARGET;
     }
 
-    float displaceIn = m_displaceIn * getDisplacementInFactor();
-    float displaceOut = m_displaceOut * getDisplacementOutFactor();
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_OPAQUE_SHADER_ROUGHNESS_SCALAR) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_ROUGHNESS_SCALAR;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_OPAQUE_SHADER_ENABLE_VERTEX_COLOR) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_ENABLE_VERTEX_COLOR;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_OPAQUE_SHADER_DECAL_DIRT) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_DECAL_DIRT;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_OPAQUE_SHADER_REM_VERTEX_COLOR_KEEP_ALPHA) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_REM_VERTEX_COLOR_KEEP_ALPHA;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_OPAQUE_SHADER_VEHICLE_DECAL_DIRT) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_VEHICLE_DECAL_DIRT;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_OPAQUE_SHADER_GLOBAL_UV_MODIFIER) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_GLOBAL_UV_MODIFIER;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_OPAQUE_SHADER_FREE7) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_07;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_OPAQUE_SHADER_FREE8) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_08;
+    }
+
+    float displaceIn = m_displaceIn * getDisplacementFactor();
+    float displaceOut = m_displaceOut * getDisplacementFactor();
     uint32_t heightTextureIndex = m_heightTextureIndex;
     if (hasValidDisplacement()) {
       flags |= OPAQUE_SURFACE_MATERIAL_FLAG_HAS_DISPLACEMENT;
@@ -648,10 +726,16 @@ struct RtOpaqueSurfaceMaterial {
     // data[24-25]
     writeGPUHelper(data, offset, m_subsurfaceMaterialIndex);
 
-    // data[26]
+    // data[26-29]
     writeGPUHelperExplicit<2>(data, offset, m_samplerFeedbackStamp);
+    writeGPUHelper(data, offset, m_wetnessParams1); // Write uint16_t directly (bitwise identical to float16_t)
+    writeGPUHelper(data, offset, m_wetnessParams2); // Write uint16_t directly (bitwise identical to float16_t)
+    writeGPUHelper(data, offset, glm::packHalf1x16(m_freeFloat03));
 
-    writeGPUPadding<10>(data, offset);
+    // data[30-31]
+    writeGPUHelper(data, offset, glm::packHalf1x16(m_freeFloat04));
+
+    writeGPUPadding<2>(data, offset);
     assert(offset - oldOffset == kSurfaceMaterialGPUSize);
   }
 
@@ -747,6 +831,25 @@ struct RtOpaqueSurfaceMaterial {
     return m_isRaytracedRenderTarget;
   }
 
+  uint32_t getD3DModifierFlags() const {
+    return m_d3dModifierFlags;
+  }
+
+  uint16_t getWetnessParams1() const {
+    return m_wetnessParams1;
+  }
+  uint16_t getWetnessParams2() const {
+    return m_wetnessParams2;
+  }
+
+  float getFreeFloat03() const {
+    return m_freeFloat03;
+  }
+
+  float getFreeFloat04() const {
+    return m_freeFloat04;
+  }
+
   template<typename Fn>
   void forEachTextureIndex(Fn&& fn) const {
     fn(m_albedoOpacityTextureIndex);
@@ -762,7 +865,7 @@ struct RtOpaqueSurfaceMaterial {
 private:
   void updateCachedHash() {
     static_assert(
-      sizeof(*this) == 120,
+      sizeof(*this) == 136,
       "add new member for hashing if needed: add a MEMBER into the struct + add a VALUE into the list-init"
     );
     struct HashStruct {
@@ -791,6 +894,11 @@ private:
       uint32_t isRaytracedRenderTarget;   // NOTE: uint32_t to avoid padding
       uint32_t samplerFeedbackStamp;      // NOTE: uint32_t to avoid padding
       uint32_t secondaryTextureIndex;
+      uint32_t m_d3dModifierFlags;
+      uint32_t m_wetnessParams1;
+      uint32_t m_wetnessParams2;
+      float m_freeFloat03;
+      float m_freeFloat04;
       // NOTE: There must be NO padding between members, as the struct is used for hashing
     };
     static_assert(alignof(HashStruct) == 4 && sizeof(HashStruct) % 4 == 0);
@@ -820,6 +928,11 @@ private:
       m_isRaytracedRenderTarget,
       m_samplerFeedbackStamp,
       m_secondaryTextureIndex,
+      m_d3dModifierFlags,
+      m_wetnessParams1,
+      m_wetnessParams2,
+      m_freeFloat03,
+      m_freeFloat04,
     };
     m_cachedHash = XXH3_64bits(&hashData, sizeof(hashData));
   }
@@ -871,6 +984,12 @@ private:
 
   uint16_t m_samplerFeedbackStamp;
 
+  uint8_t m_d3dModifierFlags;
+  uint16_t m_wetnessParams1; // Packed wetness parameters (scalar 6 bits + max_z 5 bits + blend_width 5 bits)
+  uint16_t m_wetnessParams2; // Packed wetness parameters 2 (raindrop_scale 8 bits + bitflags 8 bits)
+  float m_freeFloat03;
+  float m_freeFloat04;
+
   XXH64_hash_t m_cachedHash;
 
   // Note: Cached values are not involved in the hash as they are derived from the input data
@@ -886,14 +1005,18 @@ struct RtTranslucentSurfaceMaterial {
     float refractiveIndex,
     float transmittanceMeasurementDistance, const Vector3& transmittanceColor,
     bool enableEmission, float emissiveIntensity, const Vector3& emissiveColorConstant,
-    bool isThinWalled, float thinWallThickness, bool useDiffuseLayer, uint32_t samplerIndex) :
+    bool isThinWalled, float thinWallThickness, bool useDiffuseLayer, uint32_t samplerIndex,
+    uint8_t d3dModifierFlags, uint16_t wetnessParams1, uint16_t wetnessParams2, 
+    float freeFloat01, float freeFloat02) :
     m_normalTextureIndex(normalTextureIndex),
     m_transmittanceTextureIndex(transmittanceTextureIndex),
     m_emissiveColorTextureIndex(emissiveColorTextureIndex),
     m_refractiveIndex(refractiveIndex),
     m_transmittanceMeasurementDistance(transmittanceMeasurementDistance), m_transmittanceColor(transmittanceColor),
     m_enableEmission(enableEmission), m_emissiveIntensity(emissiveIntensity), m_emissiveColorConstant(emissiveColorConstant),
-    m_isThinWalled(isThinWalled), m_thinWallThickness(thinWallThickness), m_useDiffuseLayer(useDiffuseLayer), m_samplerIndex(samplerIndex)
+    m_isThinWalled(isThinWalled), m_thinWallThickness(thinWallThickness), m_useDiffuseLayer(useDiffuseLayer), m_samplerIndex(samplerIndex),
+    m_d3dModifierFlags(d3dModifierFlags), m_wetnessParams1(wetnessParams1), m_wetnessParams2(wetnessParams2), 
+    m_freeFloat01(freeFloat01), m_freeFloat02(freeFloat02)
   {
     updateCachedData();
     updateCachedHash();
@@ -910,6 +1033,38 @@ struct RtTranslucentSurfaceMaterial {
     // Note: Respect override flag here to let the GPU do less work in determining if the diffuse layer should be used or not.
     if (m_useDiffuseLayer || getEnableDiffuseLayerOverrideHack()) {
       flags |= TRANSLUCENT_SURFACE_MATERIAL_FLAG_USE_DIFFUSE_LAYER;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_ROUGHNESS_SCALAR) {
+      flags |= TRANSLUCENT_SURFACE_MATERIAL_FLAG_D3D_RAINDROPS;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_WORLDPOS_AS_TEXUV) {
+      flags |= TRANSLUCENT_SURFACE_MATERIAL_FLAG_D3D_WORLDPOS_INSTEAD_TEXUV;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_FREE3) {
+      flags |= TRANSLUCENT_SURFACE_MATERIAL_FLAG_D3D_03;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_FREE4) {
+      flags |= TRANSLUCENT_SURFACE_MATERIAL_FLAG_D3D_04;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_FREE5) {
+      flags |= TRANSLUCENT_SURFACE_MATERIAL_FLAG_D3D_05;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_FREE6) {
+      flags |= TRANSLUCENT_SURFACE_MATERIAL_FLAG_D3D_06;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_FREE7) {
+      flags |= TRANSLUCENT_SURFACE_MATERIAL_FLAG_D3D_07;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_FREE8) {
+      flags |= TRANSLUCENT_SURFACE_MATERIAL_FLAG_D3D_08;
     }
 
     // data[0- 1]
@@ -945,8 +1100,14 @@ struct RtTranslucentSurfaceMaterial {
     writeGPUHelper(data, offset, glm::packHalf1x16(m_emissiveColorConstant.y));
     writeGPUHelper(data, offset, glm::packHalf1x16(m_emissiveColorConstant.z));
     
-    // data[17 - 31]
-    writeGPUPadding<30>(data, offset);
+    // data[17-19]
+    writeGPUHelper(data, offset, m_wetnessParams1); // Write uint16_t directly (bitwise identical to float16_t)
+    writeGPUHelper(data, offset, m_wetnessParams2); // Write uint16_t directly (bitwise identical to float16_t)
+    writeGPUHelper(data, offset, glm::packHalf1x16(m_freeFloat01));
+    writeGPUHelper(data, offset, glm::packHalf1x16(m_freeFloat02));
+
+    // data[20 - 31]
+    writeGPUPadding<22>(data, offset);
 
     assert(offset - oldOffset == kSurfaceMaterialGPUSize);
   }
@@ -977,7 +1138,7 @@ struct RtTranslucentSurfaceMaterial {
 private:
   void updateCachedHash() {
     static_assert(
-      sizeof(*this) == 96,
+      sizeof(*this) == 104,
       "add new member for hashing if needed: add a MEMBER into the struct + add a VALUE into the list-init"
     );
     struct HashStruct {
@@ -994,6 +1155,11 @@ private:
       float thinWallThickness;
       uint32_t useDiffuseLayer; // NOTE: uint32_t to avoid padding
       uint32_t samplerIndex;
+      uint32_t m_d3dModifierFlags;
+      uint32_t m_wetnessParams1;
+      uint32_t m_wetnessParams2;
+      float m_freeFloat01;
+      float m_freeFloat02;
       // NOTE: There must be NO padding between members, as the struct is used for hashing
     };
     static_assert(alignof(HashStruct) == 4 && sizeof(HashStruct) % 4 == 0);
@@ -1050,6 +1216,12 @@ private:
   bool m_isThinWalled;
   float m_thinWallThickness;
   bool m_useDiffuseLayer;
+
+  uint8_t m_d3dModifierFlags;
+  uint16_t m_wetnessParams1; // Packed wetness parameters (scalar 6 bits + max_z 5 bits + blend_width 5 bits)
+  uint16_t m_wetnessParams2; // Packed wetness parameters 2 (raindrop_scale 8 bits + bitflags 8 bits)
+  float m_freeFloat01; // worldpos scalar
+  float m_freeFloat02; // normal strength fade until dist
 
   XXH64_hash_t m_cachedHash;
 
@@ -1759,6 +1931,17 @@ struct LegacyMaterialData {
     return colorTextureSlot[slot];
   }
 
+  /*enum REMIX_MODIFIER_FROM_D3D : std::uint32_t {
+    REMIX_MODIFIER_FROM_D3D_NONE = 0,
+    REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR = 1 << 0,
+    REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR = 1 << 1,
+    REMIX_MODIFIER_FROM_D3D_ENABLE_VERTEX_COLOR = 1 << 2,
+    REMIX_MODIFIER_FROM_D3D_DECAL_DIRT = 1 << 3,
+    REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA = 1 << 4,
+    REMIX_MODIFIER_FROM_D3D_FREE_05 = 1 << 5,
+    REMIX_MODIFIER_FROM_D3D_FREE_06 = 1 << 6,
+  };*/
+
   bool alphaTestEnabled = false;
   uint8_t alphaTestReferenceValue = 0;
   VkCompareOp alphaTestCompareOp = VkCompareOp::VK_COMPARE_OP_ALWAYS;
@@ -1778,6 +1961,25 @@ struct LegacyMaterialData {
   bool isTextureFactorBlend = false;
   bool isVertexColorBakedLighting = true;
 
+  uint32_t remixTextureCategoryFlagsFromD3D = 0u; // RS 42
+  uint32_t remixModifierFromD3D = 0u; // RS 149
+  XXH64_hash_t remixHashFromD3D = 0; // RS 150
+  float remixTempFloat01FromD3D = 0.0f; // RS 169
+  float remixTempFloat02FromD3D = 0.0f; // RS 177
+  //uint32_t remixTempFloatPack4FromD3D = 0u; // RS 196
+
+  uint32_t remixPackedFloat4_RS210FromD3D = 0u; // RS 210 - Packed DWORD containing 2x uint16_t (lower 16 bits = wetnessParams1, upper 16 bits = wetnessParams2)
+  float remixFloatRS211FromD3D = 0.0f; // RS 211
+  float remixFloatRS212FromD3D = 0.0f; // RS 212
+  float remixFloatRS213FromD3D = 0.0f; // RS 213
+  float remixFloatRS214FromD3D = 0.0f; // RS 214
+  float remixFloatRS215FromD3D = 0.0f; // RS 215
+  float remixFloatRS216FromD3D = 0.0f; // RS 216
+  float remixFloatRS217FromD3D = 0.0f; // RS 217
+  float remixFloatRS218FromD3D = 0.0f; // RS 218
+  float remixFloatRS219FromD3D = 0.0f; // RS 219
+  float remixFloatRS220FromD3D = 0.0f; // RS 220
+
   void setHashOverride(XXH64_hash_t hash) {
     m_cachedHash = hash;
   }
@@ -1795,6 +1997,11 @@ private:
     // plain data hash used by the RtSurfaceMaterial for storage in map-like data structures, but rather
     // one used to identify a material and compare to user-provided hashes.
     m_cachedHash = colorTextures[0].getImageHash();
+
+    // Custom hash set via unused D3D RenderState
+    if (remixHashFromD3D) {
+      m_cachedHash = remixHashFromD3D;
+    }
   }
 
   const static uint32_t kMaxSupportedTextures = 2;
