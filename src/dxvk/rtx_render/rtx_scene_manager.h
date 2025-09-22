@@ -285,7 +285,8 @@ private:
   // SSS-vs-thin-opaque lives in exactly one place.
   void accumulateOpaqueMaterialAggregates(const RtOpaqueSurfaceMaterial& opaqueMat);
 
-  RtTranslucentSurfaceMaterial createTranslucentSurfaceMaterial(const TranslucentMaterialData& translucentMaterialData,
+  RtTranslucentSurfaceMaterial createTranslucentSurfaceMaterial(const DrawCallState* drawCallState,
+                                                                const TranslucentMaterialData& translucentMaterialData,
                                                                 uint32_t samplerIndex,
                                                                 bool hasTexcoords);
   Rc<DxvkSampler> getOrCreateExternalSampler();

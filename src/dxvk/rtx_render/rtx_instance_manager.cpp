@@ -79,8 +79,8 @@ namespace dxvk {
     // Note: Flip front face by setting the front face to counterclockwise, which is the opposite of Vulkan ray tracing's clockwise default.
     if (drawClockwise == worldToProjectionMirrored)
       flags |= VK_GEOMETRY_INSTANCE_TRIANGLE_FLIP_FACING_BIT_KHR;
-    
-    if (!RtxOptions::enableCulling())
+
+    if (!RtxOptions::enableCulling() || drawCall.testCategoryFlags(InstanceCategories::DisableBackfaceCulling))
       flags |= VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
 
     // This check can be overridden by replacement assets.
@@ -152,7 +152,7 @@ namespace dxvk {
   namespace {
     template<int RtInstanceSize> struct CheckRtInstanceSize {
       // The second line of the build error should contain the new size of RtInstance in the template argument, i.e. `dxvk::CheckRtInstanceSize<newSize>`
-      static_assert(RtInstanceSize == 768, "RtInstance size has changed.  Fix the copy constructor above this message, then update the expected size.");
+      static_assert(RtInstanceSize == 784, "RtInstance size has changed.  Fix the copy constructor above this message, then update the expected size.");
     };
     CheckRtInstanceSize<sizeof(RtInstance)> _rtInstanceSizeTest;
   }
@@ -192,6 +192,10 @@ namespace dxvk {
     m_firstBillboard = src.m_firstBillboard;
     m_billboardCount = src.m_billboardCount;
     m_categoryFlags = src.m_categoryFlags;
+
+    m_remixTextureCategoryFlagsFromD3D = src.m_remixTextureCategoryFlagsFromD3D;
+    m_remixModifierFromD3D = src.m_remixModifierFromD3D;
+    m_remixHashFromD3D = src.m_remixHashFromD3D;
 
     // Intentionally NOT synced (identity / lifecycle / per-build state):
     //   m_id, m_instanceVectorId, m_cacheIdentity, m_isMarkedForGC, m_isUnlinkedForGC,
@@ -999,7 +1003,7 @@ namespace dxvk {
     // These can change in the Runtime UI so need to check during update
     currentInstance.m_isHidden = currentInstance.testCategoryFlags(InstanceCategories::Hidden);
     currentInstance.m_isPlayerModel = currentInstance.testCategoryFlags(InstanceCategories::ThirdPersonPlayerModel);
-    currentInstance.m_isWorldSpaceUI = currentInstance.testCategoryFlags(InstanceCategories::WorldUI);
+    currentInstance.m_isWorldSpaceUI = currentInstance.testCategoryFlags(InstanceCategories::WorldUI) && !currentInstance.testCategoryFlags(InstanceCategories::IgnoreLights);
 
     // Hide the sky instance since it is not raytraced.
     // Sky mesh and material are only good for capture and replacement purposes.
@@ -1045,6 +1049,12 @@ namespace dxvk {
 
         currentInstance.m_texcoordHash = drawCall.getGeometryData().hashes[HashComponents::VertexTexcoord];
         currentInstance.m_indexHash = drawCall.getGeometryData().hashes[HashComponents::Indices];
+        
+        // Store per-drawcall renderstate tweaks that affect material properties
+        // These must match for instances to be considered similar (e.g., different emissive strengths)
+        currentInstance.m_remixTextureCategoryFlagsFromD3D = drawCall.getMaterialData().remixTextureCategoryFlagsFromD3D;
+        currentInstance.m_remixModifierFromD3D = drawCall.getMaterialData().remixModifierFromD3D;
+        currentInstance.m_remixHashFromD3D = drawCall.getMaterialData().remixHashFromD3D;
 
         // Surface meta data
         currentInstance.surface.isEmissive = false;
@@ -1100,7 +1110,7 @@ namespace dxvk {
           if (currentInstance.m_isWorldSpaceUI) {
             // For worldspace UI, we want to show the UI (unlit) in the world.  So configure the blend mode if blending is used accordingly.
             materialData.getOpaqueMaterialData().setEnableEmission(true);
-            materialData.getOpaqueMaterialData().setEmissiveIntensity(2.0f);
+            materialData.getOpaqueMaterialData().setEmissiveIntensity(1.0f);
             materialData.getOpaqueMaterialData().setEmissiveColorTexture(materialData.getOpaqueMaterialData().getAlbedoOpacityTexture());
           } else if (currentInstance.surface.alphaState.emissiveBlend && RtxOptions::enableEmissiveBlendEmissiveOverride() && useLegacyAlphaState) {
             // If the user has decided to override the legacy alpha state, assume they know what they are doing and allow for explicit emission controls.
@@ -1150,7 +1160,23 @@ namespace dxvk {
         // So instead of offsetting the digits or making them live in unordered TLAS (either of which would solve the problem), we offset the screen background backwards.
         const float worldSpaceUiBackgroundOffset = RtxOptions::worldSpaceUiBackgroundOffset();
         if (worldSpaceUiBackgroundOffset != 0.f && currentInstance.testCategoryFlags(InstanceCategories::WorldMatte)) {
-          objectToWorld[3] += objectToWorld[2] * worldSpaceUiBackgroundOffset;
+          // Determine offset direction based on AABB: offset along the axis with smallest extent (surface normal for flat planes)
+          const AxisAlignedBoundingBox& boundingBox = drawCall.getGeometryData().boundingBox;
+          if (boundingBox.isValid()) {
+            const Vector3 aabbSize = boundingBox.maxPos - boundingBox.minPos;
+            // Find the axis with the smallest extent (thickness direction)
+            uint32_t smallestAxis = 0;
+            if (aabbSize.y < aabbSize[smallestAxis]) {
+              smallestAxis = 1; // Y-axis
+            }
+            if (aabbSize.z < aabbSize[smallestAxis]) {
+              smallestAxis = 2; // Z-axis
+            }
+            // Get the world-space direction of the smallest axis from the transform matrix
+            const Vector3 surfaceNormal = safeNormalize(Vector3(objectToWorld[smallestAxis].data), Vector3(0.0f, 0.0f, 1.0f));
+            // Offset along the surface normal
+            objectToWorld[3] += Vector4(surfaceNormal * worldSpaceUiBackgroundOffset, 0.0f);
+          }
         }
 
         // Update the transform based on what state we're in

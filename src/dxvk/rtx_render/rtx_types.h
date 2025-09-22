@@ -642,6 +642,7 @@ enum class InstanceCategories : uint32_t {
   IgnoreTransparencyLayer,
   ParticleEmitter,
   SmoothNormals,
+  DisableBackfaceCulling,
 
   Count,
 };
@@ -686,7 +687,7 @@ struct DrawCallState {
   }
 
   const CategoryFlags getCategoryFlags() const {
-    return categories;
+    return categories | materialData.remixTextureCategoryFlagsFromD3D;
   }
 
   bool finalizePendingFutures(const RtCamera* pLastCamera);
