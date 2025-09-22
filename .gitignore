@@ -42,3 +42,6 @@
 metrics.txt
 nrc_session_log.txt
 python.dxvk-cache
+
+/nv-private/
+/tests/rtx/dxvk_rt_testing/

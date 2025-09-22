@@ -1182,6 +1182,12 @@ namespace dxvk {
 
       bool ignoreAlphaChannel = false;
 
+      uint8_t d3dModifierFlags = REMIX_MODIFIER_TO_SHADER_NONE;
+      uint16_t packedParams1 = 0u;
+      uint16_t packedParams2 = 0u;
+      uint16_t packedParams3 = 0u;
+      uint16_t packedParams4 = 0u;
+
       constexpr Vector4 kWhiteModeAlbedo = Vector4(0.7f, 0.7f, 0.7f, 1.0f);
 
       const auto& opaqueMaterialData = renderMaterialData.getOpaqueMaterialData();
@@ -1223,6 +1229,60 @@ namespace dxvk {
       displaceOut = opaqueMaterialData.getDisplaceOut();
 
       ignoreAlphaChannel = opaqueMaterialData.getIgnoreAlphaChannel();
+
+      const bool forceVertexColorModulate = drawCallState.testCategoryFlags(InstanceCategories::Beam) || CategoryFlags(drawCallState.materialData.remixTextureCategoryFlagsFromD3D).test(InstanceCategories::Beam);
+
+      // rtx_materials.cpp is doing a hashlookup (ignoreAlphaChannel = lookupHash(RtxOptions::ignoreAlphaOnTextures(), getHash());)
+      // so we need to check d3d flag here
+      if (!ignoreAlphaChannel && CategoryFlags(drawCallState.materialData.remixTextureCategoryFlagsFromD3D).test(InstanceCategories::IgnoreAlphaChannel)) {
+        ignoreAlphaChannel = true;
+      }
+
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR) {
+        emissiveIntensity *= drawCallState.materialData.remixTempFloat01FromD3D;
+      }
+
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ROUGHNESS) {
+        // Read packed DWORD from RS_215
+        // The client side packs 3 parameters using bit packing: scalar(6 bits) + max_z(5 bits) + blend_width(5 bits) = 16 bits
+        // The DWORD contains: lower 16 bits = wetnessParams1, upper 16 bits = wetnessParams2
+        const uint32_t packedDword = drawCallState.materialData.remixPackedParams_RS215FromD3D;
+        packedParams3 = uint16_t(packedDword & 0xFFFF);        // Lower 16 bits
+        packedParams4 = uint16_t((packedDword >> 16) & 0xFFFF); // Upper 16 bits
+
+        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_ROUGHNESS; // ff01
+      }
+
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ENABLE_VERTEX_COLOR) {
+        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_ENABLE_VERTEX_COLOR; // ff02
+      }
+
+      // sets vertex color to white but keep alpha via d3d or when tagged as terrain
+      // ignore d3d state when tagged as beam and keep vertex color and alpha intact
+      if ((drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA || drawCallState.testCategoryFlags(InstanceCategories::Terrain)) 
+           && !forceVertexColorModulate) {
+        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_REM_VERTEX_COLOR_KEEP_ALPHA; // ff04
+      }
+
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_VEHICLE_SHADER) {
+        const bool disableCarPaint = drawCallState.testCategoryFlags(InstanceCategories::IgnoreAntiCulling);
+        if (!disableCarPaint) // can be used to manually disable car paint shader for certain textures
+        {
+          d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_VEHICLE_SHADER;
+          const uint32_t p1 = drawCallState.materialData.remixPackedParams_RS211FromD3D; // rgba
+          const uint32_t p2 = drawCallState.materialData.remixPackedParams_RS212FromD3D; // roughness, metallic, free, flags
+
+          albedoOpacityConstant.x = ((p1 >> 0) & 0xFF) / 255.0f;
+          albedoOpacityConstant.y = ((p1 >> 8) & 0xFF) / 255.0f;
+          albedoOpacityConstant.z = ((p1 >> 16) & 0xFF) / 255.0f;
+          albedoOpacityConstant.w = ((p1 >> 16) & 0xFF) / 255.0f;
+
+          packedParams1 = uint16_t(p2 & 0xFFFF);       // Lower 16 bits
+          packedParams2 = uint16_t(p2 >> 16 & 0xFFFF); // Upper 16 bits
+          emissiveColorConstant.x = drawCallState.materialData.remixFloatRS213FromD3D; // cvClampAndScales.x
+          emissiveColorConstant.y = drawCallState.materialData.remixFloatRS214FromD3D; // cvClampAndScales.z
+        }
+      }
 
       subsurfaceMeasurementDistance = opaqueMaterialData.getSubsurfaceMeasurementDistance() * RtxOptions::SubsurfaceScattering::surfaceThicknessScale();
 
@@ -1293,6 +1353,7 @@ namespace dxvk {
         thinFilmThicknessConstant, samplerIndex, displaceIn, displaceOut, 
         subsurfaceMaterialIndex, isUsingRaytracedRenderTarget,
         samplerFeedbackStamp,
+        d3dModifierFlags, packedParams1, packedParams2, packedParams3, packedParams4,
         secondaryTextureIndex
       };
 
@@ -1303,6 +1364,10 @@ namespace dxvk {
       surfaceMaterial.emplace(opaqueSurfaceMaterial);
     } else if (renderMaterialDataType == MaterialDataType::Translucent) {
       const auto& translucentMaterialData = renderMaterialData.getTranslucentMaterialData();
+
+      uint8_t d3dModifierFlags = REMIX_MODIFIER_TO_SHADER_NONE;
+      uint16_t wetnessParams1 = 0u;
+      uint16_t wetnessParams2 = 0u;
 
       uint32_t normalTextureIndex = kSurfaceMaterialInvalidTextureIndex;
       uint32_t transmittanceTextureIndex = kSurfaceMaterialInvalidTextureIndex;
@@ -1322,12 +1387,24 @@ namespace dxvk {
       float thinWallThickness = translucentMaterialData.getThinWallThickness();
       bool useDiffuseLayer = translucentMaterialData.getEnableDiffuseLayer();
 
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ROUGHNESS) {
+        // read packed DWORD from RS_215 - lower 16 bits = wetnessParams1, upper 16 bits = wetnessParams2
+        // lower 16 bits: comp mod packs 3 parameters using bit packing: scalar(6 bits) + max_z(5 bits) + blend_width(5 bits) = 16 bits
+        // upper 16 bits: 8 bits for raindrop_scale and 8 bits for bitflag modifiers
+
+        const uint32_t packedDword = drawCallState.materialData.remixPackedParams_RS215FromD3D;
+        wetnessParams1 = uint16_t(packedDword & 0xFFFF);        // lower 16 bits
+        wetnessParams2 = uint16_t((packedDword >> 16) & 0xFFFF); // upper 16 bits
+        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_ROUGHNESS;
+      }
+
       const RtTranslucentSurfaceMaterial translucentSurfaceMaterial{
         normalTextureIndex, transmittanceTextureIndex, emissiveColorTextureIndex,
         refractiveIndex,
         transmittanceMeasureDistance, transmittanceColor,
         enableEmissive, emissiveIntensity, emissiveColorConstant,
-        isThinWalled, thinWallThickness, useDiffuseLayer, samplerIndex
+        isThinWalled, thinWallThickness, useDiffuseLayer, samplerIndex,
+        d3dModifierFlags, wetnessParams1, wetnessParams2
       };
 
       surfaceMaterial.emplace(translucentSurfaceMaterial);

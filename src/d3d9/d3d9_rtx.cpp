@@ -253,9 +253,14 @@ namespace dxvk {
           targetBuffer = &geoData.texcoordBuffer;
         break;
       case D3DDECLUSAGE_COLOR:
-        if (element.UsageIndex == 0 &&
-            !RtxOptions::ignoreAllVertexColorBakedLighting() &&
-            !lookupHash(RtxOptions::ignoreBakedLightingTextures(), m_activeDrawCallState.materialData.colorTextures[0].getImageHash())) {
+        if (   element.UsageIndex == 0 
+            && !RtxOptions::ignoreAllVertexColorBakedLighting() 
+            && !lookupHash(RtxOptions::ignoreBakedLightingTextures(), m_activeDrawCallState.materialData.colorTextures[0].getImageHash()) 
+            && (!CategoryFlags(m_activeDrawCallState.materialData.remixTextureCategoryFlagsFromD3D).test(InstanceCategories::IgnoreBakedLighting) 
+                || m_activeDrawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA
+                || lookupHash(RtxOptions::terrainTextures(), m_activeDrawCallState.materialData.colorTextures[0].getImageHash())
+               )
+            ) {
           targetBuffer = &geoData.color0Buffer;
         }
         break;
@@ -639,6 +644,13 @@ namespace dxvk {
     // Fetch all the render state and send it to rtx context (textures, transforms, etc.)
     if (!processRenderState()) {
       return prepareFlagsForIgnoredDraws;
+    }
+
+    // force vertex color modulation with BEAM category ;)
+    if (m_activeDrawCallState.testCategoryFlags(InstanceCategories::Beam) || CategoryFlags(m_activeDrawCallState.materialData.remixTextureCategoryFlagsFromD3D).test(InstanceCategories::Beam)) {
+      m_activeDrawCallState.materialData.textureColorOperation = DxvkRtTextureOperation::Modulate;
+      m_activeDrawCallState.materialData.textureColorArg1Source = RtTextureArgSource::Texture;
+      m_activeDrawCallState.materialData.textureColorArg2Source = RtTextureArgSource::VertexColor0;
     }
 
     // Max offseted index value within a buffer slice that geoData contains

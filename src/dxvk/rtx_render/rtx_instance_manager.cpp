@@ -130,6 +130,9 @@ namespace dxvk {
     , m_materialDataHash(src.m_materialDataHash)
     , m_texcoordHash(src.m_texcoordHash)
     , m_indexHash(src.m_indexHash)
+    , m_remixTextureCategoryFlagsFromD3D(src.m_remixTextureCategoryFlagsFromD3D)
+    , m_remixModifierFromD3D(src.m_remixModifierFromD3D)
+    , m_remixHashFromD3D(src.m_remixHashFromD3D)
     , m_vkInstance(src.m_vkInstance)
     , m_geometryFlags(src.m_geometryFlags)
     , m_firstBillboard(src.m_firstBillboard)
@@ -158,7 +161,7 @@ namespace dxvk {
   namespace {
     template<int RtInstanceSize> struct CheckRtInstanceSize {
       // The second line of the build error should contain the new size of RtInstance in the template argument, i.e. `dxvk::CheckRtInstanceSize<newSize>`
-      static_assert(RtInstanceSize == 768, "RtInstance size has changed.  Fix the copy constructor above this message, then update the expected size.");
+      static_assert(RtInstanceSize == 784, "RtInstance size has changed.  Fix the copy constructor above this message, then update the expected size.");
     };
     CheckRtInstanceSize<sizeof(RtInstance)> _rtInstanceSizeTest;
   }
@@ -556,7 +559,7 @@ namespace dxvk {
 
     // Search for an existing instance matching our input
     if (currentInstance == nullptr) {
-      currentInstance = findSimilarInstance(blas, materialData, firstInstanceObjectToWorld, drawCall.cameraType, rayPortalManager);
+      currentInstance = findSimilarInstance(blas, materialData, drawCall.getMaterialData(), firstInstanceObjectToWorld, drawCall.cameraType, rayPortalManager);
     }
 
     if (currentInstance == nullptr) {
@@ -778,7 +781,7 @@ namespace dxvk {
     // NOTE: In the future we could extend this with heuristics as needed...
   }
 
-  RtInstance* InstanceManager::findSimilarInstance(BlasEntry& blas, const MaterialData& material, const Matrix4& firstInstanceObjectToWorld, CameraType::Enum cameraType, const RayPortalManager& rayPortalManager) {
+  RtInstance* InstanceManager::findSimilarInstance(BlasEntry& blas, const MaterialData& material, const LegacyMaterialData& legacyMaterialData, const Matrix4& firstInstanceObjectToWorld, CameraType::Enum cameraType, const RayPortalManager& rayPortalManager) {
 
     // Disable temporal correlation between instances so that duplicate instances are not created
     // should a developer option change instance enough for it not to match anymore
@@ -812,7 +815,13 @@ namespace dxvk {
           // - has already been updated this frame
           // - doesn't use the same material
           // - is a sub prim of a replacement instance
-          return instance->m_frameLastUpdated != currentFrameIdx && instance->m_materialHash == material.getHash() && !instance->m_primInstanceOwner.isSubPrim();
+          // - has different per-drawcall renderstate tweaks (e.g., different emissive strengths)
+          return instance->m_frameLastUpdated != currentFrameIdx 
+            && instance->m_materialHash == material.getHash() 
+            && !instance->m_primInstanceOwner.isSubPrim()
+            && instance->m_remixTextureCategoryFlagsFromD3D == legacyMaterialData.remixTextureCategoryFlagsFromD3D
+            && instance->m_remixModifierFromD3D == legacyMaterialData.remixModifierFromD3D
+            && instance->m_remixHashFromD3D == legacyMaterialData.remixHashFromD3D;
         }
       ));
       if (nearestDistSqr == 0.0f && result != nullptr) {
@@ -829,7 +838,10 @@ namespace dxvk {
       const Matrix4* teleportMatrix = nullptr;
       for (const RtInstance* instance : blas.getLinkedInstances()) {
         if (instance->m_frameLastUpdated != currentFrameIdx - 1 || 
-            instance->m_materialHash != material.getHash()) {
+            instance->m_materialHash != material.getHash() ||
+            instance->m_remixTextureCategoryFlagsFromD3D != legacyMaterialData.remixTextureCategoryFlagsFromD3D ||
+            instance->m_remixModifierFromD3D != legacyMaterialData.remixModifierFromD3D ||
+            instance->m_remixHashFromD3D != legacyMaterialData.remixHashFromD3D) {
           continue;
         }
         
@@ -1041,6 +1053,12 @@ namespace dxvk {
 
         currentInstance.m_texcoordHash = drawCall.getGeometryData().hashes[HashComponents::VertexTexcoord];
         currentInstance.m_indexHash = drawCall.getGeometryData().hashes[HashComponents::Indices];
+        
+        // Store per-drawcall renderstate tweaks that affect material properties
+        // These must match for instances to be considered similar (e.g., different emissive strengths)
+        currentInstance.m_remixTextureCategoryFlagsFromD3D = drawCall.getMaterialData().remixTextureCategoryFlagsFromD3D;
+        currentInstance.m_remixModifierFromD3D = drawCall.getMaterialData().remixModifierFromD3D;
+        currentInstance.m_remixHashFromD3D = drawCall.getMaterialData().remixHashFromD3D;
 
         // Surface meta data
         currentInstance.surface.isEmissive = false;
