@@ -542,7 +542,7 @@ struct RtOpaqueSurfaceMaterial {
     bool ignoreAlphaChannel, bool enableThinFilm, bool alphaIsThinFilmThickness, float thinFilmThicknessConstant,
     uint32_t samplerIndex, float displaceIn, float displaceOut,
     uint32_t subsurfaceMaterialIndex, bool isRaytracedRenderTarget,
-    uint16_t samplerFeedbackStamp,
+    uint16_t samplerFeedbackStamp, bool freeFlag01, bool freeFlag02, bool freeFlag03,
     uint32_t secondaryTextureIndex = 0
   ) :
     m_albedoOpacityTextureIndex{ albedoOpacityTextureIndex }, m_secondaryTextureIndex{secondaryTextureIndex}, m_normalTextureIndex{ normalTextureIndex },
@@ -555,7 +555,8 @@ struct RtOpaqueSurfaceMaterial {
     m_ignoreAlphaChannel { ignoreAlphaChannel }, m_enableThinFilm { enableThinFilm }, m_alphaIsThinFilmThickness { alphaIsThinFilmThickness },
     m_thinFilmThicknessConstant { thinFilmThicknessConstant }, m_samplerIndex{ samplerIndex }, m_displaceIn{ displaceIn },
     m_displaceOut{ displaceOut }, m_subsurfaceMaterialIndex(subsurfaceMaterialIndex), m_isRaytracedRenderTarget(isRaytracedRenderTarget),
-    m_samplerFeedbackStamp{ samplerFeedbackStamp }
+    m_samplerFeedbackStamp{ samplerFeedbackStamp },
+    m_freeFlag01 { freeFlag01 }, m_freeFlag02 { freeFlag02 }, m_freeFlag03 { freeFlag03 }
   {
     updateCachedData();
     updateCachedHash();
@@ -586,6 +587,18 @@ struct RtOpaqueSurfaceMaterial {
 
     if (m_isRaytracedRenderTarget) {
       flags |= OPAQUE_SURFACE_MATERIAL_FLAG_IS_RAYTRACED_RENDER_TARGET;
+    }
+
+    if (m_freeFlag01) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_FREE01;
+    }
+
+    if (m_freeFlag02) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_FREE02;
+    }
+
+    if (m_freeFlag03) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_FREE03;
     }
 
     float displaceIn = m_displaceIn * getDisplacementFactor();
@@ -742,6 +755,18 @@ struct RtOpaqueSurfaceMaterial {
     return m_isRaytracedRenderTarget;
   }
 
+  uint32_t getFreeFlag01() const {
+    return m_freeFlag01;
+  }
+
+  uint32_t getFreeFlag02() const {
+    return m_freeFlag02;
+  }
+
+  uint32_t getFreeFlag03() const {
+    return m_freeFlag03;
+  }
+
 private:
   void updateCachedHash() {
     static_assert(
@@ -853,6 +878,10 @@ private:
   bool m_isRaytracedRenderTarget;
 
   uint16_t m_samplerFeedbackStamp;
+
+  bool m_freeFlag01;
+  bool m_freeFlag02;
+  bool m_freeFlag03;
 
   XXH64_hash_t m_cachedHash;
 
@@ -1697,6 +1726,17 @@ struct LegacyMaterialData {
     return colorTextureSlot[slot];
   }
 
+  enum REMIX_MODIFIER_FROM_D3D : std::uint32_t {
+    REMIX_MODIFIER_FROM_D3D_NONE = 0,
+    REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR = 1 << 0,
+    REMIX_MODIFIER_FROM_D3D_ROUGHNESS = 1 << 1,
+    REMIX_MODIFIER_FROM_D3D_ENABLE_VERTEX_COLOR = 1 << 2,
+    REMIX_MODIFIER_FROM_D3D_FREE_03 = 1 << 3,
+    REMIX_MODIFIER_FROM_D3D_FREE_04 = 1 << 4,
+    REMIX_MODIFIER_FROM_D3D_FREE_05 = 1 << 5,
+    REMIX_MODIFIER_FROM_D3D_FREE_06 = 1 << 6,
+  };
+
   bool alphaTestEnabled = false;
   uint8_t alphaTestReferenceValue = 0;
   VkCompareOp alphaTestCompareOp = VkCompareOp::VK_COMPARE_OP_ALWAYS;
@@ -1716,6 +1756,12 @@ struct LegacyMaterialData {
   bool isTextureFactorBlend = false;
   bool isVertexColorBakedLighting = true;
 
+  uint32_t remixTextureCategoryFlagsFromD3D = 0u; // RS 42
+  uint32_t remixModifierFromD3D = 0u; // RS 149
+  XXH64_hash_t remixHashFromD3D = 0; // RS 150
+  float remixTempFloat01FromD3D = 0.0f; // RS 169
+  float remixTempFloat02FromD3D = 0.0f; // RS 177
+
   void setHashOverride(XXH64_hash_t hash) {
     m_cachedHash = hash;
   }
@@ -1733,6 +1779,11 @@ private:
     // plain data hash used by the RtSurfaceMaterial for storage in map-like data structures, but rather
     // one used to identify a material and compare to user-provided hashes.
     m_cachedHash = colorTextures[0].getImageHash();
+
+    // Custom hash set via unused D3D RenderState
+    if (remixHashFromD3D) {
+      m_cachedHash = remixHashFromD3D;
+    }
   }
 
   const static uint32_t kMaxSupportedTextures = 2;

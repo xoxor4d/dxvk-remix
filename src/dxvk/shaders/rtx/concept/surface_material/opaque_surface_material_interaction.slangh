@@ -563,6 +563,10 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
   opaqueSurfaceMaterialInteraction.flags |= thinFilmEnabled ? OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_USE_THIN_FILM_LAYER : 0;
 
+  const bool freeFlag01 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_FREE01;
+  const bool freeFlag02 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_FREE02;
+  const bool freeFlag03 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_FREE03;
+
 #ifdef OPAQUE_MATERIAL_USE_POM
   if (cb.pomMode != DisplacementMode::Off && opaqueSurfaceMaterial.hasValidDisplacement())
   {
@@ -698,7 +702,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   if (applyTextureOperations) 
 #endif
   {
-    if (surface.isVertexColorBakedLighting) {
+    if (surface.isVertexColorBakedLighting && !freeFlag02) {
       // "Normalize" vertex color to remove lighting contribution in different vertices.
       // We assume the diffuse term contributes most lighting. Therefore, vertex color = diffuseColor * (N*L).
       // By dividing the vertex color by its largest component, the result is irrelavant to N*L, but proportional to the 
@@ -726,6 +730,10 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     if (surface.isTextureFactorBlend) {
       emissiveColor *= tFactor.rgb;
     }
+
+    //if (freeFlag01) {
+    //    emissiveColor.rgb *= surfaceInteraction.vertexColor.rrr;
+    //}
     
     // Adjust opacity via texture operations.
     // Fixed function texture stage state for alpha channel
@@ -826,6 +834,12 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
   float16_t roughness = opaqueSurfaceMaterial.roughnessConstant;
 
+  if (freeFlag01)
+  {
+      // we are using opaqueSurfaceMaterial.roughnessConstant as a custom scalar so set the general roughness to 0.7 first
+      roughness = 0.7;
+  }
+
   if (roughnessLoaded)
   {
     roughness = roughnessSample.x;
@@ -839,6 +853,29 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 #endif  
   // Apply material modifiers
   roughness = saturate(roughness * cb.opaqueMaterialArgs.roughnessScale + cb.opaqueMaterialArgs.roughnessBias);
+
+  if (freeFlag01)
+  {
+    float16_t wetblend = saturate((normal.z - 0.35h) / 0.65h);
+    roughness = lerp(roughness, roughness * opaqueSurfaceMaterial.roughnessConstant, wetblend);
+  }
+
+  if (freeFlag03 && albedoOpacityLoaded)
+  {
+      //f16vec4 maskSample;
+      //surfaceMaterialInteractionTextureReadHelper(opaqueSurfaceMaterial.tangentTextureIndex, opaqueSurfaceMaterial.samplerIndex, surfaceInteraction, maskSample);
+
+      // dot: dp3 r0.x, r0, dirtDecalMask
+      float decalDirtMask = dot(albedoOpacitySample.rgb, opaqueSurfaceMaterial.emissiveColorConstant.rrr); //opaqueSurfaceMaterial.roughnessConstant);
+
+      decalDirtMask = saturate((decalDirtMask - 0.5h) * opaqueSurfaceMaterial.emissiveColorConstant.g + 0.5h);
+
+      // mul by vertex color alpha: mul r0.x, r0.x, vertex_color.w
+      decalDirtMask *= surfaceInteraction.vertexColor.w; 
+      
+      albedo.rgb = opaqueSurfaceMaterial.albedoOpacityConstant.rgb;
+      opacity = decalDirtMask;
+  }
 
   // Load Metallic
 
