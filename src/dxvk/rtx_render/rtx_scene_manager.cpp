@@ -1153,6 +1153,12 @@ namespace dxvk {
         freeFlag02 = true;
       }
 
+      if (drawCallState.materialData.remixModifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_DECAL_DIRT) {
+        emissiveColorConstant.r = drawCallState.materialData.remixTempFloat01FromD3D; // mask intensity scalar
+        emissiveColorConstant.g = drawCallState.materialData.remixTempFloat02FromD3D; // mask contrast
+        freeFlag03 = true;
+      }
+
       subsurfaceMeasurementDistance = opaqueMaterialData.getSubsurfaceMeasurementDistance() * RtxOptions::SubsurfaceScattering::surfaceThicknessScale();
 
       const bool isSubsurfaceScatteringDiffusionProfile = opaqueMaterialData.getSubsurfaceDiffusionProfile();

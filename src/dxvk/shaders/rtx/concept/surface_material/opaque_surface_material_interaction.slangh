@@ -761,7 +761,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
   if (freeFlag01)
   {
-      // we are using opaqueSurfaceMaterial.roughnessConstant as the custom scalar so set the general roughness to 0.7 first
+      // we are using opaqueSurfaceMaterial.roughnessConstant as a custom scalar so set the general roughness to 0.7 first
       roughness = 0.7;
   }
 
@@ -782,11 +782,24 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   if (freeFlag01)
   {
     float16_t wetblend = saturate((normal.z - 0.35h) / 0.65h);
-
     roughness = lerp(roughness, roughness * opaqueSurfaceMaterial.roughnessConstant, wetblend);
+  }
 
-    // roughness scalar from d3d - might be better to assign roughness and not scale it?
-    //roughness *= opaqueSurfaceMaterial.roughnessConstant;
+  if (freeFlag03 && albedoOpacityLoaded)
+  {
+      //f16vec4 maskSample;
+      //surfaceMaterialInteractionTextureReadHelper(opaqueSurfaceMaterial.tangentTextureIndex, opaqueSurfaceMaterial.samplerIndex, surfaceInteraction, maskSample);
+
+      // dot: dp3 r0.x, r0, dirtDecalMask
+      float decalDirtMask = dot(albedoOpacitySample.rgb, opaqueSurfaceMaterial.emissiveColorConstant.rrr); //opaqueSurfaceMaterial.roughnessConstant);
+
+      decalDirtMask = saturate((decalDirtMask - 0.5h) * opaqueSurfaceMaterial.emissiveColorConstant.g + 0.5h);
+
+      // mul by vertex color alpha: mul r0.x, r0.x, vertex_color.w
+      decalDirtMask *= surfaceInteraction.vertexColor.w; 
+      
+      albedo.rgb = opaqueSurfaceMaterial.albedoOpacityConstant.rgb;
+      opacity = decalDirtMask;
   }
 
   // Load Metallic
