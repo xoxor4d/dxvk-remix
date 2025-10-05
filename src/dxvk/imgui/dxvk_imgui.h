@@ -176,11 +176,12 @@ namespace dxvk {
     bool                  m_largeUIMode = false;
     bool                  m_pendingUIOptionsScroll = false;
 
-    static constexpr const char* themeNames[] = { "Default", "Toolkit Inspired", "Nvidia Inspired" };
+    static constexpr const char* themeNames[] = { "Default", "Toolkit Inspired", "Nvidia Inspired", "Gta4 Inspired" };
     enum Theme {
       kTheme_Default = 0,
       kTheme_Toolkit,
       kTheme_Nvidia,
+      kTheme_Gta4,
       kTheme_Count
     };
     Theme                 m_currTheme = kTheme_Default;
@@ -272,6 +273,8 @@ namespace dxvk {
     void setToolkitInspiredStyle(ImGuiStyle* dst);
     // Sets Nvidia inspired UI theme
     void setNvidiaInspiredStyle(ImGuiStyle* dst);
+    // Sets Gta4 inspired UI theme
+    void setGta4InspiredStyle(ImGuiStyle* dst);
     // Custom style
     void setupStyle(ImGuiStyle* dst = NULL);
 
