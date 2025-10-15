@@ -3037,7 +3037,8 @@ namespace dxvk {
 
     if (IMGUI_ADD_TOOLTIP(ImGui::BeginTabItem("Step 1: Categorize Textures", nullptr, tab_item_flags), "Select texture definitions for Remix")) {
       spacing();
-      RemixGui::Checkbox("Preserve discarded textures", &RtxOptions::keepTexturesForTaggingObject());
+      RemixGui::Checkbox("Preserve Discarded Textures", &RtxOptions::keepTexturesForTaggingObject());
+      RemixGui::Checkbox("Always Recalculate Hashes", &RtxOptions::alwaysRecalculateTextureHashesObject());
       separator();
 
       // set thumbnail size
