@@ -328,6 +328,23 @@ namespace dxvk {
         break;
       }
     }
+
+    if (captureApiLights())
+    {
+      for (auto&& pair : m_sceneManager.getLightManager().getExternalLightTable()) {
+        const RtLight& rtLight = pair.second;
+        assert(rtLight.getInitialHash() != 0);
+        switch (rtLight.getType()) {
+        default:
+        case RtLightType::Sphere:
+          captureSphereLight(rtLight.getSphereLight());
+          break;
+        case RtLightType::Distant:
+          captureDistantLight(rtLight.getDistantLight());
+          break;
+        }
+      }
+    }
   }
 
   void GameCapturer::captureSphereLight(const dxvk::RtSphereLight& rtLight) {
