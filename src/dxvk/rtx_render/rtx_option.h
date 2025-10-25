@@ -866,7 +866,8 @@ namespace dxvk {
       }
       case RtxOptionImpl::ValueType::PendingValue: {
         if (pImpl->optionLayerValueQueue.begin()->second.priority != RtxOptionLayer::s_runtimeOptionLayerPriority) {
-          pImpl->insertEmptyOptionLayer(RtxOptionLayer::s_runtimeOptionLayerPriority, 1.0f, 1.0f);
+          // Initialize the runtime layer with the current resolved value instead of an empty value
+          pImpl->insertOptionLayerValue(pImpl->resolvedValue, RtxOptionLayer::s_runtimeOptionLayerPriority, 1.0f, 1.0f);
         }
         return reinterpret_cast<BasicType*>(&pImpl->optionLayerValueQueue.begin()->second.value);
       }
@@ -890,7 +891,8 @@ namespace dxvk {
       }
       case RtxOptionImpl::ValueType::PendingValue: {
         if (pImpl->optionLayerValueQueue.begin()->second.priority != RtxOptionLayer::s_runtimeOptionLayerPriority) {
-          pImpl->insertEmptyOptionLayer(RtxOptionLayer::s_runtimeOptionLayerPriority, 1.0f, 1.0f);
+          // Initialize the runtime layer with the current resolved value instead of an empty value
+          pImpl->insertOptionLayerValue(pImpl->resolvedValue, RtxOptionLayer::s_runtimeOptionLayerPriority, 1.0f, 1.0f);
         }
         return reinterpret_cast<ClassType*>(pImpl->optionLayerValueQueue.begin()->second.value.pointer);
       }
