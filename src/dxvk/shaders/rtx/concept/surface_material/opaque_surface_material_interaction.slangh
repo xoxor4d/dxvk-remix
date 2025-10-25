@@ -491,6 +491,14 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   const bool freeFlag01 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_FREE01;
   const bool freeFlag02 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_FREE02;
   const bool freeFlag03 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_FREE03;
+  const bool freeFlag04 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_FREE04;
+  const bool freeFlag05 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_FREE05;
+  const bool freeFlag06 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_FREE06;
+
+  if (freeFlag04)
+  {
+    surfaceInteraction.vertexColor.rgb = f16vec3(1.0);
+  }
 
 #ifdef OPAQUE_MATERIAL_USE_POM
   if (cb.pomMode != DisplacementMode::Off && opaqueSurfaceMaterial.hasValidDisplacement())
