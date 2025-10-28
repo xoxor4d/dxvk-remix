@@ -995,6 +995,12 @@ void GameExporter::exportSphereLights(const Export& exportData, ExportContext& c
   transformOp.Set(exportData.globalXform);
   dxvk::Logger::debug("[GameExporter][" + exportData.debugId + "][exportSphereLights] Begin");
   for(const auto& [id,sphereLightData] : exportData.sphereLights) {
+
+    // WAR to ignore lights with more then 1 xforms as those crash inside of 'setTimeSampledXforms'
+    if (sphereLightData.xforms.size() > 1) {
+      continue;
+    }
+
     // Build light stage
     const std::string lightName = prefix::light + sphereLightData.lightName;
     const std::string lightStagePath = lightDirPath + lightName + ctx.extension;
