@@ -1191,8 +1191,15 @@ namespace dxvk {
 
       ignoreAlphaChannel = opaqueMaterialData.getIgnoreAlphaChannel();
 
+      // rtx_materials.cpp is doing a hashlookup (ignoreAlphaChannel = lookupHash(RtxOptions::ignoreAlphaOnTextures(), getHash());)
+      // so we need to check d3d flag here
+      if (!ignoreAlphaChannel && CategoryFlags(drawCallState.materialData.remixTextureCategoryFlagsFromD3D).test(InstanceCategories::IgnoreAlphaChannel)) {
+        ignoreAlphaChannel = true;
+      }
+
       if (drawCallState.materialData.remixModifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR) {
-        emissiveIntensity = opaqueMaterialData.getEmissiveIntensity() * RtxOptions::emissiveIntensity() * drawCallState.materialData.remixTempFloat01FromD3D;
+        //enableEmissive = drawCallState.materialData.remixTempFloat01FromD3D != 0.0f;
+        emissiveIntensity *= drawCallState.materialData.remixTempFloat01FromD3D;
       }
 
       if (drawCallState.materialData.remixModifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR) {
@@ -1205,7 +1212,7 @@ namespace dxvk {
       }
 
       // sets vertex color to white but keeps alpha
-      if (drawCallState.testCategoryFlags(InstanceCategories::Terrain) || drawCallState.materialData.remixModifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA) {
+      if (drawCallState.materialData.remixModifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA || drawCallState.testCategoryFlags(InstanceCategories::Terrain)) {
         freeFlag04 = true;
       }
 
