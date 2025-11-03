@@ -257,7 +257,7 @@ namespace dxvk {
             && !RtxOptions::ignoreAllVertexColorBakedLighting() 
             && !lookupHash(RtxOptions::ignoreBakedLightingTextures(), m_activeDrawCallState.materialData.colorTextures[0].getImageHash()) 
             && (!CategoryFlags(m_activeDrawCallState.materialData.remixTextureCategoryFlagsFromD3D).test(InstanceCategories::IgnoreBakedLighting) 
-                || m_activeDrawCallState.materialData.remixModifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA
+                || m_activeDrawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA
                 || lookupHash(RtxOptions::terrainTextures(), m_activeDrawCallState.materialData.colorTextures[0].getImageHash())
                )
             ) {

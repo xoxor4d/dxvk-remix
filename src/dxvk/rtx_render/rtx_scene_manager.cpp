@@ -1143,12 +1143,14 @@ namespace dxvk {
       float subsurfaceMaxSampleRadius = 0.0f;
 
       bool ignoreAlphaChannel = false;
-      bool freeFlag01 = false;
+      /*bool freeFlag01 = false;
       bool freeFlag02 = false;
       bool freeFlag03 = false;
       bool freeFlag04 = false;
       bool freeFlag05 = false;
-      bool freeFlag06 = false;
+      bool freeFlag06 = false;*/
+
+      uint8_t d3dModifierFlags = REMIX_MODIFIER_TO_SHADER_NONE;
 
       constexpr Vector4 kWhiteModeAlbedo = Vector4(0.7f, 0.7f, 0.7f, 1.0f);
 
@@ -1197,29 +1199,32 @@ namespace dxvk {
         ignoreAlphaChannel = true;
       }
 
-      if (drawCallState.materialData.remixModifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR) {
-        //enableEmissive = drawCallState.materialData.remixTempFloat01FromD3D != 0.0f;
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR) {
         emissiveIntensity *= drawCallState.materialData.remixTempFloat01FromD3D;
       }
 
-      if (drawCallState.materialData.remixModifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR) {
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR) {
         roughnessConstant = drawCallState.materialData.remixTempFloat02FromD3D;
-        freeFlag01 = true;
+        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_ROUGHNESS_SCALAR; // ff01
       }
 
-      if (drawCallState.materialData.remixModifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_ENABLE_VERTEX_COLOR) {
-        freeFlag02 = true;
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ENABLE_VERTEX_COLOR) {
+        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_ENABLE_VERTEX_COLOR; // ff02
+      }
+
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_DECAL_DIRT) {
+        emissiveColorConstant.r = drawCallState.materialData.remixTempFloat01FromD3D; // mask intensity scalar
+        emissiveColorConstant.g = drawCallState.materialData.remixTempFloat02FromD3D; // mask contrast
+        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_DECAL_DIRT; // ff03
       }
 
       // sets vertex color to white but keeps alpha
-      if (drawCallState.materialData.remixModifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA || drawCallState.testCategoryFlags(InstanceCategories::Terrain)) {
-        freeFlag04 = true;
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA || drawCallState.testCategoryFlags(InstanceCategories::Terrain)) {
+        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_REM_VERTEX_COLOR_KEEP_ALPHA; // ff04
       }
 
-      if (drawCallState.materialData.remixModifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_DECAL_DIRT) {
-        emissiveColorConstant.r = drawCallState.materialData.remixTempFloat01FromD3D; // mask intensity scalar
-        emissiveColorConstant.g = drawCallState.materialData.remixTempFloat02FromD3D; // mask contrast
-        freeFlag03 = true;
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_VEHICLE_DECAL_DIRT) {
+        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_VEHICLE_DECAL_DIRT; // ff05
       }
 
       subsurfaceMeasurementDistance = opaqueMaterialData.getSubsurfaceMeasurementDistance() * RtxOptions::SubsurfaceScattering::surfaceThicknessScale();
@@ -1290,7 +1295,7 @@ namespace dxvk {
         ignoreAlphaChannel, thinFilmEnable, alphaIsThinFilmThickness,
         thinFilmThicknessConstant, samplerIndex, displaceIn, displaceOut, 
         subsurfaceMaterialIndex, isUsingRaytracedRenderTarget,
-        samplerFeedbackStamp, freeFlag01, freeFlag02, freeFlag03, freeFlag04, freeFlag05, freeFlag06
+        samplerFeedbackStamp, d3dModifierFlags
       };
 
       if (opaqueSurfaceMaterial.hasValidDisplacement()) {
