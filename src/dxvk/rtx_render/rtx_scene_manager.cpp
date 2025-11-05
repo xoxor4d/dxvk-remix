@@ -1191,6 +1191,8 @@ namespace dxvk {
 
       ignoreAlphaChannel = opaqueMaterialData.getIgnoreAlphaChannel();
 
+      const bool forceVertexColorModulate = drawCallState.testCategoryFlags(InstanceCategories::Beam) || CategoryFlags(drawCallState.materialData.remixTextureCategoryFlagsFromD3D).test(InstanceCategories::Beam);
+
       // rtx_materials.cpp is doing a hashlookup (ignoreAlphaChannel = lookupHash(RtxOptions::ignoreAlphaOnTextures(), getHash());)
       // so we need to check d3d flag here
       if (!ignoreAlphaChannel && CategoryFlags(drawCallState.materialData.remixTextureCategoryFlagsFromD3D).test(InstanceCategories::IgnoreAlphaChannel)) {
@@ -1216,8 +1218,10 @@ namespace dxvk {
         d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_DECAL_DIRT; // ff03
       }
 
-      // sets vertex color to white but keeps alpha
-      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA || drawCallState.testCategoryFlags(InstanceCategories::Terrain)) {
+      // sets vertex color to white but keep alpha via d3d or when tagged as terrain
+      // ignore d3d state when tagged as beam and keep vertex color and alpha intact
+      if ((drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA || drawCallState.testCategoryFlags(InstanceCategories::Terrain)) 
+           && !forceVertexColorModulate) {
         d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_REM_VERTEX_COLOR_KEEP_ALPHA; // ff04
       }
 
