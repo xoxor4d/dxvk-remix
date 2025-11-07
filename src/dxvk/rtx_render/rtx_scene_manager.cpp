@@ -1143,14 +1143,12 @@ namespace dxvk {
       float subsurfaceMaxSampleRadius = 0.0f;
 
       bool ignoreAlphaChannel = false;
-      /*bool freeFlag01 = false;
-      bool freeFlag02 = false;
-      bool freeFlag03 = false;
-      bool freeFlag04 = false;
-      bool freeFlag05 = false;
-      bool freeFlag06 = false;*/
 
       uint8_t d3dModifierFlags = REMIX_MODIFIER_TO_SHADER_NONE;
+      float freeFloat01 = 0.0f;
+      float freeFloat02 = 0.0f;
+      float freeFloat03 = 0.0f;
+      float freeFloat04 = 0.0f;
 
       constexpr Vector4 kWhiteModeAlbedo = Vector4(0.7f, 0.7f, 0.7f, 1.0f);
 
@@ -1206,7 +1204,17 @@ namespace dxvk {
       }
 
       if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR) {
-        roughnessConstant = drawCallState.materialData.remixTempFloat02FromD3D;
+        //const float scalar      = (float) (drawCallState.materialData.remixTempFloatPack4FromD3D >> 16 & 0xFF) / 255.0f; // x
+        //const float z_normal    = (float) (drawCallState.materialData.remixTempFloatPack4FromD3D >> 8  & 0xFF) / 255.0f; // y
+        //const float blend_width = (float) (drawCallState.materialData.remixTempFloatPack4FromD3D >> 0  & 0xFF) / 255.0f; // z
+        //const float normal_intensity_reduction = (float) (drawCallState.materialData.remixTempFloatPack4FromD3D >> 24 & 0xFF) / 255.0f; // w
+        const float scalar = drawCallState.materialData.remixFloatRS210FromD3D; // x
+        const float z_normal = drawCallState.materialData.remixFloatRS211FromD3D; // y
+        const float blend_width = drawCallState.materialData.remixFloatRS212FromD3D; // z
+        freeFloat01 = scalar; // scalar
+        freeFloat02 = z_normal; // z-normal limit
+        freeFloat03 = blend_width; // blending width
+
         d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_ROUGHNESS_SCALAR; // ff01
       }
 
@@ -1299,7 +1307,8 @@ namespace dxvk {
         ignoreAlphaChannel, thinFilmEnable, alphaIsThinFilmThickness,
         thinFilmThicknessConstant, samplerIndex, displaceIn, displaceOut, 
         subsurfaceMaterialIndex, isUsingRaytracedRenderTarget,
-        samplerFeedbackStamp, d3dModifierFlags
+        samplerFeedbackStamp,
+        d3dModifierFlags, freeFloat01, freeFloat02, freeFloat03, freeFloat04
       };
 
       if (opaqueSurfaceMaterial.hasValidDisplacement()) {
