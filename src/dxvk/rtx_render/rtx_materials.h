@@ -527,7 +527,7 @@ struct RtOpaqueSurfaceMaterial {
     bool ignoreAlphaChannel, bool enableThinFilm, bool alphaIsThinFilmThickness, float thinFilmThicknessConstant,
     uint32_t samplerIndex, float displaceIn, float displaceOut,
     uint32_t subsurfaceMaterialIndex, bool isRaytracedRenderTarget,
-    uint16_t samplerFeedbackStamp, uint8_t d3dModifierFlags
+    uint16_t samplerFeedbackStamp, uint8_t d3dModifierFlags, float freeFloat01, float freeFloat02, float freeFloat03, float freeFloat04
   ) :
     m_albedoOpacityTextureIndex{ albedoOpacityTextureIndex }, m_normalTextureIndex{ normalTextureIndex },
     m_tangentTextureIndex { tangentTextureIndex }, m_heightTextureIndex { heightTextureIndex }, m_roughnessTextureIndex{ roughnessTextureIndex },
@@ -540,7 +540,7 @@ struct RtOpaqueSurfaceMaterial {
     m_thinFilmThicknessConstant { thinFilmThicknessConstant }, m_samplerIndex{ samplerIndex }, m_displaceIn{ displaceIn },
     m_displaceOut{ displaceOut }, m_subsurfaceMaterialIndex(subsurfaceMaterialIndex), m_isRaytracedRenderTarget(isRaytracedRenderTarget),
     m_samplerFeedbackStamp{ samplerFeedbackStamp },
-    m_d3dModifierFlags { d3dModifierFlags }
+    m_d3dModifierFlags { d3dModifierFlags }, m_freeFloat01 { freeFloat01 }, m_freeFloat02 { freeFloat02 }, m_freeFloat03 { freeFloat03 }, m_freeFloat04 { freeFloat04 }
   {
     updateCachedData();
     updateCachedHash();
@@ -656,11 +656,15 @@ struct RtOpaqueSurfaceMaterial {
     writeGPUHelper(data, offset, glm::packHalf1x16(m_anisotropy));
     writeGPUHelperExplicit<2>(data, offset, m_tangentTextureIndex);
 
-    // data[24]
+    // data[24 - 27]
     writeGPUHelperExplicit<2>(data, offset, m_samplerFeedbackStamp);
+    writeGPUHelper(data, offset, glm::packHalf1x16(m_freeFloat01));
+    writeGPUHelper(data, offset, glm::packHalf1x16(m_freeFloat02));
+    writeGPUHelper(data, offset, glm::packHalf1x16(m_freeFloat03));
 
-    // data[25 - 31]
-    writeGPUPadding<14>(data, offset);
+    // data[28 -  31]
+    writeGPUHelper(data, offset, glm::packHalf1x16(m_freeFloat04));
+    writeGPUPadding<6>(data, offset);
     assert(offset - oldOffset == kSurfaceMaterialGPUSize);
   }
 
@@ -760,6 +764,22 @@ struct RtOpaqueSurfaceMaterial {
     return m_d3dModifierFlags;
   }
 
+  float getFreeFloat01() const {
+    return m_freeFloat01;
+  }
+
+  float getFreeFloat02() const {
+    return m_freeFloat02;
+  }
+
+  float getFreeFloat03() const {
+    return m_freeFloat03;
+  }
+
+  float getFreeFloat04() const {
+    return m_freeFloat04;
+  }
+
 private:
   void updateCachedHash() {
     XXH64_hash_t h = 0;
@@ -788,6 +808,12 @@ private:
     h = XXH64(&m_subsurfaceMaterialIndex, sizeof(m_subsurfaceMaterialIndex), h);
     h = XXH64(&m_isRaytracedRenderTarget, sizeof(m_isRaytracedRenderTarget), h);
     h = XXH64(&m_samplerFeedbackStamp, sizeof(m_samplerFeedbackStamp), h);
+
+    h = XXH64(&m_d3dModifierFlags, sizeof(m_d3dModifierFlags), h);
+    h = XXH64(&m_freeFloat01, sizeof(m_freeFloat01), h);
+    h = XXH64(&m_freeFloat02, sizeof(m_freeFloat02), h);
+    h = XXH64(&m_freeFloat03, sizeof(m_freeFloat03), h);
+    h = XXH64(&m_freeFloat04, sizeof(m_freeFloat04), h);
    
     m_cachedHash = h;
   }
@@ -839,6 +865,10 @@ private:
   uint16_t m_samplerFeedbackStamp;
 
   uint8_t m_d3dModifierFlags;
+  float m_freeFloat01;
+  float m_freeFloat02;
+  float m_freeFloat03;
+  float m_freeFloat04;
 
   XXH64_hash_t m_cachedHash;
 
@@ -1681,6 +1711,19 @@ struct LegacyMaterialData {
   XXH64_hash_t remixHashFromD3D = 0; // RS 150
   float remixTempFloat01FromD3D = 0.0f; // RS 169
   float remixTempFloat02FromD3D = 0.0f; // RS 177
+  //uint32_t remixTempFloatPack4FromD3D = 0u; // RS 196
+
+  float remixFloatRS210FromD3D = 0.0f; // RS 210
+  float remixFloatRS211FromD3D = 0.0f; // RS 211
+  float remixFloatRS212FromD3D = 0.0f; // RS 212
+  float remixFloatRS213FromD3D = 0.0f; // RS 213
+  float remixFloatRS214FromD3D = 0.0f; // RS 214
+  float remixFloatRS215FromD3D = 0.0f; // RS 215
+  float remixFloatRS216FromD3D = 0.0f; // RS 216
+  float remixFloatRS217FromD3D = 0.0f; // RS 217
+  float remixFloatRS218FromD3D = 0.0f; // RS 218
+  float remixFloatRS219FromD3D = 0.0f; // RS 219
+  float remixFloatRS220FromD3D = 0.0f; // RS 220
 
   void setHashOverride(XXH64_hash_t hash) {
     m_cachedHash = hash;
