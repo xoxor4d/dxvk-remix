@@ -781,12 +781,6 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
   float16_t roughness = opaqueSurfaceMaterial.roughnessConstant;
 
-  if (d3dModRoughnessScalar)
-  {
-      // we are using opaqueSurfaceMaterial.roughnessConstant as a custom scalar so set the general roughness to 0.7 first
-      roughness = 0.7;
-  }
-
   if (roughnessLoaded)
   {
     roughness = roughnessSample.x;
@@ -803,9 +797,20 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
   if (d3dModRoughnessScalar)
   {
-    float16_t wetblend = saturate((normal.z - 0.35h) / 0.65h);
-    roughness = lerp(roughness, roughness * opaqueSurfaceMaterial.roughnessConstant, wetblend);
+    float16_t scalar = opaqueSurfaceMaterial.m_freeFloat01; 
+    float16_t z_normal = opaqueSurfaceMaterial.m_freeFloat02;
+    float16_t blend_width = opaqueSurfaceMaterial.m_freeFloat03;
+
+    float16_t wetblend = saturate(smoothstep(z_normal - blend_width, z_normal + blend_width, normal.z));
+    roughness = saturate(lerp(roughness, roughness * scalar, wetblend));
+
   }
+
+  //if (d3dModRoughnessScalar)
+  //{
+  //    // we are using opaqueSurfaceMaterial.roughnessConstant as a custom scalar so set the general roughness to 0.7 first
+  //    roughness = opaqueSurfaceMaterial.m_freeFloat01;
+  //}
 
   if (d3dModDecalDirt && albedoOpacityLoaded)
   {
