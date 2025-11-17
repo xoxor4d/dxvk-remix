@@ -1150,7 +1150,7 @@ Tables below enumerate all the options and their defaults set by RTX Remix. Note
     , m_blendThreshold(blendThreshold)
     , m_pendingEnabledRequest(EnabledRequest::NoRequest)
     , m_pendingMaxBlendStrength(kEmptyBlendStrengthRequest)
-    , m_pendingMinBlendThreshold(kEmptyBlendThresholdRequest) {
+    , m_pendingMinBlendThreshold(0.98f/*kEmptyBlendThresholdRequest*/) {
 #if RTX_OPTION_DEBUG_LOGGING
     Logger::info(str::format("[RTX Option]: Added option layer: ", m_configName,
                              "\nPriority: ", std::to_string(m_priority),
