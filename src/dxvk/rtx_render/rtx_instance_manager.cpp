@@ -993,7 +993,7 @@ namespace dxvk {
     // These can change in the Runtime UI so need to check during update
     currentInstance.m_isHidden = currentInstance.testCategoryFlags(InstanceCategories::Hidden);
     currentInstance.m_isPlayerModel = currentInstance.testCategoryFlags(InstanceCategories::ThirdPersonPlayerModel);
-    currentInstance.m_isWorldSpaceUI = currentInstance.testCategoryFlags(InstanceCategories::WorldUI);
+    currentInstance.m_isWorldSpaceUI = currentInstance.testCategoryFlags(InstanceCategories::WorldUI) && !currentInstance.testCategoryFlags(InstanceCategories::IgnoreLights);
 
     // Hide the sky instance since it is not raytraced.
     // Sky mesh and material are only good for capture and replacement purposes.
@@ -1076,7 +1076,7 @@ namespace dxvk {
           if (currentInstance.m_isWorldSpaceUI) {
             // For worldspace UI, we want to show the UI (unlit) in the world.  So configure the blend mode if blending is used accordingly.
             materialData.getOpaqueMaterialData().setEnableEmission(true);
-            materialData.getOpaqueMaterialData().setEmissiveIntensity(2.0f);
+            materialData.getOpaqueMaterialData().setEmissiveIntensity(1.0f);
             materialData.getOpaqueMaterialData().setEmissiveColorTexture(materialData.getOpaqueMaterialData().getAlbedoOpacityTexture());
           } else if (currentInstance.surface.alphaState.emissiveBlend && RtxOptions::enableEmissiveBlendEmissiveOverride() && useLegacyAlphaState) {
             // If the user has decided to override the legacy alpha state, assume they know what they are doing and allow for explicit emission controls.
