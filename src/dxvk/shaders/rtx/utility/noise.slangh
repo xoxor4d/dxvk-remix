@@ -240,3 +240,16 @@ float getNextSampleBlueNoise(inout RNG rng)
   return min(value, 1.0f - quantum);
 #endif
 }
+
+float hash21(vec2 p)
+{
+    p = fract(p * vec2(123.34f, 456.21f));
+    p += dot(p, p + 45.32f);
+    return frac(p.x * p.y);
+}
+
+vec2 hash22(vec2 p)
+{
+    float n = hash21(p);
+    return vec2(n, frac(n * 1.337f + 0.618033f));
+}
