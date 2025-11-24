@@ -1145,8 +1145,8 @@ namespace dxvk {
       bool ignoreAlphaChannel = false;
 
       uint8_t d3dModifierFlags = REMIX_MODIFIER_TO_SHADER_NONE;
-      float freeFloat01 = 0.0f;
-      float freeFloat02 = 0.0f;
+      uint16_t wetnessParams1 = 0u;
+      uint16_t wetnessParams2 = 0u;
       float freeFloat03 = 0.0f;
       float freeFloat04 = 0.0f;
 
@@ -1204,16 +1204,12 @@ namespace dxvk {
       }
 
       if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR) {
-        //const float scalar      = (float) (drawCallState.materialData.remixTempFloatPack4FromD3D >> 16 & 0xFF) / 255.0f; // x
-        //const float z_normal    = (float) (drawCallState.materialData.remixTempFloatPack4FromD3D >> 8  & 0xFF) / 255.0f; // y
-        //const float blend_width = (float) (drawCallState.materialData.remixTempFloatPack4FromD3D >> 0  & 0xFF) / 255.0f; // z
-        //const float normal_intensity_reduction = (float) (drawCallState.materialData.remixTempFloatPack4FromD3D >> 24 & 0xFF) / 255.0f; // w
-        const float scalar = drawCallState.materialData.remixFloatRS210FromD3D; // x
-        const float z_normal = drawCallState.materialData.remixFloatRS211FromD3D; // y
-        const float blend_width = drawCallState.materialData.remixFloatRS212FromD3D; // z
-        freeFloat01 = scalar; // scalar
-        freeFloat02 = z_normal; // z-normal limit
-        freeFloat03 = blend_width; // blending width
+        // Read packed DWORD from RS_210_ROUGHNESS_SCALAR
+        // The client side packs 3 parameters using bit packing: scalar(6 bits) + max_z(5 bits) + blend_width(5 bits) = 16 bits
+        // The DWORD contains: lower 16 bits = wetnessParams1, upper 16 bits = wetnessParams2
+        const uint32_t packedDword = drawCallState.materialData.remixPackedFloat4_RS210FromD3D;
+        wetnessParams1 = uint16_t(packedDword & 0xFFFF);        // Lower 16 bits
+        wetnessParams2 = uint16_t((packedDword >> 16) & 0xFFFF); // Upper 16 bits
 
         d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_ROUGHNESS_SCALAR; // ff01
       }
@@ -1308,7 +1304,7 @@ namespace dxvk {
         thinFilmThicknessConstant, samplerIndex, displaceIn, displaceOut, 
         subsurfaceMaterialIndex, isUsingRaytracedRenderTarget,
         samplerFeedbackStamp,
-        d3dModifierFlags, freeFloat01, freeFloat02, freeFloat03, freeFloat04
+        d3dModifierFlags, wetnessParams1, wetnessParams2, freeFloat03, freeFloat04
       };
 
       if (opaqueSurfaceMaterial.hasValidDisplacement()) {
