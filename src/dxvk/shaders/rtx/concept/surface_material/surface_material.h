@@ -96,8 +96,8 @@ struct OpaqueSurfaceMaterial
 
   // 24-27
   uint16_t samplerFeedbackStamp;
-  float16_t m_freeFloat01;
-  float16_t m_freeFloat02;
+  uint16_t m_wetnessParams1; // Packed wetness parameters (bitwise compatible with float16_t)
+  uint16_t m_wetnessParams2; // Reserved for future wetness parameters (bitwise compatible with float16_t)
   float16_t m_freeFloat03;
 
   // 28
