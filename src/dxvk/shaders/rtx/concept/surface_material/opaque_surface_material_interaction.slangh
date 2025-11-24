@@ -22,6 +22,8 @@
 #pragma once
 
 #include "opaque_surface_material_blending.slangh"
+#include "rtx/external/simplex_noise.slangh"
+#include "rtx/concept/camera/camera.slangh"
 
 // Opaque Surface Material Interaction Constants
 
@@ -795,22 +797,418 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   // Apply material modifiers
   roughness = saturate(roughness * cb.opaqueMaterialArgs.roughnessScale + cb.opaqueMaterialArgs.roughnessBias);
 
+  #if 0
   if (d3dModRoughnessScalar)
   {
-    float16_t scalar = opaqueSurfaceMaterial.m_freeFloat01; 
-    float16_t z_normal = opaqueSurfaceMaterial.m_freeFloat02;
-    float16_t blend_width = opaqueSurfaceMaterial.m_freeFloat03;
+        float16_t scalar = cb.debugKnob.x;
+        float16_t z_normal = cb.debugKnob.y;
+        float16_t blend_width = cb.debugKnob.z;
 
-    float16_t wetblend = saturate(smoothstep(z_normal - blend_width, z_normal + blend_width, normal.z));
-    roughness = saturate(lerp(roughness, roughness * scalar, wetblend));
-
+        float16_t wetblend = saturate(smoothstep(z_normal - blend_width, z_normal + blend_width, normal.z));
+        roughness = saturate(lerp(roughness, roughness * scalar, wetblend));
   }
+  #endif
 
-  //if (d3dModRoughnessScalar)
-  //{
-  //    // we are using opaqueSurfaceMaterial.roughnessConstant as a custom scalar so set the general roughness to 0.7 first
-  //    roughness = opaqueSurfaceMaterial.m_freeFloat01;
-  //}
+  #if 1
+  if (d3dModRoughnessScalar)
+  {
+    uint packedBits1 = uint(opaqueSurfaceMaterial.m_wetnessParams1);
+    uint packedBits2 = uint(opaqueSurfaceMaterial.m_wetnessParams2);
+    
+    float scalar = (float((packedBits1 >> 10) & 0x3F) * (10.0f / 63.0f));
+    float z_normal = (float((packedBits1 >> 5) & 0x1F) / 31.0f);
+    float blend_width = (float((packedBits1) & 0x1F) / 31.0f);
+    float raindrop_scale = float(packedBits2 & 0xFF) * (10.0f / 255.0f);
+    uint wetnessFlags = (packedBits2 >> 8) & 0xFF;
+
+    float16_t originalNormalZ = normal.z;
+    float16_t wetblend = saturate(smoothstep(z_normal - blend_width, z_normal + blend_width, normal.z)); // + cb.debugKnob.z
+
+    const float16_t wetblendBase = wetblend;            // preserves smooth world blending (normal-based)
+    float16_t wetblendForRoughness = wetblendBase;      // allows puddle logic to add detail without destroying base blend
+
+    const bool enablePuddles = wetnessFlags & (1u << 0);
+    const bool enableRaindrops = wetnessFlags & (1u << 1);
+    const bool useTextureCoordsForRaindrops = wetnessFlags & (1u << 2);
+    const bool useExpRaindrops = wetnessFlags & (1u << 3);
+
+    const float raindropScaleMultDefault = 3.0f;
+    float raindropScaleMult = (raindrop_scale > 0.0f ? max(raindrop_scale, 0.1f) : raindropScaleMultDefault);
+    float animationSpeedMult = 0.4f;
+    float raindropStrength = 5.0f;
+    float fadeOutSpeed = 0.3f;
+    float fadeInSpeed = 1.5f;
+    float raindropRoughnessScale = 2.7f;
+    float raindropNormalScale = 0.5f;
+    float raindropVisibilityMult = 14.0f;
+    
+    float layerRoughnessScale[4];
+    layerRoughnessScale[0] = raindropRoughnessScale;
+    layerRoughnessScale[1] = raindropRoughnessScale;
+    layerRoughnessScale[2] = raindropRoughnessScale;
+    layerRoughnessScale[3] = raindropRoughnessScale;
+    
+    const float16_t maxRaindropDistance = float16_t(35.0f);
+    const float16_t maxPuddleDistance = float16_t(100.0f);
+    
+    float combinedRaindropMask = 0.0f;
+    f16vec3 raindropNormalOffset = f16vec3(0.0h);
+    float combinedRoughnessMask = 0.0f;
+    
+    bool surfaceIsHorizontal = originalNormalZ > float16_t(z_normal);
+    float16_t cameraDistanceHalf = float16_t(length(surfaceInteraction.position - cameraGetWorldPosition(cb.camera)));
+    
+    // -------
+    // puddles
+
+    if (enablePuddles && wetblendBase > float16_t(0.0f) && cameraDistanceHalf <= float16_t(maxPuddleDistance))
+    {
+      const float puddleNoiseScale = 0.2f;
+      float noiseValue = simplexNoise3D(surfaceInteraction.position * puddleNoiseScale);
+      float puddleMaskRaw = saturate((noiseValue + 1.0f) * 0.5f);
+      
+      const float puddleThreshold = 0.5f;
+      const float puddleContrast = 2.6f;
+      
+      float thresholdRemapped = saturate((puddleMaskRaw - puddleThreshold * 0.5f) / max(1.0f - puddleThreshold * 0.5f, 0.001f));
+      thresholdRemapped = pow(thresholdRemapped, 1.0f / puddleContrast);
+      
+      const float minWetness = 0.5f;
+      float baseWetnessMask = lerp(minWetness, 1.0f, thresholdRemapped);
+      
+      const float largePuddleScale = 0.03f;
+      float largePuddleNoise = simplexNoise3D(surfaceInteraction.position * largePuddleScale);
+      float largePuddleMask = saturate((largePuddleNoise + 1.0f) * 0.5f);
+      largePuddleMask = pow(largePuddleMask, 2.0f);
+      baseWetnessMask = saturate(baseWetnessMask + largePuddleMask * 0.3f);
+      
+      const float streakContrast = 2.4f;
+      vec3 ripplePos = surfaceInteraction.position * 0.5f;
+      float rippleX = abs(simplexNoise3D(vec3(ripplePos.x * 0.2f, ripplePos.y, ripplePos.z * 2.0f)));
+      float rippleZ = abs(simplexNoise3D(vec3(ripplePos.x * 2.0f, ripplePos.y, ripplePos.z * 0.2f)));
+      float rippleMask = saturate((rippleX + rippleZ) * 0.4f);
+      rippleMask = pow(rippleMask, 1.0f / streakContrast);
+      const float rippleStrength = 0.18f;
+      puddleMaskRaw = saturate(baseWetnessMask - rippleMask * rippleStrength);
+      
+      const float puddleStrength = 1.1f;
+      
+      float16_t puddleMask = float16_t(saturate(puddleMaskRaw));
+      float16_t puddledWetblend = wetblendBase * puddleMask;
+      wetblendForRoughness = lerp(wetblendBase, puddledWetblend, float16_t(puddleStrength));
+    }
+
+    // ------
+    // raindrops world
+    
+    if (enableRaindrops && surfaceIsHorizontal && cameraDistanceHalf <= float16_t(maxRaindropDistance))
+    {
+        // animation/time
+        float global_time = float(cb.frameIdx) * 0.0333333f * animationSpeedMult; //* (1.0f + cb.debugKnob.w);
+    
+        // params
+        const int GRID_NEIGHBOR = 2;
+        float grid_scale = 3.4f * raindropScaleMult + (-4.4f);
+        float spawn_period = 3.5f + (-2.9f);
+        float drop_life = 1.2f + (-0.9f);
+        float ripple_speed = 1.6f * raindropScaleMult;
+    
+        // droplet tuning
+        float center_radius_base = 0.03f + 0.1f; //cb.debugKnob.z;
+        float center_strength = 0.45f * raindropVisibilityMult + (-3.2f);
+        float ripple_thickness = 0.035f;
+    
+        // ring tuning (guard debug knob so it can't zero them out)
+        float dbgW = max(0.25f, abs(0.54f));
+        float ripple_strength = 0.18f * raindropVisibilityMult * dbgW;
+    
+        float normal_scale_center = 1.35f * raindropNormalScale;
+        float normal_scale_ripple = 0.18f * raindropNormalScale;
+    
+        float roughness_center = 0.62f * raindropRoughnessScale;
+        float roughness_ripple = 0.14f * raindropRoughnessScale;
+    
+        // accumulators
+        float accum_visibility = 0.0f;
+        float accum_roughness = 0.0f;
+        f16vec3 accum_normal_offset = f16vec3(0.0h);
+    
+        // coordinate selection (XY plane)
+        vec2 base_uv = useTextureCoordsForRaindrops ?
+                       surfaceInteraction.textureCoordinates :
+                       surfaceInteraction.position.xy;
+    
+        vec2 grid_pos = base_uv * grid_scale;
+        vec2 cell = floor(grid_pos);
+    
+        // sample neighbors
+        for (int oy = -GRID_NEIGHBOR; oy <= GRID_NEIGHBOR; ++oy)
+        {
+            for (int ox = -GRID_NEIGHBOR; ox <= GRID_NEIGHBOR; ++ox)
+            {
+                vec2 ncell = cell + vec2(float(ox), float(oy));
+    
+                vec2 h = hash22(ncell);
+                float seed = h.x;
+    
+                float spawn_offset = seed * spawn_period;
+    
+                // jitter drop center in cell
+                vec2 center_jitter = (hash22(ncell + 17.0f) - 0.5f) * 0.7f;
+                vec2 drop_center = (ncell + 0.5f + center_jitter) / grid_scale;
+    
+                float time_since_spawn = global_time - spawn_offset;
+                float cycle = floor(time_since_spawn / spawn_period);
+                float local_t = time_since_spawn - cycle * spawn_period;
+    
+                float cell_life = drop_life * lerp(0.85f, 1.25f, frac(seed * 7.3f));
+                float cell_ripple_speed = ripple_speed * lerp(0.85f, 1.15f, frac(seed * 3.1f));
+                // radius scales with raindropScaleMult so larger scale -> larger drops
+                float cell_center_radius = center_radius_base * raindropScaleMult *
+                                           lerp(0.85f, 1.25f, frac(seed * 5.2f));
+    
+                if (local_t >= 0.0f && local_t <= cell_life)
+                {
+                    float tnorm = local_t / cell_life;
+                    float ripple_radius = cell_ripple_speed * local_t;
+    
+                    vec2 sample_pos = useTextureCoordsForRaindrops ?
+                                      surfaceInteraction.textureCoordinates.xy :
+                                      surfaceInteraction.position.xy;
+    
+                    float dist = length(sample_pos - drop_center);
+    
+                    // central impact
+                    float center_fade = smoothstep(0.0f, 1.0f, 1.0f - tnorm);
+                    float center_mask = saturate(1.0f - dist / (cell_center_radius + 1e-5f));
+                    center_mask = pow(center_mask, 1.25f) * center_fade;
+    
+                    // ring (robust linear falloff)
+                    float ring_dist = abs(dist - ripple_radius);
+                    float ring_thickness = max(ripple_thickness * (0.5f + 0.5f * tnorm), 0.01f);
+                    float ring_mask = saturate(1.0f - (ring_dist / ring_thickness));
+                    float ring_appearance = smoothstep(0.12f, 0.30f, tnorm);
+                    float ring_fade = 1.0f - smoothstep(0.78f, 0.98f, tnorm);
+                    ring_mask *= ring_appearance * ring_fade;
+    
+                    // amplitudes
+                    float center_amp = center_strength * smoothstep(1.0f, 0.0f, tnorm);
+                    float ring_amp = ripple_strength * lerp(0.7f, 1.0f, tnorm);
+    
+                    float cell_visibility = clamp(center_mask * center_amp + ring_mask * ring_amp * 0.75f, 0.0f, 1.0f);
+    
+                    f16vec3 center_normal = f16vec3(0.0h);
+                    if (center_mask > 0.001f)
+                    {
+                        vec2 radial = (sample_pos - drop_center) / (cell_center_radius + 1e-6f);
+                    
+                        // hemisphere height
+                        float r2 = dot(radial, radial);
+                        float height = sqrt(saturate(1.0f - r2));
+                    
+                        // spherical normal
+                        vec3 cn = normalize(vec3(radial * 0.9f, height));
+                    
+                        // scale
+                        float center_normal_scale = center_mask * center_amp * normal_scale_center * (0.6f);
+                        center_normal = f16vec3(cn * center_normal_scale);
+                    }
+
+                    float rndAngle = frac(seed * 19.7f) * 6.2831853f;
+                    vec3 ring_dir = normalize(vec3(cos(rndAngle), sin(rndAngle), -0.45f));
+
+                    float ring_normal_scale = ring_mask * ring_amp * normal_scale_ripple;
+    
+                    accum_normal_offset += f16vec3(center_normal + ring_dir * ring_normal_scale);
+    
+                    // absolute roughness contribution
+                    float cell_roughness = center_mask * center_amp * roughness_center + ring_mask * ring_amp * roughness_ripple;
+                    accum_roughness += cell_roughness;
+    
+                    // smoother neighbor falloff
+                    float dist_cell = length(ncell - cell);
+                    float cell_weight = saturate(1.0f - (dist_cell * 0.38f));
+    
+                    accum_visibility += cell_visibility * cell_weight;
+                }
+            }
+        }
+    
+        // finalize
+        float final_raindrop_mask = saturate(accum_visibility * (1.4f * raindropVisibilityMult));
+        combinedRaindropMask += final_raindrop_mask * (raindropStrength * 0.85f);
+    
+        float16_t nOffLen = float16_t(length(vec3(accum_normal_offset)));
+        if (nOffLen > 0.0005h)
+        {
+            accum_normal_offset = normalize(accum_normal_offset) * (nOffLen * 0.45h);
+        }
+    
+        if (combinedRaindropMask > 0.0001f)
+        {
+            float16_t raindropNormalIntensity = saturate(originalNormalZ * 2.0h) * float16_t(combinedRaindropMask);
+            normal = normalize(normal + accum_normal_offset * raindropNormalIntensity);
+    
+            // stronger absolute roughness so drops show on smooth materials
+            float16_t raindropRoughnessMask = float16_t(saturate(accum_roughness) * 0.28h);
+            roughness = saturate(roughness + raindropRoughnessMask);
+        }
+    } // end raindrops
+    else if (useExpRaindrops && surfaceIsHorizontal && cameraDistanceHalf <= float16_t(maxRaindropDistance))
+    {
+      float time = float(cb.frameIdx) * 0.05f * animationSpeedMult;
+      
+      [unroll]
+      for (int layer = 0; layer < 4; ++layer)
+      {
+        float baseLayerScale = 4.0f + float(layer) * 1.5f;
+        float layerScale = baseLayerScale * raindropScaleMult;
+        f16vec3 layerOffset = f16vec3(float(layer) * 50.0f, float(layer) * 75.0f, float(layer) * 100.0f);
+        
+        float layerSpeed = 0.6f + float(layer) * 0.15f;
+        f16vec3 hashInput = useTextureCoordsForRaindrops ? 
+          f16vec3(surfaceInteraction.textureCoordinates.x * 1000.0f, surfaceInteraction.textureCoordinates.y * 1000.0f, float(layer) * 100.0f) + layerOffset :
+          f16vec3(surfaceInteraction.position) + layerOffset;
+        float dropHash = frac(dot(vec3(hashInput), vec3(12.9898f + float(layer), 78.233f + float(layer), 37.719f + float(layer))) * 43758.5453f);
+        float dropPhase = dropHash * 6.28318f;
+        
+        float cycleTime = time * layerSpeed + dropPhase;
+        float normalizedCycle = frac(cycleTime);
+        float cycleIndex = floor(cycleTime);
+        
+        float fadeInEnd = fadeInSpeed;
+        float fadeOutStart = 1.0f - fadeOutSpeed;
+        
+        float visibility;
+        if (normalizedCycle < fadeInEnd)
+        {
+          visibility = normalizedCycle / fadeInEnd;
+        }
+        else if (normalizedCycle < fadeOutStart)
+        {
+          visibility = 1.0f;
+        }
+        else
+        {
+          float fadeOutProgress = (normalizedCycle - fadeOutStart) / fadeOutSpeed;
+          visibility = 1.0f - fadeOutProgress;
+        }
+        
+        float isFullyInvisible = step(visibility, 0.01f);
+        float lockedCycleIndex = cycleIndex - (1.0f - isFullyInvisible);
+        
+        f16vec3 positionOffset = f16vec3(
+          sin(lockedCycleIndex * 1.5f + float(layer) * 2.3f + 10.0f) * 350.0f,
+            cos(lockedCycleIndex * 1.9f + float(layer) * 3.7f + 20.0f) * 400.0f,
+          sin(lockedCycleIndex * 1.1f + float(layer) * 1.9f + 30.0f) * 320.0f
+        );
+        
+        vec3 dropPos;
+        vec2 raindropCoord;
+        if (useTextureCoordsForRaindrops)
+        {
+          raindropCoord = surfaceInteraction.textureCoordinates * layerScale * 10.0f;
+          dropPos = vec3(raindropCoord.x, 0.0f, raindropCoord.y) + vec3(layerOffset) + vec3(positionOffset);
+        }
+        else
+        {
+          dropPos = surfaceInteraction.position * layerScale + vec3(layerOffset) + vec3(positionOffset);
+          raindropCoord = surfaceInteraction.position.xy * layerScale;
+        }
+        
+        float raindropNoise = simplexNoise3D(dropPos);
+          float raindropBaseMask = saturate((raindropNoise + 1.0f) * 0.5f);
+        float animatedThreshold = lerp(0.62f + float(layer) * 0.02f, 0.75f + float(layer) * 0.01f, visibility);
+        float raindropMask = step(animatedThreshold, raindropBaseMask);
+        
+        vec2 quantizedGrid;
+        vec2 gridCenter;
+        vec2 localOffset;
+        if (useTextureCoordsForRaindrops)
+        {
+          quantizedGrid = floor((raindropCoord + vec2(layerOffset.xy) + vec2(positionOffset.xy)) * 0.5f + 0.5f);
+          gridCenter = quantizedGrid / 0.5f - vec2(layerOffset.xy) - vec2(positionOffset.xy);
+          localOffset = raindropCoord - gridCenter;
+        }
+        else
+        {
+          quantizedGrid = floor((surfaceInteraction.position.xy + vec2(layerOffset.xy) + vec2(positionOffset.xy)) * layerScale * 0.5f + 0.5f);
+          gridCenter = quantizedGrid / (layerScale * 0.5f) - vec2(layerOffset.xy) - vec2(positionOffset.xy);
+          localOffset = surfaceInteraction.position.xy - gridCenter;
+        }
+        
+        float distFromCenter = length(localOffset) * layerScale;
+        
+        float baseRadius = 0.12f / raindropScaleMult;
+        float outerRadius = baseRadius * (0.7f + visibility * 0.9f);
+        float innerRadius = outerRadius * 0.35f;
+        float midRadius = outerRadius * 0.65f;
+        
+        float outerRing = 1.0f - saturate((distFromCenter - innerRadius) / max(outerRadius - innerRadius, 0.001f));
+        outerRing = pow(outerRing, 1.8f);
+        outerRing = step(innerRadius, distFromCenter) * (1.0f - step(outerRadius, distFromCenter)) * outerRing;
+        
+        float midRing = 1.0f - saturate(abs(distFromCenter - midRadius) / (midRadius * 0.2f));
+        midRing = pow(midRing, 2.5f) * 0.5f;
+        
+        float innerPoint = 1.0f - saturate(distFromCenter / innerRadius);
+        innerPoint = pow(innerPoint, 1.0f) * 0.7f;
+        
+        float circleSplash = max(outerRing, max(midRing * 0.6f, innerPoint));
+        circleSplash = max(circleSplash, raindropMask * 0.3f);
+        
+        float visibleCircleSplash = circleSplash * raindropMask;
+        float roughnessCircleSplash = circleSplash;
+        
+        float layerWeight = 1.0f / (1.0f + float(layer) * 0.2f);
+        float finalVisibility = visibility * raindropVisibilityMult;
+        combinedRaindropMask += visibleCircleSplash * finalVisibility * layerWeight;
+        
+        float layerRoughness = roughnessCircleSplash * finalVisibility * layerWeight * layerRoughnessScale[layer];
+        combinedRoughnessMask += layerRoughness;
+        
+        vec3 raindropDir = vec3(
+          simplexNoise3D(dropPos + vec3(10.0f + float(layer) * 5.0f, 0.0f, 0.0f)),
+          simplexNoise3D(dropPos + vec3(0.0f, 10.0f + float(layer) * 5.0f, 0.0f)),
+          -0.7f - float(layer) * 0.1f
+        );
+        raindropDir = normalize(raindropDir);
+        
+        float layerNormalStrength = visibleCircleSplash * finalVisibility * layerWeight * raindropNormalScale;
+        raindropNormalOffset += f16vec3(raindropDir) * float16_t(layerNormalStrength);
+      }
+      
+      combinedRaindropMask = saturate(combinedRaindropMask * raindropStrength);
+        
+        float16_t normalOffsetLen = float16_t(length(vec3(raindropNormalOffset)));
+        if (normalOffsetLen > 0.001h)
+        {
+          raindropNormalOffset = normalize(raindropNormalOffset) * (normalOffsetLen * 0.5h);
+        }
+        
+        if (originalNormalZ > float16_t(z_normal))
+        {
+          float16_t raindropNormalIntensity = saturate(originalNormalZ * 2.0h) * float16_t(combinedRaindropMask);
+          normal = normalize(normal + raindropNormalOffset * raindropNormalIntensity);
+          
+          float16_t modifiedWetblend = saturate(smoothstep(float16_t(z_normal - blend_width), float16_t(z_normal + blend_width), normal.z));
+          if (normal.z > float16_t(z_normal))
+          {
+            wetblend = min(wetblend, modifiedWetblend);
+          }
+          else
+          {
+            wetblend = saturate(smoothstep(float16_t(z_normal - blend_width), float16_t(z_normal + blend_width), originalNormalZ));
+          }
+        }
+        
+        float16_t raindropRoughnessMask = float16_t(saturate(combinedRoughnessMask) * 0.15h);
+        roughness = saturate(roughness + raindropRoughnessMask);
+    }
+
+    roughness = saturate(lerp(roughness, roughness * scalar, wetblendForRoughness));
+  }
+  #endif
 
   if (d3dModDecalDirt && albedoOpacityLoaded)
   {
