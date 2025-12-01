@@ -495,13 +495,21 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   const bool d3dModDecalDirt = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_DECAL_DIRT;
   const bool d3dModRemVertexColorKeepAlpha = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_REM_VERTEX_COLOR_KEEP_ALPHA;
   const bool d3dModVehicleDecalDirt = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_VEHICLE_DECAL_DIRT;
-  const bool d3dFlag06 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_06;
+  const bool d3dModGlobalUvModifier = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_GLOBAL_UV_MODIFIER;
   const bool d3dFlag07 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_07;
   const bool d3dFlag08 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_08;
 
   if (d3dModRemVertexColorKeepAlpha)
   {
     surfaceInteraction.vertexColor.rgb = f16vec3(1.0);
+  }
+
+  if (d3dModGlobalUvModifier)
+  {
+      vec3 coords = vec3(surfaceInteraction.textureCoordinates, 1.0f);
+      vec3 globUV0 = vec3(opaqueSurfaceMaterial.m_freeFloat03,           opaqueSurfaceMaterial.m_freeFloat04,           opaqueSurfaceMaterial.albedoOpacityConstant.x);
+      vec3 globUV1 = vec3(opaqueSurfaceMaterial.albedoOpacityConstant.y, opaqueSurfaceMaterial.albedoOpacityConstant.z, opaqueSurfaceMaterial.albedoOpacityConstant.w);
+      surfaceInteraction.textureCoordinates = vec2(dot(coords, globUV0), dot(coords, globUV1));
   }
 
 #ifdef OPAQUE_MATERIAL_USE_POM
@@ -796,18 +804,6 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 #endif  
   // Apply material modifiers
   roughness = saturate(roughness * cb.opaqueMaterialArgs.roughnessScale + cb.opaqueMaterialArgs.roughnessBias);
-
-  #if 0
-  if (d3dModRoughnessScalar)
-  {
-        float16_t scalar = cb.debugKnob.x;
-        float16_t z_normal = cb.debugKnob.y;
-        float16_t blend_width = cb.debugKnob.z;
-
-        float16_t wetblend = saturate(smoothstep(z_normal - blend_width, z_normal + blend_width, normal.z));
-        roughness = saturate(lerp(roughness, roughness * scalar, wetblend));
-  }
-  #endif
 
   #if 1
   if (d3dModRoughnessScalar)
