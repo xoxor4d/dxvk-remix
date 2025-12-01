@@ -1202,12 +1202,13 @@ namespace dxvk {
       }
 
       if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR) {
-        // Read packed DWORD from RS_210_ROUGHNESS_SCALAR
-        // The client side packs 3 parameters using bit packing: scalar(6 bits) + max_z(5 bits) + blend_width(5 bits) = 16 bits
-        // The DWORD contains: lower 16 bits = wetnessParams1, upper 16 bits = wetnessParams2
+        // read packed DWORD from RS_210_WETNESS_PARAMS_PACKED - lower 16 bits = wetnessParams1, upper 16 bits = wetnessParams2
+        // lower 16 bits: comp mod packs 3 parameters using bit packing: scalar(6 bits) + max_z(5 bits) + blend_width(5 bits) = 16 bits
+        // upper 16 bits: 8 bits for raindrop_scale and 8 bits for bitflag modifiers
+        
         const uint32_t packedDword = drawCallState.materialData.remixPackedFloat4_RS210FromD3D;
-        wetnessParams1 = uint16_t(packedDword & 0xFFFF);        // Lower 16 bits
-        wetnessParams2 = uint16_t((packedDword >> 16) & 0xFFFF); // Upper 16 bits
+        wetnessParams1 = uint16_t(packedDword & 0xFFFF);        // lower 16 bits
+        wetnessParams2 = uint16_t((packedDword >> 16) & 0xFFFF); // upper 16 bits
 
         d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_ROUGHNESS_SCALAR; // ff01
       }
@@ -1231,6 +1232,16 @@ namespace dxvk {
 
       if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_VEHICLE_DECAL_DIRT) {
         d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_VEHICLE_DECAL_DIRT; // ff05
+      }
+
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_GLOBAL_UV_MODIFIER) {
+        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_GLOBAL_UV_MODIFIER;
+        freeFloat03 = drawCallState.materialData.remixFloatRS211FromD3D;
+        freeFloat04 = drawCallState.materialData.remixFloatRS212FromD3D;
+        albedoOpacityConstant.x = drawCallState.materialData.remixFloatRS213FromD3D; // overwriting these should be fine
+        albedoOpacityConstant.y = drawCallState.materialData.remixFloatRS214FromD3D; // because, why would anyone use a static color on animated surfaces?
+        albedoOpacityConstant.z = drawCallState.materialData.remixFloatRS215FromD3D;
+        albedoOpacityConstant.w = drawCallState.materialData.remixFloatRS216FromD3D;
       }
 
       subsurfaceMeasurementDistance = opaqueMaterialData.getSubsurfaceMeasurementDistance() * RtxOptions::SubsurfaceScattering::surfaceThicknessScale();
