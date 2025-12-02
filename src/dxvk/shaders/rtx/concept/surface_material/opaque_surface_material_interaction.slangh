@@ -1,4 +1,4 @@
-/*
+﻿/*
 * Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
 *
 * Permission is hereby granted, free of charge, to any person obtaining a
@@ -853,14 +853,16 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     uint packedBits1 = uint(opaqueSurfaceMaterial.m_wetnessParams1);
     uint packedBits2 = uint(opaqueSurfaceMaterial.m_wetnessParams2);
     
-    float scalar = (float((packedBits1 >> 10) & 0x3F) * (10.0f / 63.0f));
+    float scalar = (float((packedBits1 >> 10) & 0x3F) * (4.0f / 63.0f)); // 0-4 range
+    scalar -= 2.0f; // remap [0,4] → [-2,+2]
+
     float z_normal = (float((packedBits1 >> 5) & 0x1F) / 31.0f);
     float blend_width = (float((packedBits1) & 0x1F) / 31.0f);
-    float raindrop_scale = float(packedBits2 & 0xFF) * (100.0f / 255.0f);
+    float raindrop_scale = float(packedBits2 & 0xFF) * (10.0f / 255.0f);
     uint wetnessFlags = (packedBits2 >> 8) & 0xFF;
 
     float16_t originalNormalZ = normal.z;
-    float16_t wetblend = saturate(smoothstep(z_normal - blend_width, z_normal + blend_width, normal.z)); // + cb.debugKnob.z
+    float16_t wetblend = saturate(smoothstep(z_normal - blend_width, z_normal + blend_width, normal.z));
 
     const float16_t wetblendBase = wetblend;            // preserves smooth world blending (normal-based)
     float16_t wetblendForRoughness = wetblendBase;      // allows puddle logic to add detail without destroying base blend
@@ -869,13 +871,12 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     const bool enableRaindrops = wetnessFlags & (1u << 1);
     const bool useTextureCoordsForRaindrops = wetnessFlags & (1u << 2);
     const bool useExpRaindrops = wetnessFlags & (1u << 3);
+    const bool raindropsHalfDensity = wetnessFlags & (1u << 4);
 
     const float raindropScaleMultDefault = 3.0f;
     float raindropScaleMult = (raindrop_scale > 0.0f ? max(raindrop_scale, 0.1f) : raindropScaleMultDefault);
     float animationSpeedMult = 0.4f;
     float raindropStrength = 5.0f;
-    float fadeOutSpeed = 0.3f;
-    float fadeInSpeed = 1.5f;
     float raindropRoughnessScale = 2.7f;
     float raindropNormalScale = 0.5f;
     float raindropVisibilityMult = 14.0f;
@@ -887,7 +888,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     layerRoughnessScale[3] = raindropRoughnessScale;
     
     const float16_t maxRaindropDistance = float16_t(35.0f);
-    const float16_t maxPuddleDistance = float16_t(100.0f);
+    const float16_t maxPuddleDistance = float16_t(200.0f);
     
     float combinedRaindropMask = 0.0f;
     f16vec3 raindropNormalOffset = f16vec3(0.0h);
@@ -942,21 +943,21 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     if (enableRaindrops && surfaceIsHorizontal && cameraDistanceHalf <= float16_t(maxRaindropDistance))
     {
         // animation/time
-        float global_time = float(cb.frameIdx) * 0.0333333f * animationSpeedMult; //* (1.0f + cb.debugKnob.w);
+        float global_time = float(cb.frameIdx) * 0.0333333f * animationSpeedMult;
     
         // params
         const int GRID_NEIGHBOR = 2;
-        float grid_scale = 3.4f * raindropScaleMult + (-4.4f);
+        float grid_scale = 3.4f * raindropScaleMult + (-4.4f) * (raindropsHalfDensity ? 0.3f : 0.85f); // 0.3 and 0.8
         float spawn_period = 3.5f + (-2.9f);
         float drop_life = 1.2f + (-0.9f);
         float ripple_speed = 1.6f * raindropScaleMult;
     
         // droplet tuning
-        float center_radius_base = 0.03f + 0.1f; //cb.debugKnob.z;
+        float center_radius_base = 0.03f + 0.1f;
         float center_strength = 0.45f * raindropVisibilityMult + (-3.2f);
         float ripple_thickness = 0.035f;
     
-        // ring tuning (guard debug knob so it can't zero them out)
+        // ring tuning
         float dbgW = max(0.25f, abs(0.54f));
         float ripple_strength = 0.18f * raindropVisibilityMult * dbgW;
     
@@ -1161,7 +1162,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
       const float speedBase = 1.6f;
       const float radiusBase = 0.1f;
       const float normalBase = 5.9f;
-      float densityBias = max(0.1f, densityBase + cb.debugKnob.x); // +0.4 lighting density and -0.2 for drizzle?
+      float densityBias = max(0.1f, densityBase + (raindropsHalfDensity ? -0.2f : 0.4f)); // +0.4 lighting density and -0.2 for drizzle?
       float speedBias = max(0.2f, speedBase);
       float radiusBias = max(0.02f, radiusBase);
       float normalBias = max(0.1f, normalBase + 3.0f);
@@ -1179,7 +1180,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
       for (int layer = 0; layer < layerCount; ++layer)
       {
         vec2 baseCoord = objectSpacePosition.xy;
-        float baseLayerScale = 4.0f + float(layer) * 1.4f * (1.0f + cb.debugKnob.y);
+        float baseLayerScale = 4.0f + float(layer) * 1.4f;
         float layerScale = baseLayerScale * raindropScaleMult * 8.0f;
         float densityScale = densityBias * (1.0f + float(layer) * 0.3f);
         float gridScale = layerScale * densityScale;
