@@ -1324,6 +1324,10 @@ namespace dxvk {
     } else if (renderMaterialDataType == MaterialDataType::Translucent) {
       const auto& translucentMaterialData = renderMaterialData.getTranslucentMaterialData();
 
+      uint8_t d3dModifierFlags = REMIX_MODIFIER_TO_SHADER_NONE;
+      uint16_t wetnessParams1 = 0u;
+      uint16_t wetnessParams2 = 0u;
+
       uint32_t normalTextureIndex = kSurfaceMaterialInvalidTextureIndex;
       uint32_t transmittanceTextureIndex = kSurfaceMaterialInvalidTextureIndex;
       uint32_t emissiveColorTextureIndex = kSurfaceMaterialInvalidTextureIndex;
@@ -1342,12 +1346,24 @@ namespace dxvk {
       float thinWallThickness = translucentMaterialData.getThinWallThickness();
       bool useDiffuseLayer = translucentMaterialData.getEnableDiffuseLayer();
 
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR) {
+        // read packed DWORD from RS_210_WETNESS_PARAMS_PACKED - lower 16 bits = wetnessParams1, upper 16 bits = wetnessParams2
+        // lower 16 bits: comp mod packs 3 parameters using bit packing: scalar(6 bits) + max_z(5 bits) + blend_width(5 bits) = 16 bits
+        // upper 16 bits: 8 bits for raindrop_scale and 8 bits for bitflag modifiers
+
+        const uint32_t packedDword = drawCallState.materialData.remixPackedFloat4_RS210FromD3D;
+        wetnessParams1 = uint16_t(packedDword & 0xFFFF);        // lower 16 bits
+        wetnessParams2 = uint16_t((packedDword >> 16) & 0xFFFF); // upper 16 bits
+        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_ROUGHNESS_SCALAR;
+      }
+
       const RtTranslucentSurfaceMaterial translucentSurfaceMaterial{
         normalTextureIndex, transmittanceTextureIndex, emissiveColorTextureIndex,
         refractiveIndex,
         transmittanceMeasureDistance, transmittanceColor,
         enableEmissive, emissiveIntensity, emissiveColorConstant,
-        isThinWalled, thinWallThickness, useDiffuseLayer, samplerIndex
+        isThinWalled, thinWallThickness, useDiffuseLayer, samplerIndex,
+        d3dModifierFlags, wetnessParams1, wetnessParams2
       };
 
       surfaceMaterial.emplace(translucentSurfaceMaterial);

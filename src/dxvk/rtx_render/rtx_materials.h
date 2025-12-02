@@ -865,7 +865,7 @@ private:
 
   uint8_t m_d3dModifierFlags;
   uint16_t m_wetnessParams1; // Packed wetness parameters (scalar 6 bits + max_z 5 bits + blend_width 5 bits)
-  uint16_t m_wetnessParams2; // Reserved for future wetness parameters
+  uint16_t m_wetnessParams2; // Packed wetness parameters 2 (raindrop_scale 8 bits + bitflags 8 bits)
   float m_freeFloat03;
   float m_freeFloat04;
 
@@ -884,14 +884,16 @@ struct RtTranslucentSurfaceMaterial {
     float refractiveIndex,
     float transmittanceMeasurementDistance, const Vector3& transmittanceColor,
     bool enableEmission, float emissiveIntensity, const Vector3& emissiveColorConstant,
-    bool isThinWalled, float thinWallThickness, bool useDiffuseLayer, uint32_t samplerIndex) :
+    bool isThinWalled, float thinWallThickness, bool useDiffuseLayer, uint32_t samplerIndex,
+    uint8_t d3dModifierFlags, uint16_t wetnessParams1, uint16_t wetnessParams2) :
     m_normalTextureIndex(normalTextureIndex),
     m_transmittanceTextureIndex(transmittanceTextureIndex),
     m_emissiveColorTextureIndex(emissiveColorTextureIndex),
     m_refractiveIndex(refractiveIndex),
     m_transmittanceMeasurementDistance(transmittanceMeasurementDistance), m_transmittanceColor(transmittanceColor),
     m_enableEmission(enableEmission), m_emissiveIntensity(emissiveIntensity), m_emissiveColorConstant(emissiveColorConstant),
-    m_isThinWalled(isThinWalled), m_thinWallThickness(thinWallThickness), m_useDiffuseLayer(useDiffuseLayer), m_samplerIndex(samplerIndex)
+    m_isThinWalled(isThinWalled), m_thinWallThickness(thinWallThickness), m_useDiffuseLayer(useDiffuseLayer), m_samplerIndex(samplerIndex),
+    m_d3dModifierFlags(d3dModifierFlags), m_wetnessParams1(wetnessParams1), m_wetnessParams2(wetnessParams2)
   {
     updateCachedData();
     updateCachedHash();
@@ -908,6 +910,10 @@ struct RtTranslucentSurfaceMaterial {
     // Note: Respect override flag here to let the GPU do less work in determining if the diffuse layer should be used or not.
     if (m_useDiffuseLayer || getEnableDiffuseLayerOverrideHack()) {
       flags |= TRANSLUCENT_SURFACE_MATERIAL_FLAG_USE_DIFFUSE_LAYER;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_SHADER_ROUGHNESS_SCALAR) {
+      flags |= TRANSLUCENT_SURFACE_MATERIAL_FLAG_D3D_RAINDROPS;
     }
 
     // data[0- 1]
@@ -941,9 +947,13 @@ struct RtTranslucentSurfaceMaterial {
 
     // data[15]
     writeGPUHelperExplicit<2>(data, offset, surfaceIndex);
-    
-    // data[16 - 31]
-    writeGPUPadding<32>(data, offset);
+
+    // data[16-17]
+    writeGPUHelper(data, offset, m_wetnessParams1); // Write uint16_t directly (bitwise identical to float16_t)
+    writeGPUHelper(data, offset, m_wetnessParams2); // Write uint16_t directly (bitwise identical to float16_t)
+
+    // data[18 - 31]
+    writeGPUPadding<28>(data, offset); // was 32
 
     assert(offset - oldOffset == kSurfaceMaterialGPUSize);
   }
@@ -980,6 +990,10 @@ private:
     h = XXH64(&m_thinWallThickness, sizeof(m_thinWallThickness), h);
     h = XXH64(&m_useDiffuseLayer, sizeof(m_useDiffuseLayer), h);
     h = XXH64(&m_samplerIndex, sizeof(m_samplerIndex), h);
+
+    h = XXH64(&m_d3dModifierFlags, sizeof(m_d3dModifierFlags), h);
+    h = XXH64(&m_wetnessParams1, sizeof(m_wetnessParams1), h);
+    h = XXH64(&m_wetnessParams2, sizeof(m_wetnessParams2), h);
 
     m_cachedHash = h;
   }
@@ -1019,6 +1033,10 @@ private:
   bool m_isThinWalled;
   float m_thinWallThickness;
   bool m_useDiffuseLayer;
+
+  uint8_t m_d3dModifierFlags;
+  uint16_t m_wetnessParams1; // Packed wetness parameters (scalar 6 bits + max_z 5 bits + blend_width 5 bits)
+  uint16_t m_wetnessParams2; // Packed wetness parameters 2 (raindrop_scale 8 bits + bitflags 8 bits)
 
   XXH64_hash_t m_cachedHash;
 
