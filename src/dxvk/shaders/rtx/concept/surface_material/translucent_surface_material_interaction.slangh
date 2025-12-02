@@ -1,4 +1,4 @@
-/*
+﻿/*
 * Copyright (c) 2023-2025, NVIDIA CORPORATION. All rights reserved.
 *
 * Permission is hereby granted, free of charge, to any person obtaining a
@@ -44,6 +44,8 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
   MinimalRayInteraction minimalRayInteraction)
 {
   TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteraction;
+
+  const bool d3dModRaindrops = translucentSurfaceMaterial.flags & TRANSLUCENT_SURFACE_MATERIAL_FLAG_D3D_RAINDROPS;
 
   // Sample from each Translucent Surface Material texture
 
@@ -149,6 +151,245 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
   {
     emissiveColor = emissiveColorSample.xyz;
   }
+
+
+  if (d3dModRaindrops)
+  {
+    uint packedBits1 = uint(translucentSurfaceMaterial.m_wetnessParams1);
+    uint packedBits2 = uint(translucentSurfaceMaterial.m_wetnessParams2);
+    
+    float scalar = (float((packedBits1 >> 10) & 0x3F) * (4.0f / 63.0f)); // 0-4 range
+    scalar -= 2.0f; // remap [0,4] → [-2,+2]
+
+    float z_normal = (float((packedBits1 >> 5) & 0x1F) / 31.0f);
+    //float blend_width = (float((packedBits1) & 0x1F) / 31.0f);
+    float raindrop_scale = float(packedBits2 & 0xFF) * (10.0f / 255.0f);
+
+    uint wetnessFlags = (packedBits2 >> 8) & 0xFF;
+    //const bool useTextureCoordsForRaindrops = wetnessFlags & (1u << 2);
+    //const bool useExpRaindrops = wetnessFlags & (1u << 3);
+    const bool raindropsHalfDensity = wetnessFlags & (1u << 4);
+
+    float16_t originalNormalZ = normal.z;
+
+    const float raindropScaleMultDefault = 3.0f;
+    float raindropScaleMult = (raindrop_scale > 0.0f ? max(raindrop_scale, 0.1f) : raindropScaleMultDefault);
+    float animationSpeedMult = 0.4f;
+    float raindropStrength = 5.0f;
+    float raindropNormalScale = 0.5f;
+    float raindropVisibilityMult = 14.0f;
+    
+    const float16_t maxRaindropDistance = float16_t(35.0f);
+    float combinedRaindropMask = 0.0f;
+    f16vec3 raindropNormalOffset = f16vec3(0.0h);
+
+    bool surfaceIsHorizontal = originalNormalZ > float16_t(z_normal);
+    float16_t cameraDistanceHalf = float16_t(length(surfaceInteraction.position - cameraGetWorldPosition(cb.camera)));
+
+    if (surfaceIsHorizontal && cameraDistanceHalf <= float16_t(maxRaindropDistance))
+    {
+      // Get stable coordinates for raindrop calculations
+      // Transform world position to local space using available transform information
+      vec3 stablePosition;
+      
+      // Check if object has rotation in objectToWorld
+      float3 right = surface.objectToWorld[0].xyz;
+      float3 up = surface.objectToWorld[1].xyz;
+      float3 forward = surface.objectToWorld[2].xyz;
+      float3 identityCheck = abs(right - float3(1,0,0)) + abs(up - float3(0,1,0)) + abs(forward - float3(0,0,1));
+      bool hasRotation = length(identityCheck) > 0.1f;
+      
+      if (hasRotation)
+      {
+        // Rigid object - transform to object space using objectToWorld
+        mat3 rotationScale = mat3(right, up, forward);
+        // Extract translation by multiplying origin point
+        vec3 translation = mul(surface.objectToWorld, vec4(0.0f, 0.0f, 0.0f, 1.0f));
+        mat3 invRotationScale = inverse(rotationScale);
+        vec3 invTranslation = -mul(invRotationScale, translation);
+        stablePosition = mul(invRotationScale, surfaceInteraction.position) + invTranslation;
+      }
+      else
+      {
+        // Skinned mesh - objectToWorld has no rotation, try using normalObjectToWorld
+        // Extract rotation from normalObjectToWorld (3x3 matrix)
+        mat3 normalRotation = surface.normalObjectToWorld;
+        float3 normalRight = normalRotation[0].xyz;
+        float3 normalUp = normalRotation[1].xyz;
+        float3 normalForward = normalRotation[2].xyz;
+        float3 normalIdentityCheck = abs(normalRight - float3(1,0,0)) + abs(normalUp - float3(0,1,0)) + abs(normalForward - float3(0,0,1));
+        bool normalHasRotation = length(normalIdentityCheck) > 0.1f;
+        
+        if (normalHasRotation)
+        {
+          // Use normalObjectToWorld rotation to transform to local space
+          mat3 invNormalRotation = inverse(normalRotation);
+          // Extract translation from objectToWorld
+          vec3 translation = mul(surface.objectToWorld, vec4(0.0f, 0.0f, 0.0f, 1.0f));
+          vec3 invTranslation = -mul(invNormalRotation, translation);
+          stablePosition = mul(invNormalRotation, surfaceInteraction.position) + invTranslation;
+        }
+        else
+        {
+          // No rotation available - use tangent space
+          // Transform world position relative to object translation to tangent space for stable coordinates
+          const mat3 worldToTangent = mat3(
+            surfaceInteraction.triangleTangent,
+            surfaceInteraction.triangleBitangent,
+            surfaceInteraction.triangleNormal
+          );
+
+          // Extract a reference translation from objectToWorld
+          vec3 translation = mul(surface.objectToWorld, vec4(0.0f, 0.0f, 0.0f, 1.0f));
+          vec3 relativeToTranslation = surfaceInteraction.position - translation;
+          stablePosition = mul(worldToTangent, relativeToTranslation);
+          // Scale to approximate object space scale (tangent space is in world units)
+          stablePosition *= 0.1f;
+        }
+      }
+      
+      // Use stable position (object space or local space)
+      vec3 objectSpacePosition = stablePosition;
+      
+      const float densityBase = 0.9f;
+      const float speedBase = 1.6f;
+      const float radiusBase = 0.1f;
+      const float normalBase = 5.9f;
+      float densityBias = max(0.1f, densityBase + (raindropsHalfDensity ? -0.2f : 0.4f)); // +0.4 lighting density and -0.2 for drizzle?
+      float speedBias = max(0.2f, speedBase);
+      float radiusBias = max(0.02f, radiusBase);
+      float normalBias = max(0.1f, normalBase + 3.0f);
+      
+      const int layerCount = 3;
+      const int neighborRadius = 1;
+      const float dropletCycle = 2.6f;
+      const float growPhase = 0.18f;
+      const float restPhase = 0.32f;
+      const float fadePhase = 1.0f - growPhase - restPhase;
+      const float baseRadiusObj = 0.01f;
+      float animTime = float(cb.frameIdx) * 0.04f * animationSpeedMult * speedBias;
+      
+      [unroll]
+      for (int layer = 0; layer < layerCount; ++layer)
+      {
+        vec2 baseCoord = objectSpacePosition.xy;
+        float baseLayerScale = 4.0f + float(layer) * 1.4f;
+        float layerScale = baseLayerScale * raindropScaleMult * 8.0f;
+        float densityScale = densityBias * (1.0f + float(layer) * 0.3f);
+        float gridScale = layerScale * densityScale;
+        vec2 baseCell = floor(baseCoord * gridScale);
+        float layerWeight = 1.0f / (1.0f + float(layer) * 0.4f);
+        float radiusScale = (baseRadiusObj * radiusBias) * (1.0f + float(layer) * 0.25f);
+        float layerNormalStrengthScale = layerWeight * raindropNormalScale * normalBias;
+        
+        for (int oy = -neighborRadius; oy <= neighborRadius; ++oy)
+        {
+          for (int ox = -neighborRadius; ox <= neighborRadius; ++ox)
+          {
+            vec2 nCell = baseCell + vec2(float(ox), float(oy));
+            vec2 cellSeed = hash22(nCell + float(layer) * 23.0f);
+            int subDrops = 1 + int(cellSeed.x > 0.65f);
+            
+            for (int sub = 0; sub < subDrops; ++sub)
+            {
+              vec2 subSeed = hash22(nCell + vec2(float(sub) * 31.0f + float(layer) * 17.0f, float(sub) * 13.0f));
+              
+              float spawnSeed = frac(subSeed.x + subSeed.y * 1.37f + float(layer) * 0.11f);
+              float cycleValue = (animTime + spawnSeed * dropletCycle) / dropletCycle;
+              float cycleIndex = floor(cycleValue);
+              float cyclePhase = frac(cycleValue);
+              
+              vec2 cycleJitter = (hash22(nCell + vec2(float(layer) * 97.0f, cycleIndex * 0.618f)) - 0.5f) * 0.45f;
+              vec2 dropCenter = (nCell + subSeed + cycleJitter) / gridScale;
+              
+              float envelope;
+              if (cyclePhase < growPhase)
+              {
+                float t = cyclePhase / growPhase;
+                envelope = smoothstep(0.0f, 1.0f, t);
+              }
+              else if (cyclePhase < growPhase + restPhase)
+              {
+                envelope = 1.0f;
+              }
+              else
+              {
+                float fadeT = (cyclePhase - growPhase - restPhase) / fadePhase;
+                envelope = 1.0f - smoothstep(0.0f, 1.0f, saturate(fadeT));
+              }
+              
+              if (envelope <= 1e-3f)
+              {
+                continue;
+              }
+              
+              float randomRadius = lerp(0.75f, 1.4f, frac(subSeed.x * 3.13f));
+              float dropletRadius = radiusScale * randomRadius / max(raindropScaleMult, 0.001f);
+              vec2 radial = baseCoord - dropCenter;
+              
+              float shapeAngle = frac(subSeed.x * 2.17f + subSeed.y * 0.91f) * 6.2831853f;
+              float cosA = cos(shapeAngle);
+              float sinA = sin(shapeAngle);
+              float2x2 rotMat = float2x2(cosA, -sinA, sinA, cosA);
+              vec2 rotated = mul(rotMat, radial);
+              vec2 axisStretch = vec2(lerp(0.65f, 1.35f, frac(subSeed.y * 3.97f)),
+                                      lerp(0.65f, 1.35f, frac(subSeed.x * 5.11f)));
+              vec2 stretched = rotated / axisStretch;
+              float dist = length(stretched);
+              if (dist > dropletRadius * 1.6f)
+              {
+                continue;
+              }
+              
+              float dome = pow(saturate(1.0f - dist / dropletRadius), 1.5f);
+              float ringDist = abs(dist - dropletRadius * 1.15f);
+              float ring = pow(saturate(1.0f - ringDist / (dropletRadius * 0.35f)), 2.2f) * 0.55f;
+              
+              float ringVisiblePhase = growPhase + 0.18f;
+              float ringFade = saturate(1.0f - (cyclePhase - growPhase) / 0.18f);
+              float ringRamp = smoothstep(0.0f, growPhase * 0.6f, cyclePhase);
+              float ringVisibility = envelope * ringRamp * ringFade * step(cyclePhase, ringVisiblePhase);
+              
+              float domeContribution = dome * envelope;
+              float ringContribution = ring * ringVisibility;
+              float dropletContribution = domeContribution + ringContribution;
+              
+              if (dropletContribution <= 1e-4f)
+              {
+                continue;
+              }
+              
+              combinedRaindropMask += dropletContribution * layerWeight * raindropVisibilityMult;
+              
+              vec2 gradStretched = stretched / max(dist, 1e-4f);
+              vec2 gradRotated = gradStretched / axisStretch;
+              vec2 gradOriginal = mul(transpose(rotMat), gradRotated);
+              vec2 normalizedRadial = gradOriginal;
+              float radialLen = min(length(normalizedRadial), 0.999f);
+              float height = sqrt(saturate(1.0f - radialLen * radialLen));
+              vec3 dropletNormal = normalize(vec3(normalizedRadial * 0.65f, height));
+              raindropNormalOffset += f16vec3(dropletNormal) * float16_t(domeContribution * layerNormalStrengthScale);
+            }
+          }
+        }
+      }
+      
+      combinedRaindropMask = saturate(combinedRaindropMask * raindropStrength);
+
+      float16_t normalOffsetLen = float16_t(length(vec3(raindropNormalOffset)));
+      if (normalOffsetLen > 0.001h)
+      {
+        raindropNormalOffset = normalize(raindropNormalOffset) * (normalOffsetLen * 0.5h);
+      }
+      
+      if (originalNormalZ > float16_t(z_normal))
+      {
+        float16_t raindropNormalIntensity = saturate(originalNormalZ * 2.0h) * float16_t(combinedRaindropMask);
+        normal = normalize(normal + raindropNormalOffset * raindropNormalIntensity);
+      }
+    }
+  }
+
 
   // Note: Gamma correct emissive color input (be it from a constant or a texture). Currently assuming all textures are not using sRGB formats which
   // automatically do this conversion.
