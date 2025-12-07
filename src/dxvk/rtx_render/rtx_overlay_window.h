@@ -51,6 +51,7 @@ namespace dxvk {
     HWND m_hwnd = nullptr;
 
     std::atomic<bool> m_running { true };
+    std::atomic<bool> m_gameWindowFocused { false };
     std::thread m_thread;
     const wchar_t* m_className;
 

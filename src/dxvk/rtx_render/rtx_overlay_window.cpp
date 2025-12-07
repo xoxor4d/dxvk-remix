@@ -99,6 +99,9 @@ void GameOverlay::gameWndProcHandler(HWND gameHwnd, UINT msg, WPARAM wParam, LPA
   {
     const bool becameActive = (wParam != 0);
 
+    // Update focus state atomically for thread-safe access from overlay thread
+    m_gameWindowFocused.store(becameActive);
+
     // Foreground window guard to avoid hiding when the overlay takes focus
     HWND fg = GetForegroundWindow();
     DWORD fgPid = 0, gamePid = 0, ovlPid = 0;
@@ -145,6 +148,13 @@ void GameOverlay::gameWndProcHandler(HWND gameHwnd, UINT msg, WPARAM wParam, LPA
 void GameOverlay::update(HWND gameHwnd) {
   if (m_gameHwnd == 0) {
     m_gameHwnd = gameHwnd;
+    // Initialize focus state by checking if the game window is currently active
+    HWND fg = GetForegroundWindow();
+    DWORD fgPid = 0, gamePid = 0;
+    GetWindowThreadProcessId(fg, &fgPid);
+    GetWindowThreadProcessId(gameHwnd, &gamePid);
+    bool isFocused = (fg == gameHwnd) || (fgPid == gamePid);
+    m_gameWindowFocused.store(isFocused);
     // Spawn UI thread
     m_thread = std::thread([this] { windowThreadMain(); });
   }
@@ -161,6 +171,22 @@ LRESULT GameOverlay::overlayWndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
   case WM_DESTROY:
     PostQuitMessage(0);
     return 0;
+  }
+
+  // Only process input events when the game window is focused to prevent
+  // input from being "recorded" and replayed when focus is regained
+  if (msg == WM_INPUT || msg == WM_MOUSEMOVE || msg == WM_MOUSELEAVE || 
+      msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP || msg == WM_LBUTTONDBLCLK ||
+      msg == WM_RBUTTONDOWN || msg == WM_RBUTTONUP || msg == WM_RBUTTONDBLCLK ||
+      msg == WM_MBUTTONDOWN || msg == WM_MBUTTONUP || msg == WM_MBUTTONDBLCLK ||
+      msg == WM_XBUTTONDOWN || msg == WM_XBUTTONUP || msg == WM_XBUTTONDBLCLK ||
+      msg == WM_MOUSEWHEEL || msg == WM_MOUSEHWHEEL ||
+      msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP ||
+      msg == WM_CHAR || msg == WM_UNICHAR || msg == WM_IME_CHAR) {
+    if (!m_gameWindowFocused.load()) {
+      // Drop input events when game window is not focused
+      return 0;
+    }
   }
 
   if (ImGui_ImplWin32_WndProcHandler(m_hwnd, msg, wParam, lParam)) {
