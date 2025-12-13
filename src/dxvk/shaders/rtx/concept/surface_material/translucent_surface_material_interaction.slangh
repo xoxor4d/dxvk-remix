@@ -46,6 +46,40 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
   TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteraction;
 
   const bool d3dModRaindrops = translucentSurfaceMaterial.flags & TRANSLUCENT_SURFACE_MATERIAL_FLAG_D3D_RAINDROPS;
+  const bool d3dUseWorldPos = translucentSurfaceMaterial.flags & TRANSLUCENT_SURFACE_MATERIAL_FLAG_D3D_WORLDPOS_INSTEAD_TEXUV;
+
+  if (d3dUseWorldPos)
+  {
+    // surfaceInteraction.position = worldpos
+    // surfaceInteraction.textureCoordinates = UVs used by the shader
+    // translucentSurfaceMaterial.m_freeFloat01 = worldpos scalar
+
+    surfaceInteraction.textureCoordinates = surfaceInteraction.position.xy * translucentSurfaceMaterial.m_freeFloat01; //cb.debugKnob.x;
+    if (surface.spriteSheetFPS > 0 && surface.spriteSheetCols > 0 && surface.spriteSheetRows > 0 && surface.spriteSheetCols != surface.spriteSheetRows)
+    {
+      // apply sprite sheet animation if enabled (normally done in calcSpriteSheetAdjustment during surfaceInteractionCreate)
+      if (!surface.isAnimatedWater)
+      {
+          vec2 uvSize, uvBias;
+          calcSpritesheetValues(
+              cb.timeSinceStartSeconds,
+              surface.spriteSheetRows,
+              surface.spriteSheetCols,
+              surface.spriteSheetFPS,
+              uvSize,
+              uvBias);
+          
+          surfaceInteraction.textureCoordinates = uvBias + frac(surfaceInteraction.textureCoordinates) * uvSize;
+          surfaceInteraction.textureGradientX *= uvSize;
+          surfaceInteraction.textureGradientY *= uvSize;
+      }
+      else
+      {
+        surfaceInteraction.textureCoordinates.x /= surface.spriteSheetCols;
+        surfaceInteraction.textureCoordinates.y /= surface.spriteSheetRows;
+      }
+    }
+  }
 
   // Sample from each Translucent Surface Material texture
 
@@ -107,6 +141,24 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
       tangentNormal = normalBlendRNM(tangentNormal2, tangentNormal);
     }
     normal = normalize(mul(tangentToWorld, tangentNormal));
+  }
+
+  // Reduce normal strength gradually with distance for animated water
+  if (normalLoaded && translucentSurfaceMaterial.m_freeFloat02 > 0.h)
+  {
+    const float16_t cameraDistance = float16_t(length(surfaceInteraction.position - cameraGetWorldPosition(cb.camera)));
+    
+    // fully fade out starting from 0 to X
+    const float16_t fadeStartDistance = float16_t(0);
+    const float16_t fadeEndDistance = float16_t(translucentSurfaceMaterial.m_freeFloat02);
+    const float16_t fadeSpan = fadeEndDistance - fadeStartDistance;
+    
+    if (cameraDistance > fadeStartDistance && fadeSpan > float16_t(0.0f))
+    {
+      const float16_t fadeT = saturate((cameraDistance - fadeStartDistance) / fadeSpan);
+      // Blend from detailed normal (fadeT=0) to interpolated normal (fadeT=1)
+      normal = normalize(mix(normal, surfaceInteraction.interpolatedNormal, fadeT));
+    }
   }
 
   // Note: Diffuse layer override encapsulated in if the diffuse layer flag is set or not as this override is able to be done on the CPU.
