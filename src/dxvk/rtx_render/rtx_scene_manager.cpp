@@ -1142,7 +1142,7 @@ namespace dxvk {
 
       bool ignoreAlphaChannel = false;
 
-      uint8_t d3dModifierFlags = REMIX_MODIFIER_TO_SHADER_NONE;
+      uint8_t d3dModifierFlags = REMIX_MODIFIER_TO_OPAQUE_SHADER_NONE;
       uint16_t wetnessParams1 = 0u;
       uint16_t wetnessParams2 = 0u;
       float freeFloat03 = 0.0f;
@@ -1210,32 +1210,32 @@ namespace dxvk {
         wetnessParams1 = uint16_t(packedDword & 0xFFFF);        // lower 16 bits
         wetnessParams2 = uint16_t((packedDword >> 16) & 0xFFFF); // upper 16 bits
 
-        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_ROUGHNESS_SCALAR; // ff01
+        d3dModifierFlags |= REMIX_MODIFIER_TO_OPAQUE_SHADER_ROUGHNESS_SCALAR; // ff01
       }
 
       if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ENABLE_VERTEX_COLOR) {
-        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_ENABLE_VERTEX_COLOR; // ff02
+        d3dModifierFlags |= REMIX_MODIFIER_TO_OPAQUE_SHADER_ENABLE_VERTEX_COLOR; // ff02
       }
 
       if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_DECAL_DIRT) {
         emissiveColorConstant.r = drawCallState.materialData.remixTempFloat01FromD3D; // mask intensity scalar
         emissiveColorConstant.g = drawCallState.materialData.remixTempFloat02FromD3D; // mask contrast
-        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_DECAL_DIRT; // ff03
+        d3dModifierFlags |= REMIX_MODIFIER_TO_OPAQUE_SHADER_DECAL_DIRT; // ff03
       }
 
       // sets vertex color to white but keep alpha via d3d or when tagged as terrain
       // ignore d3d state when tagged as beam and keep vertex color and alpha intact
       if ((drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA || drawCallState.testCategoryFlags(InstanceCategories::Terrain)) 
            && !forceVertexColorModulate) {
-        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_REM_VERTEX_COLOR_KEEP_ALPHA; // ff04
+        d3dModifierFlags |= REMIX_MODIFIER_TO_OPAQUE_SHADER_REM_VERTEX_COLOR_KEEP_ALPHA; // ff04
       }
 
       if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_VEHICLE_DECAL_DIRT) {
-        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_VEHICLE_DECAL_DIRT; // ff05
+        d3dModifierFlags |= REMIX_MODIFIER_TO_OPAQUE_SHADER_VEHICLE_DECAL_DIRT; // ff05
       }
 
       if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_GLOBAL_UV_MODIFIER) {
-        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_GLOBAL_UV_MODIFIER;
+        d3dModifierFlags |= REMIX_MODIFIER_TO_OPAQUE_SHADER_GLOBAL_UV_MODIFIER;
         freeFloat03 = drawCallState.materialData.remixFloatRS211FromD3D;
         freeFloat04 = drawCallState.materialData.remixFloatRS212FromD3D;
         albedoOpacityConstant.x = drawCallState.materialData.remixFloatRS213FromD3D; // overwriting these should be fine
@@ -1324,9 +1324,11 @@ namespace dxvk {
     } else if (renderMaterialDataType == MaterialDataType::Translucent) {
       const auto& translucentMaterialData = renderMaterialData.getTranslucentMaterialData();
 
-      uint8_t d3dModifierFlags = REMIX_MODIFIER_TO_SHADER_NONE;
+      uint8_t d3dModifierFlags = REMIX_MODIFIER_TO_OPAQUE_SHADER_NONE;
       uint16_t wetnessParams1 = 0u;
       uint16_t wetnessParams2 = 0u;
+      float freeFloat01 = 0.0f;
+      float freeFloat02 = 0.0f;
 
       uint32_t normalTextureIndex = kSurfaceMaterialInvalidTextureIndex;
       uint32_t transmittanceTextureIndex = kSurfaceMaterialInvalidTextureIndex;
@@ -1354,7 +1356,16 @@ namespace dxvk {
         const uint32_t packedDword = drawCallState.materialData.remixPackedFloat4_RS210FromD3D;
         wetnessParams1 = uint16_t(packedDword & 0xFFFF);        // lower 16 bits
         wetnessParams2 = uint16_t((packedDword >> 16) & 0xFFFF); // upper 16 bits
-        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_ROUGHNESS_SCALAR;
+        d3dModifierFlags |= REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_ROUGHNESS_SCALAR;
+      }
+
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_TRANSLUCENT_WORLDPOS_AS_TEXUV) {
+        d3dModifierFlags |= REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_WORLDPOS_AS_TEXUV;
+        freeFloat01 = drawCallState.materialData.remixFloatRS211FromD3D;
+      }
+
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_TRANSLUCENT_FADE_NORMAL_UNTIL_DIST) {
+        freeFloat02 = drawCallState.materialData.remixFloatRS212FromD3D;
       }
 
       const RtTranslucentSurfaceMaterial translucentSurfaceMaterial{
@@ -1363,7 +1374,7 @@ namespace dxvk {
         transmittanceMeasureDistance, transmittanceColor,
         enableEmissive, emissiveIntensity, emissiveColorConstant,
         isThinWalled, thinWallThickness, useDiffuseLayer, samplerIndex,
-        d3dModifierFlags, wetnessParams1, wetnessParams2
+        d3dModifierFlags, wetnessParams1, wetnessParams2, freeFloat01, freeFloat02
       };
 
       surfaceMaterial.emplace(translucentSurfaceMaterial);
