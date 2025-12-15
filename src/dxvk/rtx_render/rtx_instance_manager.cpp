@@ -1131,7 +1131,23 @@ namespace dxvk {
         // So instead of offsetting the digits or making them live in unordered TLAS (either of which would solve the problem), we offset the screen background backwards.
         const float worldSpaceUiBackgroundOffset = RtxOptions::worldSpaceUiBackgroundOffset();
         if (worldSpaceUiBackgroundOffset != 0.f && currentInstance.testCategoryFlags(InstanceCategories::WorldMatte)) {
-          objectToWorld[3] += objectToWorld[2] * worldSpaceUiBackgroundOffset;
+          // Determine offset direction based on AABB: offset along the axis with smallest extent (surface normal for flat planes)
+          const AxisAlignedBoundingBox& boundingBox = drawCall.getGeometryData().boundingBox;
+          if (boundingBox.isValid()) {
+            const Vector3 aabbSize = boundingBox.maxPos - boundingBox.minPos;
+            // Find the axis with the smallest extent (thickness direction)
+            uint32_t smallestAxis = 0;
+            if (aabbSize.y < aabbSize[smallestAxis]) {
+              smallestAxis = 1; // Y-axis
+            }
+            if (aabbSize.z < aabbSize[smallestAxis]) {
+              smallestAxis = 2; // Z-axis
+            }
+            // Get the world-space direction of the smallest axis from the transform matrix
+            const Vector3 surfaceNormal = safeNormalize(Vector3(objectToWorld[smallestAxis].data), Vector3(0.0f, 0.0f, 1.0f));
+            // Offset along the surface normal
+            objectToWorld[3] += Vector4(surfaceNormal * worldSpaceUiBackgroundOffset, 0.0f);
+          }
         }
 
         // Update the transform based on what state we're in
