@@ -192,6 +192,7 @@ namespace dxvk {
     RTX_OPTION("rtx.particles.globalPreset", bool, enableCollisionDetection, false, "Enables particle collisions with the world.");
     RTX_OPTION("rtx.particles.globalPreset", float, collisionRestitution, .5, "The fraction of velocity retained after a collision with scene geometry. 1.0 = perfectly elastic (no speed loss), 0.0 = completely inelastic (velocity zeroed). Values outside [0,1] will be clamped to this range.");
     RTX_OPTION("rtx.particles.globalPreset", float, collisionThickness, 5.f, "The maximum penetration depth (in centimeters) at which a particle will still collide with geometry.  Particles that penetrate deeper than this value are considered to have passed through thin objects and will not collide.");
+    RTX_OPTION("rtx.particles.globalPreset", ParticleCollisionMode, collisionMode, ParticleCollisionMode::ScreenSpace, "Collision method: ScreenSpace (fast, view-dependent), TLAS (robust, expensive), Hybrid (screenspace when valid, otherwise TLAS).");
     RTX_OPTION("rtx.particles.globalPreset", bool, useTurbulence, false, "Enable turbulence simulation.");
     RTX_OPTION("rtx.particles.globalPreset", float, turbulenceForce, 5.f, "How much turbulence influences the velocity of a particle as an external force (represented in centimeters per second squared).");
     RTX_OPTION("rtx.particles.globalPreset", float, turbulenceFrequency, .05f, "Frequency (rate of change) of the turbulence forces. Lower values change slowly; higher values change rapidly.  This is specified in centimeters.");
