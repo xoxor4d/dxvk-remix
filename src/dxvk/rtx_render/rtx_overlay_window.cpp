@@ -183,7 +183,27 @@ LRESULT GameOverlay::overlayWndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
       msg == WM_MOUSEWHEEL || msg == WM_MOUSEHWHEEL ||
       msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP ||
       msg == WM_CHAR || msg == WM_UNICHAR || msg == WM_IME_CHAR) {
-    if (!m_gameWindowFocused.load()) {
+    // Check focus state dynamically to handle cases where the cached state
+    // might be incorrect (e.g., if the window was focused before the overlay was created)
+    bool isFocused = m_gameWindowFocused.load();
+    if (!isFocused && m_gameHwnd != nullptr) {
+      // Double-check focus state if cached state says not focused
+      // This handles the case where focus was set before activation messages were received
+      HWND fg = GetForegroundWindow();
+      if (fg == m_gameHwnd) {
+        isFocused = true;
+        m_gameWindowFocused.store(true);
+      } else {
+        DWORD fgPid = 0, gamePid = 0;
+        GetWindowThreadProcessId(fg, &fgPid);
+        GetWindowThreadProcessId(m_gameHwnd, &gamePid);
+        if (fgPid == gamePid) {
+          isFocused = true;
+          m_gameWindowFocused.store(true);
+        }
+      }
+    }
+    if (!isFocused) {
       // Drop input events when game window is not focused
       return 0;
     }
