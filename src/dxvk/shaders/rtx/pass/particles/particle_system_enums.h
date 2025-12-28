@@ -27,3 +27,9 @@ enum ParticleBillboardType : uint8_t {
   FaceCamera_Position,        // camera->particle vector
   FaceWorldUp,                // horizontal plane (face up axis)
 };
+
+enum ParticleCollisionMode : uint8_t {
+  ScreenSpace = 0, // collide against (previous) primary GBuffer (fast, view-dependent)
+  TLAS = 1,        // collide via TLAS ray query (robust, more expensive)
+  Hybrid = 2,      // try ScreenSpace when valid, otherwise TLAS
+};

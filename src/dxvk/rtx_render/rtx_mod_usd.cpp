@@ -542,6 +542,9 @@ std::optional<RtxParticleSystemDesc> UsdMod::Impl::processParticleSystem(Args& a
   RemixParticleSystemAPI particleSystem(prim);
 
   RtxParticleSystemDesc particleDesc;
+  // USD default: ScreenSpace collisions unless explicitly overridden per-prim.
+  // Users can force TLAS via primvars:particle:enableCollisionDetectionTLAS.
+  particleDesc.collisionMode = ParticleCollisionMode::ScreenSpace;
   // Helper macro to read an attribute into a float or int field
 #define READ_ATTR(Type, attrName, field) \
             if (UsdAttribute attr = particleSystem.GetPrimvarsParticle##attrName##Attr()) { \
@@ -581,6 +584,16 @@ std::optional<RtxParticleSystemDesc> UsdMod::Impl::processParticleSystem(Args& a
   READ_ATTR(bool, UseTurbulence, useTurbulence);
   READ_ATTR(bool, UseSpawnTexcoords, useSpawnTexcoords);
   READ_ATTR(bool, EnableCollisionDetection, enableCollisionDetection);
+
+  // Optional override: allow forcing TLAS collision via a simple boolean primvar.
+  // This is intentionally NOT part of the RemixParticleSystemAPI schema so mods can use it without schema/plugin updates.
+  if (UsdAttribute attr = prim.GetAttribute(TfToken("primvars:particle:enableCollisionDetectionTLAS"))) {
+    bool enableTLAS = false;
+    if (attr.Get<bool>(&enableTLAS) && enableTLAS) {
+      particleDesc.collisionMode = ParticleCollisionMode::TLAS;
+    }
+  }
+
   READ_ATTR(bool, AlignParticlesToVelocity, alignParticlesToVelocity);
   READ_ATTR(bool, EnableMotionTrail, enableMotionTrail);
   READ_ATTR(bool, HideEmitter, hideEmitter);
