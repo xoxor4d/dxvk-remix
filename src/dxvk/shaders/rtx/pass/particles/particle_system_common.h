@@ -89,7 +89,7 @@ struct RtxParticleSystemDesc {
   uint8_t alignParticlesToVelocity;
   uint8_t useSpawnTexcoords;
   uint8_t enableCollisionDetection;
-  uint8_t pad;
+  ParticleCollisionMode collisionMode;
 
 #ifdef __cplusplus
   RtxParticleSystemDesc() {

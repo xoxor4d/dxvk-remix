@@ -207,6 +207,14 @@ namespace dxvk {
 
           ImGui::Checkbox("Enable Particle World Collisions", &enableCollisionDetectionObject());
           ImGui::BeginDisabled(!enableCollisionDetection());
+          static auto collisionModeCombo = ImGui::ComboWithKey<ParticleCollisionMode>(
+            "Collision Mode",
+            ImGui::ComboWithKey<ParticleCollisionMode>::ComboEntries { {
+              {ParticleCollisionMode::ScreenSpace, "ScreenSpace (fast, view-dependent)"},
+              {ParticleCollisionMode::TLAS, "TLAS (robust, expensive)"},
+              {ParticleCollisionMode::Hybrid, "Hybrid (screenspace when valid, else TLAS)"},
+          } });
+          collisionModeCombo.getKey(&collisionModeObject());
           ImGui::DragFloat("Collision Restitution", &collisionRestitutionObject(), 0.01f, 0.f, 1.f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
           ImGui::DragFloat("Collision Thickness", &collisionThicknessObject(), 0.01f, 0.f, 10000.f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
           ImGui::EndDisabled();
@@ -293,6 +301,7 @@ namespace dxvk {
     desc.alignParticlesToVelocity = RtxParticleSystemManager::alignParticlesToVelocity() ? 1 : 0;
     desc.collisionRestitution = RtxParticleSystemManager::collisionRestitution();
     desc.collisionThickness = RtxParticleSystemManager::collisionThickness();
+    desc.collisionMode = RtxParticleSystemManager::collisionMode();
     desc.enableMotionTrail = RtxParticleSystemManager::enableMotionTrail() ? 1 : 0;
     desc.motionTrailMultiplier = RtxParticleSystemManager::motionTrailMultiplier();
     desc.spawnRate = (float) RtxParticleSystemManager::spawnRatePerSecond();

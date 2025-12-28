@@ -661,6 +661,8 @@ namespace {
       // Collision
       desc.collisionThickness = info.collisionThickness;
       desc.collisionRestitution = info.collisionRestitution;
+      // No collision mode in Remix SDK struct yet, use global preset default.
+      desc.collisionMode = RtxParticleSystemManager::collisionMode();
 
       // Counts/flags
       desc.maxNumParticles = info.maxNumParticles;
@@ -673,6 +675,7 @@ namespace {
       desc.billboardType = static_cast<ParticleBillboardType>(info.billboardType);
 
       // If this assert fails a new particle system parameter added, please update here.
+      // Note: collisionMode is currently not part of Remix SDK's particle system struct.
       assert(pxr::RemixParticleSystemAPI::GetSchemaAttributeNames(false).size() == 33);
 
       return desc;
