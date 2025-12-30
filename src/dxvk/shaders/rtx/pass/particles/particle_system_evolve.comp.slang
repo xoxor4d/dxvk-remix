@@ -111,17 +111,40 @@ bool collideParticleWithSceneTLAS(inout GpuParticle p)
   // Build a surface interaction so we can get a stable triangle normal for reflection.
   RAY_HIT_INFO_CREATE_RAY_QUERY_COMMITTED(rayHitInfo, rayQuery);
   RayInteraction rayInteraction = rayInteractionCreate(ray, rayHitInfo);
+  
   Surface surface = surfaces[nonuniformEXT(rayInteraction.surfaceIndex)];
   SurfaceInteraction surfaceInteraction = surfaceInteractionCreate<false>(surface, rayInteraction, ray, false);
 
-  const float3 n = normalize(float3(surfaceInteraction.triangleNormal));
+  float3 rawNormal = float3(surfaceInteraction.triangleNormal);
+  
+  // Safety: reject degenerate normals (check length before normalizing to avoid NaN)
+  const float normalLengthSq = dot(rawNormal, rawNormal);
+  if (normalLengthSq < 1e-6f)
+    return false;
+  
+  const float3 n = rawNormal * rsqrt(normalLengthSq); // Faster than normalize for non-zero vectors
 
   // Choose normal to oppose motion (two-sided)
   const float3 collisionNormal = (dot(motion, n) <= 0.0f) ? n : -n;
 
   // Snap to hit position (slightly offset) and reflect velocity.
   p.position = surfaceInteraction.position + collisionNormal * kCollisionBias;
-  p.velocity = reflect(p.velocity, collisionNormal) * particleCb.particleSystem.desc.collisionRestitution;
+  
+  // Reflect velocity and apply restitution
+  float3 newVelocity = reflect(p.velocity, collisionNormal) * particleCb.particleSystem.desc.collisionRestitution;
+  
+  // Safety: clamp reflected velocity to prevent runaway speeds from bad collisions
+  // Cap at 3x original speed or 200 units/sec to prevent "bullet" particles while allowing bounces
+  const float originalSpeed = length(p.velocity);
+  const float newSpeed = length(newVelocity);
+  const float maxSpeed = max(originalSpeed * 3.0f, 200.0f);
+  
+  if (newSpeed > maxSpeed)
+  {
+    newVelocity = normalize(newVelocity) * maxSpeed;
+  }
+  
+  p.velocity = newVelocity;
 
   return true;
 }
@@ -148,7 +171,14 @@ bool collideParticleWithSceneScreenSpace(inout GpuParticle p)
   if (!si.isValid)
     return false;
 
-  float3 n = normalize(float3(si.triangleNormal));
+  float3 rawNormal = float3(si.triangleNormal);
+  
+  // Safety: reject degenerate normals (check length before normalizing)
+  const float normalLengthSq = dot(rawNormal, rawNormal);
+  if (normalLengthSq < 1e-6f)
+    return false;
+  
+  const float3 n = rawNormal * rsqrt(normalLengthSq);
 
   // Approximate scene velocity using the previous screen-space motion vector.
   float2 screenVelocity = PreviousPrimaryScreenSpaceMotionVector[pixel];
@@ -159,6 +189,10 @@ bool collideParticleWithSceneScreenSpace(inout GpuParticle p)
     sceneVel = (si.position - si2.position);
 
   float3 relVel = p.velocity - sceneVel;
+  
+  // Safety: reject extreme scene velocities that could cause numerical issues
+  if (length(sceneVel) > 1000.0f)
+    sceneVel = 0..xxx;
 
   // Continuous collision against the GBuffer plane (two-sided).
   const float d0 = dot(p.position - si.position, n);
@@ -181,7 +215,19 @@ bool collideParticleWithSceneScreenSpace(inout GpuParticle p)
   p.position -= collisionNormal * push;
 
   const float3 vRef = reflect(relVel, collisionNormal);
-  p.velocity = vRef * particleCb.particleSystem.desc.collisionRestitution + sceneVel;
+  float3 newVelocity = vRef * particleCb.particleSystem.desc.collisionRestitution + sceneVel;
+  
+  // Safety: clamp velocity to prevent runaway speeds (same as TLAS)
+  const float originalSpeed = length(p.velocity);
+  const float newSpeed = length(newVelocity);
+  const float maxSpeed = max(originalSpeed * 3.0f, 200.0f);
+  
+  if (newSpeed > maxSpeed)
+  {
+    newVelocity = normalize(newVelocity) * maxSpeed;
+  }
+  
+  p.velocity = newVelocity;
 
   return true;
 }

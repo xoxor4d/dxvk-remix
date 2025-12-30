@@ -594,6 +594,11 @@ std::optional<RtxParticleSystemDesc> UsdMod::Impl::processParticleSystem(Args& a
     }
   }
 
+  // Global override: if forceScreenSpaceCollision is enabled, always use screenspace (overrides USD settings)
+  if (RtxParticleSystemManager::forceScreenSpaceCollision()) {
+    particleDesc.collisionMode = ParticleCollisionMode::ScreenSpace;
+  }
+
   READ_ATTR(bool, AlignParticlesToVelocity, alignParticlesToVelocity);
   READ_ATTR(bool, EnableMotionTrail, enableMotionTrail);
   READ_ATTR(bool, HideEmitter, hideEmitter);

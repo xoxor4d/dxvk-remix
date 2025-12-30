@@ -158,8 +158,17 @@ namespace dxvk {
     std::vector<SpawnContext> m_spawnContexts;
     bool m_initialized = false;
 
+    inline static bool s_particleSystemCacheDirty{ false };
+    static void forceScreenSpaceCollisionOnChange(DxvkDevice* device) {
+      // Mark cache as dirty so it gets cleared on next frame
+      s_particleSystemCacheDirty = true;
+    }
+
     RTX_OPTION("rtx.particles", bool, enable, true, "Enables particle simulation and rendering.");
     RTX_OPTION("rtx.particles", bool, enableSpawning, true, "Controls whether or not any particle system can currently spawn new particles.");
+    RTX_OPTION_ARGS("rtx.particles", bool, forceScreenSpaceCollision, false, 
+                    "When enabled, forces all particle systems to use screenspace collision regardless of their individual settings or USD overrides.",
+                    args.onChangeCallback = &forceScreenSpaceCollisionOnChange);
     RTX_OPTION("rtx.particles", float, timeScale, 1.f, "Time modifier, can be used to slow/speed up time.");
 
     RTX_OPTION("rtx.particles.globalPreset", int, spawnRatePerSecond, 100, "Number of particles (per system) to spawn per second on average.");

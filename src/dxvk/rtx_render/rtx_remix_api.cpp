@@ -661,8 +661,8 @@ namespace {
       // Collision
       desc.collisionThickness = info.collisionThickness;
       desc.collisionRestitution = info.collisionRestitution;
-      // No collision mode in Remix SDK struct yet, use global preset default.
-      desc.collisionMode = RtxParticleSystemManager::collisionMode();
+      // No collision mode in Remix SDK struct yet, use global preset default (respecting global override).
+      desc.collisionMode = RtxParticleSystemManager::forceScreenSpaceCollision() ? ParticleCollisionMode::ScreenSpace : RtxParticleSystemManager::collisionMode();
 
       // Counts/flags
       desc.maxNumParticles = info.maxNumParticles;
