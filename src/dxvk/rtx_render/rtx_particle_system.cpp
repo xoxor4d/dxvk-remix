@@ -38,6 +38,9 @@
 
 namespace dxvk {
 
+  // Track if TLAS was invalid to restore collision modes when it becomes valid again
+  static bool s_tlasWasInvalid = false;
+
   // Defined within an unnamed namespace to ensure unique definition across binary
   namespace {
     class ParticleSystemSpawn : public ManagedShader {
@@ -164,6 +167,7 @@ namespace dxvk {
       RemixGui::Checkbox("Enable", &enableObject());
       ImGui::BeginDisabled(!enable());
       RemixGui::Checkbox("Enable Spawning", &enableSpawningObject());
+      RemixGui::Checkbox("Force Screenspace Collision (Global Override)", &forceScreenSpaceCollisionObject());
       RemixGui::DragFloat("Time Scale", &timeScaleObject(), 0.01f, 0.f, 1.f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
 
       if (RemixGui::CollapsingHeader("Global Preset")) {
@@ -306,7 +310,8 @@ namespace dxvk {
     desc.alignParticlesToVelocity = RtxParticleSystemManager::alignParticlesToVelocity() ? 1 : 0;
     desc.collisionRestitution = RtxParticleSystemManager::collisionRestitution();
     desc.collisionThickness = RtxParticleSystemManager::collisionThickness();
-    desc.collisionMode = RtxParticleSystemManager::collisionMode();
+    // Apply global collision mode, but allow global screenspace override
+    desc.collisionMode = forceScreenSpaceCollision() ? ParticleCollisionMode::ScreenSpace : RtxParticleSystemManager::collisionMode();
     desc.enableMotionTrail = RtxParticleSystemManager::enableMotionTrail() ? 1 : 0;
     desc.motionTrailMultiplier = RtxParticleSystemManager::motionTrailMultiplier();
     desc.spawnRate = (float) RtxParticleSystemManager::spawnRatePerSecond();
@@ -425,7 +430,24 @@ namespace dxvk {
       m_spawnContexts.clear();
       m_particleSystems.clear();
       m_spawnContextsBuffer = nullptr;
+      s_tlasWasInvalid = false;
       return;
+    }
+
+    // Safety: Check if TLAS has valid surfaces. If not (e.g., during alt-tab, resource transitions),
+    // temporarily force all particles to screenspace collision to prevent GPU crashes from invalid TLAS access.
+    const bool tlasValid = ctx->getSceneManager().getAccelManager().getSurfaceCount() > 0;
+    if (!tlasValid) {
+      // Force screenspace collision mode on all particle systems when TLAS is invalid
+      for (auto& systemPair : m_particleSystems) {
+        ParticleSystem& particleSystem = *systemPair.second.get();
+        particleSystem.context.desc.collisionMode = ParticleCollisionMode::ScreenSpace;
+      }
+      s_tlasWasInvalid = true;
+    } else if (s_tlasWasInvalid) {
+      // TLAS just became valid again - clear particle cache so systems get recreated with proper collision modes
+      m_particleSystems.clear();
+      s_tlasWasInvalid = false;
     }
 
     ScopedGpuProfileZone(ctx, "Rtx Particle Simulation");
@@ -851,6 +873,21 @@ namespace dxvk {
   void RtxParticleSystemManager::prepareForNextFrame() {
     // Spawn contexts dont persist across frames, this is because we want to support objects with unstable hashes.
     m_spawnContexts.clear();
+
+    // Update collision mode on all existing particle systems if forceScreenSpaceCollision was toggled
+    if (s_particleSystemCacheDirty) {
+      if (forceScreenSpaceCollision()) {
+        // Override all existing systems to ScreenSpace immediately
+        for (auto& systemPair : m_particleSystems) {
+          ParticleSystem& particleSystem = *systemPair.second.get();
+          particleSystem.context.desc.collisionMode = ParticleCollisionMode::ScreenSpace;
+        }
+      } else {
+        // When turning off override, clear cache so systems get recreated with their proper collision modes
+        m_particleSystems.clear();
+      }
+      s_particleSystemCacheDirty = false;
+    }
 
     // Signals which version of the vertex data we are on due to simulation
 
