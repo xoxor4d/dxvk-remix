@@ -1348,6 +1348,10 @@ namespace dxvk {
       float thinWallThickness = translucentMaterialData.getThinWallThickness();
       bool useDiffuseLayer = translucentMaterialData.getEnableDiffuseLayer();
 
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR) {
+        emissiveIntensity *= drawCallState.materialData.remixTempFloat01FromD3D;
+      }
+
       if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR) {
         // read packed DWORD from RS_210_WETNESS_PARAMS_PACKED - lower 16 bits = wetnessParams1, upper 16 bits = wetnessParams2
         // lower 16 bits: comp mod packs 3 parameters using bit packing: scalar(6 bits) + max_z(5 bits) + blend_width(5 bits) = 16 bits
