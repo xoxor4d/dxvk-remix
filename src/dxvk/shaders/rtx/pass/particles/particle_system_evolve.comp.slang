@@ -127,24 +127,12 @@ bool collideParticleWithSceneTLAS(inout GpuParticle p)
   // Choose normal to oppose motion (two-sided)
   const float3 collisionNormal = (dot(motion, n) <= 0.0f) ? n : -n;
 
-  // Snap to hit position (slightly offset) and reflect velocity.
-  p.position = surfaceInteraction.position + collisionNormal * kCollisionBias;
-  
-  // Reflect velocity and apply restitution
-  float3 newVelocity = reflect(p.velocity, collisionNormal) * particleCb.particleSystem.desc.collisionRestitution;
-  
-  // Safety: clamp reflected velocity to prevent runaway speeds from bad collisions
-  // Cap at 3x original speed or 200 units/sec to prevent "bullet" particles while allowing bounces
-  const float originalSpeed = length(p.velocity);
-  const float newSpeed = length(newVelocity);
-  const float maxSpeed = max(originalSpeed * 3.0f, 200.0f);
-  
-  if (newSpeed > maxSpeed)
-  {
-    newVelocity = normalize(newVelocity) * maxSpeed;
-  }
-  
-  p.velocity = newVelocity;
+  // Push out of the hit plane (mirrors the screen-space path) to avoid large teleports.
+  const float distToPlane = abs(dot(p.position - surfaceInteraction.position, collisionNormal));
+  const float push = max(distToPlane - kCollisionBias, 0.0f);
+  p.position -= collisionNormal * push;
+
+  p.velocity = reflect(p.velocity, collisionNormal) * particleCb.particleSystem.desc.collisionRestitution;
 
   return true;
 }
@@ -215,19 +203,7 @@ bool collideParticleWithSceneScreenSpace(inout GpuParticle p)
   p.position -= collisionNormal * push;
 
   const float3 vRef = reflect(relVel, collisionNormal);
-  float3 newVelocity = vRef * particleCb.particleSystem.desc.collisionRestitution + sceneVel;
-  
-  // Safety: clamp velocity to prevent runaway speeds (same as TLAS)
-  const float originalSpeed = length(p.velocity);
-  const float newSpeed = length(newVelocity);
-  const float maxSpeed = max(originalSpeed * 3.0f, 200.0f);
-  
-  if (newSpeed > maxSpeed)
-  {
-    newVelocity = normalize(newVelocity) * maxSpeed;
-  }
-  
-  p.velocity = newVelocity;
+  p.velocity = vRef * particleCb.particleSystem.desc.collisionRestitution + sceneVel;
 
   return true;
 }
