@@ -210,6 +210,12 @@ private:
   XXH64_hash_t m_materialDataHash = kEmptyHash;
   XXH64_hash_t m_texcoordHash = kEmptyHash;
   XXH64_hash_t m_indexHash = kEmptyHash;
+  
+  // Per-drawcall renderstate tweaks that affect material properties (e.g., emissive strength)
+  // These must match for instances to be considered similar
+  uint32_t m_remixTextureCategoryFlagsFromD3D = 0u; // RS 42
+  uint32_t m_remixModifierFromD3D = 0u; // RS 149
+  XXH64_hash_t m_remixHashFromD3D = 0; // RS 150
   VkAccelerationStructureInstanceKHR m_vkInstance;
   VkGeometryFlagsKHR m_geometryFlags = 0;
   uint32_t m_firstBillboard = 0;
@@ -353,7 +359,7 @@ private:
   void mergeInstanceHeuristics(RtInstance& instanceToModify, const DrawCallState& drawCall, const RtSurface::AlphaState& alphaState) const;
 
   // Finds the "closest" matching instance to a set of inputs, returns a pointer (can be null if not found) to closest instance
-  RtInstance* findSimilarInstance(BlasEntry& blas, const MaterialData& material, const Matrix4& firstInstanceObjectToWorld, CameraType::Enum cameraType, const RayPortalManager& rayPortalManager);
+  RtInstance* findSimilarInstance(BlasEntry& blas, const MaterialData& material, const LegacyMaterialData& legacyMaterialData, const Matrix4& firstInstanceObjectToWorld, CameraType::Enum cameraType, const RayPortalManager& rayPortalManager);
 
   RtInstance* addInstance(BlasEntry& blas);
   void processInstanceBuffers(const BlasEntry& blas, RtInstance& currentInstance) const;
