@@ -189,6 +189,8 @@ dxvk_src = files([
   'rtx_render/rtx_asset_replacer.h',
   'rtx_render/rtx_auto_exposure.cpp',
   'rtx_render/rtx_auto_exposure.h',
+  'rtx_render/rtx_auto_pbr_manager.cpp',
+  'rtx_render/rtx_auto_pbr_manager.h',
   'rtx_render/rtx_bindless_resource_manager.cpp',
   'rtx_render/rtx_bindless_resource_manager.h',
   'rtx_render/rtx_bloom.cpp',

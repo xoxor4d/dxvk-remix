@@ -3153,6 +3153,105 @@ void ProcessDeviceCommandQueue() {
                                               "most recently created by client application.");
         break;
       }
+
+      case RemixApi_GetTextureHash:
+      {
+        PULL_U(textureHandle);
+        
+        Logger::info(format_string("[RemixApi_GetTextureHash] Received handle: 0x%X, gpD3DResources size: %d", 
+                                   textureHandle, gpD3DResources.size()));
+        
+        // Look up the server-side texture pointer in the D3D resources map
+        IDirect3DTexture9* pTexture = (IDirect3DTexture9*) gpD3DResources[textureHandle];
+        
+        Logger::info(format_string("[RemixApi_GetTextureHash] Server-side texture pointer: 0x%p", pTexture));
+        
+        remixapi_ErrorCode status = REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+        uint64_t hash = 0;
+        
+        if (pTexture != nullptr) {
+          // Call the actual Remix API function
+          if (remixapi::g_remix.dxvk_GetTextureHash) {
+            status = remixapi::g_remix.dxvk_GetTextureHash(pTexture, &hash);
+            if (status == REMIXAPI_ERROR_CODE_SUCCESS) {
+              Logger::info(format_string("[RemixApi_GetTextureHash] Successfully got hash: 0x%llX", hash));
+            } else {
+              Logger::err(format_string("[RemixApi_GetTextureHash] dxvk_GetTextureHash failed with status: %d", status));
+            }
+          } else {
+            Logger::err("[RemixApi_GetTextureHash] dxvk_GetTextureHash function not available in Remix API!");
+            status = REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+          }
+        } else {
+          Logger::err(format_string("[RemixApi_GetTextureHash] Texture handle 0x%X not found in gpD3DResources (map size: %d)", 
+                                    textureHandle, gpD3DResources.size()));
+        }
+        
+        // Send response back to client
+        {
+          ServerMessage c(Commands::Bridge_Response, currentUID);
+          c.send_data(status);
+          if (status == REMIXAPI_ERROR_CODE_SUCCESS) {
+            // Send the 64-bit hash as two 32-bit values (low, then high)
+            uint32_t hashLow = static_cast<uint32_t>(hash & 0xFFFFFFFF);
+            uint32_t hashHigh = static_cast<uint32_t>((hash >> 32) & 0xFFFFFFFF);
+            c.send_data(hashLow);
+            c.send_data(hashHigh);
+            Logger::info(format_string("[RemixApi_GetTextureHash] Sending hash parts - Low: 0x%X, High: 0x%X", hashLow, hashHigh));
+          }
+        }
+        break;
+      }
+
+      case RemixApi_SetTextureCategory:
+      {
+        PULL_U(textureHandle);
+        PULL_U(category);
+        PULL_U(textureSlot);
+        PULL_I(specChannelIndex);
+        PULL_U(shaderNameLen);
+        char* shaderNameData = nullptr;
+        if (shaderNameLen > 0) {
+          PULL_DATA(shaderNameLen, shaderNameData);
+        }
+        PULL_U(textureNameLen);
+        char* textureNameData = nullptr;
+        if (textureNameLen > 0) {
+          PULL_DATA(textureNameLen, textureNameData);
+        }
+        
+        // Copy to std::string for safe null-termination
+        std::string shaderName = (shaderNameData && shaderNameLen > 0) ? std::string(shaderNameData, shaderNameLen) : "";
+        std::string textureName = (textureNameData && textureNameLen > 0) ? std::string(textureNameData, textureNameLen) : "";
+        
+        IDirect3DTexture9* pTexture = (IDirect3DTexture9*) gpD3DResources[textureHandle];
+        
+        remixapi_ErrorCode status = REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+        
+        if (pTexture != nullptr) {
+          if (remixapi::g_remix.dxvk_SetTextureCategory) {
+            status = remixapi::g_remix.dxvk_SetTextureCategory(
+              pTexture,
+              static_cast<remixapi_dxvk_TextureCategory>(category),
+              textureSlot,
+              specChannelIndex,
+              shaderName.empty() ? nullptr : shaderName.c_str(),
+              textureName.empty() ? nullptr : textureName.c_str()
+            );
+          } else {
+            Logger::err("[RemixApi_SetTextureCategory] dxvk_SetTextureCategory function not available in Remix API!");
+            status = REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+          }
+        } else {
+          Logger::err(format_string("[RemixApi_SetTextureCategory] Texture handle 0x%X not found", textureHandle));
+        }
+        
+        {
+          ServerMessage c(Commands::Bridge_Response, currentUID);
+          c.send_data(status);
+        }
+        break;
+      }
       
       default:
         break;

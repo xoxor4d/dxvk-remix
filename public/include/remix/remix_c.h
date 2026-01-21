@@ -53,7 +53,7 @@
 #define REMIXAPI_VERSION_GET_PATCH(version) (((uint64_t)(version)      ) & (uint64_t)0xFFFF)
 
 #define REMIXAPI_VERSION_MAJOR 0
-#define REMIXAPI_VERSION_MINOR 5
+#define REMIXAPI_VERSION_MINOR 6
 #define REMIXAPI_VERSION_PATCH 2
 
 
@@ -61,6 +61,7 @@
 typedef struct IDirect3D9Ex       IDirect3D9Ex;
 typedef struct IDirect3DDevice9Ex IDirect3DDevice9Ex;
 typedef struct IDirect3DSurface9  IDirect3DSurface9;
+typedef struct IDirect3DTexture9  IDirect3DTexture9;
 
 
 #ifdef __cplusplus
@@ -656,6 +657,33 @@ extern "C" {
     IDirect3DSurface9*  source,
     uint64_t*           out_vkImage);
 
+  typedef remixapi_ErrorCode(REMIXAPI_PTR* PFN_remixapi_dxvk_GetTextureHash)(
+    IDirect3DTexture9*  texture,
+    uint64_t*           out_hash);
+
+  // Texture category for Auto PBR conversion system.
+  // Used with remixapi_dxvk_SetTextureCategory to tell Remix what type of texture this is.
+  typedef enum remixapi_dxvk_TextureCategory {
+    REMIXAPI_DXVK_TEXTURE_CATEGORY_UNKNOWN   = 0,
+    REMIXAPI_DXVK_TEXTURE_CATEGORY_COLORMAP  = 1,
+    REMIXAPI_DXVK_TEXTURE_CATEGORY_NORMAL    = 2,
+    REMIXAPI_DXVK_TEXTURE_CATEGORY_SPECULAR  = 3,
+    REMIXAPI_DXVK_TEXTURE_CATEGORY_HEIGHT    = 4
+  } remixapi_dxvk_TextureCategory;
+
+  // Set texture category for Auto PBR conversion system.
+  // This allows the game to provide texture type information (colormap, normal, specular, height)
+  // so that Remix can automatically build material associations and dump textures for USDA generation.
+  // specChannelIndex: For specular textures that pack 3 separate specular maps in R/G/B channels.
+  //   -1 = use all channels (full RGB), 0 = red channel only, 1 = green only, 2 = blue only.
+  typedef remixapi_ErrorCode(REMIXAPI_PTR* PFN_remixapi_dxvk_SetTextureCategory)(
+    IDirect3DTexture9*            texture,
+    remixapi_dxvk_TextureCategory category,       // Texture type (colormap, normal, specular, height)
+    uint32_t                      textureSlot,    // The texture stage/slot this texture is bound to
+    int32_t                       specChannelIndex, // Specular channel: -1=all, 0=R, 1=G, 2=B
+    const char*                   shaderName,     // Optional: shader name for debugging (can be NULL)
+    const char*                   textureName);   // Optional: texture name for debugging (can be NULL)
+
   typedef enum remixapi_dxvk_CopyRenderingOutputType {
     REMIXAPI_DXVK_COPY_RENDERING_OUTPUT_TYPE_FINAL_COLOR = 0,
     REMIXAPI_DXVK_COPY_RENDERING_OUTPUT_TYPE_DEPTH = 1,
@@ -696,6 +724,8 @@ extern "C" {
     PFN_remixapi_dxvk_RegisterD3D9Device    dxvk_RegisterD3D9Device;
     PFN_remixapi_dxvk_GetExternalSwapchain  dxvk_GetExternalSwapchain;
     PFN_remixapi_dxvk_GetVkImage            dxvk_GetVkImage;
+    PFN_remixapi_dxvk_GetTextureHash        dxvk_GetTextureHash;
+    PFN_remixapi_dxvk_SetTextureCategory    dxvk_SetTextureCategory;
     PFN_remixapi_dxvk_CopyRenderingOutput   dxvk_CopyRenderingOutput;
     PFN_remixapi_dxvk_SetDefaultOutput      dxvk_SetDefaultOutput;
     // Object picking utils

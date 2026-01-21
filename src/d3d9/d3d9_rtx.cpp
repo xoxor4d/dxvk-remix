@@ -14,6 +14,7 @@
 #include "d3d9_rtx_utils.h"
 #include "d3d9_texture.h"
 #include "../dxvk/rtx_render/rtx_terrain_baker.h"
+#include "../dxvk/rtx_render/rtx_auto_pbr_manager.h"
 
 namespace dxvk {
   static const bool s_isDxvkResolutionEnvVarSet = (env::getEnvVar("DXVK_RESOLUTION_WIDTH") != "") || (env::getEnvVar("DXVK_RESOLUTION_HEIGHT") != "");
@@ -640,9 +641,60 @@ namespace dxvk {
     // Fetch fog state 
     setFogState(m_parent, m_activeDrawCallState.fogState);
 
+    // Auto PBR: Begin new draw call (resets texture accumulator)
+    RtxAutoPBRManager::instance().beginDrawCall();
+    
+    // Auto PBR: Process ALL texture stages for metadata (not limited to kMaxSupportedTextures)
+    // This needs to happen before the main render state processing
+    if (RtxAutoPBRManager::instance().isEnabled()) {
+      for (uint32_t stage = 0; stage < 8; stage++) {  // D3D9 supports up to 8 texture stages
+        if (d3d9State().textures[stage] == nullptr) continue;
+        
+        D3D9CommonTexture* pTexInfo = GetCommonTexture(d3d9State().textures[stage]);
+        if (pTexInfo == nullptr || !pTexInfo->hasAutoPBRMetadata()) continue;
+        
+        const auto& metadata = pTexInfo->getAutoPBRMetadata();
+        Rc<DxvkImage> image = pTexInfo->GetImage();
+        XXH64_hash_t texHash = (image != nullptr) ? image->getHash() : 0;
+        
+        if (texHash != 0 && texHash != kEmptyHash) {
+          // Debug: Log specular textures with their channel index
+          if (metadata.category == D3D9CommonTexture::AutoPBRTextureCategory::Specular) {
+            Logger::debug(str::format("[AutoPBR] Processing specular: stage=", stage,
+              ", hash=0x", std::hex, texHash, std::dec,
+              ", specChannelIndex=", metadata.specChannelIndex,
+              ", tex=", metadata.textureName.empty() ? "N/A" : metadata.textureName));
+          }
+          
+          RtxAutoPBRManager::instance().processTexture(
+            texHash,
+            metadata.category,
+            metadata.textureSlot,
+            metadata.specChannelIndex,
+            metadata.shaderName,
+            metadata.textureName,
+            image
+          );
+        }
+        
+        // Clear metadata after processing
+        pTexInfo->clearAutoPBRMetadata();
+      }
+    }
+
     // Fetch all the render state and send it to rtx context (textures, transforms, etc.)
     if (!processRenderState()) {
       return prepareFlagsForIgnoredDraws;
+    }
+
+    // Auto PBR: End draw call (commits textures to associations and queues dumps)
+    RtxAutoPBRManager::instance().endDrawCall(m_parent->GetDXVKDevice().ptr());
+    
+    // Auto PBR: Process pending texture dumps (requires context)
+    if (RtxAutoPBRManager::instance().hasPendingDumps()) {
+      m_parent->EmitCs([](DxvkContext* ctx) {
+        RtxAutoPBRManager::instance().processPendingDumps(ctx);
+      });
     }
 
     // force vertex color modulation with BEAM category ;)
@@ -1063,6 +1115,9 @@ namespace dxvk {
 
       auto shaderSampler = RemapStateSamplerShader(stage);
       m_activeDrawCallState.materialData.colorTextureSlot[textureID] = computeResourceSlotId(shaderSampler.first, DxsoBindingType::Image, uint32_t(shaderSampler.second));
+
+      // Note: Auto PBR processing is now done separately for all 8 texture stages
+      // before processRenderState() is called, so we don't need to do it here.
 
       ++textureID;
     }

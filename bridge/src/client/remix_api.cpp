@@ -24,6 +24,7 @@
 #include "util_bridgecommand.h"
 #include "util_devicecommand.h"
 #include "util_remixapi.h"
+#include "d3d9_texture.h"
 
 using namespace remixapi::util;
 
@@ -387,6 +388,95 @@ remixapi_ErrorCode REMIXAPI_CALL remixapi_SetConfigVariable(const char* var, con
   return REMIXAPI_ERROR_CODE_SUCCESS;
 }
 
+remixapi_ErrorCode REMIXAPI_CALL remixapi_dxvk_GetTextureHash(IDirect3DTexture9* texture, uint64_t* out_hash) {
+  ASSERT_REMIXAPI_PFN_TYPE(remixapi_dxvk_GetTextureHash);
+  if (!texture || !out_hash) {
+    return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+  }
+
+  // Cast to Direct3DTexture9_LSS to get the server-side handle
+  // The texture parameter should be a bridge wrapper object
+  auto* bridgeTexture = static_cast<Direct3DTexture9_LSS*>(texture);
+  const uint32_t serverHandle = static_cast<uint32_t>(bridgeTexture->getId());
+
+  Logger::info(format_string("[remixapi_dxvk_GetTextureHash] Client texture ptr: 0x%p, Server handle: 0x%X", 
+                             texture, serverHandle));
+
+  uint32_t currentUID = 0;
+  {
+    ClientMessage c(Commands::RemixApi_GetTextureHash);
+    c.send_data(serverHandle); // Send the server-side handle
+    currentUID = c.get_uid();
+  }
+
+  WAIT_FOR_SERVER_RESPONSE("remixapi_dxvk_GetTextureHash", REMIXAPI_ERROR_CODE_GENERAL_FAILURE, currentUID);
+  
+  // Get the status code from the server
+  remixapi_ErrorCode status = (remixapi_ErrorCode)DeviceBridge::get_data();
+  
+  if (status == REMIXAPI_ERROR_CODE_SUCCESS) {
+    // Get the 64-bit hash from the server (sent as two 32-bit values)
+    uint32_t hashLow = (uint32_t)DeviceBridge::get_data();
+    uint32_t hashHigh = (uint32_t)DeviceBridge::get_data();
+    *out_hash = ((uint64_t)hashHigh << 32) | hashLow;
+    
+    Logger::info(format_string("[remixapi_dxvk_GetTextureHash] Received hash parts - Low: 0x%X, High: 0x%X, Combined: 0x%llX", 
+                               hashLow, hashHigh, *out_hash));
+  } else {
+    Logger::err(format_string("[remixapi_dxvk_GetTextureHash] Failed with status: %d", status));
+  }
+  
+  DeviceBridge::pop_front();
+  
+  return status;
+}
+
+remixapi_ErrorCode REMIXAPI_CALL remixapi_dxvk_SetTextureCategory(
+    IDirect3DTexture9* texture,
+    remixapi_dxvk_TextureCategory category,
+    uint32_t textureSlot,
+    int32_t specChannelIndex,
+    const char* shaderName,
+    const char* textureName) {
+  ASSERT_REMIXAPI_PFN_TYPE(remixapi_dxvk_SetTextureCategory);
+  if (!texture) {
+    return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+  }
+
+  // Cast to Direct3DTexture9_LSS to get the server-side handle
+  auto* bridgeTexture = static_cast<Direct3DTexture9_LSS*>(texture);
+  const uint32_t serverHandle = static_cast<uint32_t>(bridgeTexture->getId());
+
+  // Prepare string lengths (0 if null)
+  const uint32_t shaderNameLen = shaderName ? static_cast<uint32_t>(strlen(shaderName)) : 0;
+  const uint32_t textureNameLen = textureName ? static_cast<uint32_t>(strlen(textureName)) : 0;
+
+  uint32_t currentUID = 0;
+  {
+    ClientMessage c(Commands::RemixApi_SetTextureCategory);
+    c.send_data(serverHandle);
+    c.send_data(static_cast<uint32_t>(category));
+    c.send_data(textureSlot);
+    c.send_data(specChannelIndex);
+    c.send_data(shaderNameLen);
+    if (shaderNameLen > 0) {
+      c.send_data(shaderNameLen, shaderName);
+    }
+    c.send_data(textureNameLen);
+    if (textureNameLen > 0) {
+      c.send_data(textureNameLen, textureName);
+    }
+    currentUID = c.get_uid();
+  }
+
+  WAIT_FOR_SERVER_RESPONSE("remixapi_dxvk_SetTextureCategory", REMIXAPI_ERROR_CODE_GENERAL_FAILURE, currentUID);
+  
+  remixapi_ErrorCode status = (remixapi_ErrorCode)DeviceBridge::get_data();
+  DeviceBridge::pop_front();
+  
+  return status;
+}
+
 remixapi_ErrorCode REMIXAPI_CALL remixapi_dxvk_CreateD3D9(
   remixapi_Bool       editorModeEnabled,
   IDirect3D9Ex**      out_pD3D9) {
@@ -452,6 +542,8 @@ extern "C" {
       interf.dxvk_RegisterD3D9Device = remixapi_dxvk_RegisterD3D9Device;
       // interf.dxvk_GetExternalSwapchain = remixapi_dxvk_GetExternalSwapchain;
       // interf.dxvk_GetVkImage = remixapi_dxvk_GetVkImage;
+      interf.dxvk_GetTextureHash = remixapi_dxvk_GetTextureHash;
+      interf.dxvk_SetTextureCategory = remixapi_dxvk_SetTextureCategory;
       // interf.dxvk_CopyRenderingOutput = remixapi_dxvk_CopyRenderingOutput;
       // interf.dxvk_SetDefaultOutput = remixapi_dxvk_SetDefaultOutput;
       // interf.pick_RequestObjectPicking = remixapi_pick_RequestObjectPicking;

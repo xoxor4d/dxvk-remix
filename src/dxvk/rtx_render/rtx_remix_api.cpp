@@ -42,8 +42,10 @@
 #include "../../util/util_math.h"
 #include "../../util/util_vector.h"
 #include "../../util/util_string.h"
+#include "../../util/xxHash/xxhash.h"
 
 #include "../../d3d9/d3d9_swapchain.h"
+#include "../../d3d9/d3d9_texture.h"
 
 #include "../../lssusd/usd_include_begin.h"
 #include <src/usd-plugins/RemixParticleSystem/ParticleSystemAPI.h>
@@ -1393,6 +1395,109 @@ namespace {
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 
+  remixapi_ErrorCode REMIXAPI_CALL remixapi_dxvk_GetTextureHash(
+    IDirect3DTexture9* texture,
+    uint64_t* out_hash) {
+    if (!texture || !out_hash) {
+      return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+    }
+
+    // Cast the D3D9 texture to get the common texture wrapper
+    dxvk::D3D9CommonTexture* commonTexture = dxvk::GetCommonTexture(texture);
+    if (!commonTexture) {
+      return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+    }
+
+    // Get the buffer for subresource 0 (same as SetupForRtxFrom)
+    constexpr uint32_t subresource = 0;
+    const dxvk::Rc<dxvk::DxvkBuffer>& buffer = commonTexture->GetBuffer(subresource);
+    
+    // Check if buffer data is available for hashing
+    void* bufferData = (buffer != nullptr) ? buffer->mapPtr(0) : nullptr;
+    
+    if (bufferData == nullptr || buffer->info().size == 0) {
+      // Buffer not available - fall back to cached hash from GPU image
+      // This happens for DEFAULT pool textures populated via UpdateTexture,
+      // render targets, or textures that haven't been locked yet.
+      static bool s_warnedFallback = false;
+      if (!s_warnedFallback) {
+        s_warnedFallback = true;
+        dxvk::Logger::info("[remixapi_dxvk_GetTextureHash] No CPU buffer available, using cached GPU hash. "
+                           "This is normal for DEFAULT pool textures.");
+      }
+      
+      const dxvk::Rc<dxvk::DxvkImage>& image = commonTexture->GetImage();
+      if (image == nullptr) {
+        return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+      }
+      *out_hash = image->getHash();
+      return REMIXAPI_ERROR_CODE_SUCCESS;
+    }
+
+    // Calculate hash directly from CPU buffer data (same algorithm as SetupForRtxFrom)
+    XXH64_hash_t calculatedHash = XXH3_64bits(bufferData, buffer->info().size);
+    
+    // Check if cached hash differs and log once as a warning
+    const dxvk::Rc<dxvk::DxvkImage>& image = commonTexture->GetImage();
+    if (image != nullptr) {
+      uint64_t cachedHash = image->getHash();
+      if (cachedHash != 0 && cachedHash != calculatedHash) {
+        static bool s_warnedHashMismatch = false;
+        if (!s_warnedHashMismatch) {
+          s_warnedHashMismatch = true;
+          dxvk::Logger::warn(dxvk::str::format(
+            "[remixapi_dxvk_GetTextureHash] Hash mismatch detected! "
+            "Cached: 0x", std::hex, cachedHash, 
+            ", Calculated: 0x", calculatedHash,
+            ". The texture content may have changed since it was last uploaded to GPU."));
+        }
+      }
+    }
+
+    *out_hash = calculatedHash;
+    return REMIXAPI_ERROR_CODE_SUCCESS;
+  }
+
+  remixapi_ErrorCode REMIXAPI_CALL remixapi_dxvk_SetTextureCategory(
+    IDirect3DTexture9* texture,
+    remixapi_dxvk_TextureCategory category,
+    uint32_t textureSlot,
+    int32_t specChannelIndex,
+    const char* shaderName,
+    const char* textureName) {
+    if (!texture) {
+      return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+    }
+
+    // Cast the D3D9 texture to get the common texture wrapper
+    dxvk::D3D9CommonTexture* commonTexture = dxvk::GetCommonTexture(texture);
+    if (!commonTexture) {
+      return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+    }
+
+    // Validate category range
+    if (category > REMIXAPI_DXVK_TEXTURE_CATEGORY_HEIGHT) {
+      return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+    }
+
+    // Debug logging disabled for performance - uncomment if needed
+    // static const char* categoryNames[] = { "Unknown", "Colormap", "Normal", "Specular", "Height" };
+    // dxvk::Logger::debug(dxvk::str::format(
+    //   "[AutoPBR] SetTextureCategory: cat=", categoryNames[category], 
+    //   ", slot=", textureSlot, ", specCh=", specChannelIndex));
+
+    // Set the Auto PBR metadata on the texture
+    commonTexture->setAutoPBRMetadata(
+      static_cast<dxvk::D3D9CommonTexture::AutoPBRTextureCategory>(category),
+      textureSlot,
+      specChannelIndex,
+      shaderName,
+      textureName
+    );
+
+    return REMIXAPI_ERROR_CODE_SUCCESS;
+  }
+
   remixapi_ErrorCode REMIXAPI_CALL remixapi_Startup(const remixapi_StartupInfo* info) {
     if (!info || info->sType != REMIXAPI_STRUCT_TYPE_STARTUP_INFO) {
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
@@ -1594,12 +1699,14 @@ extern "C"
       interf.dxvk_RegisterD3D9Device = remixapi_dxvk_RegisterD3D9Device;
       interf.dxvk_GetExternalSwapchain = remixapi_dxvk_GetExternalSwapchain;
       interf.dxvk_GetVkImage = remixapi_dxvk_GetVkImage;
+      interf.dxvk_GetTextureHash = remixapi_dxvk_GetTextureHash;
+      interf.dxvk_SetTextureCategory = remixapi_dxvk_SetTextureCategory;
       interf.dxvk_CopyRenderingOutput = remixapi_dxvk_CopyRenderingOutput;
       interf.dxvk_SetDefaultOutput = remixapi_dxvk_SetDefaultOutput;
       interf.pick_RequestObjectPicking = remixapi_pick_RequestObjectPicking;
       interf.pick_HighlightObjects = remixapi_pick_HighlightObjects;
     }
-    static_assert(sizeof(interf) == 168, "Add/remove function registration");
+    static_assert(sizeof(interf) == 184, "Add/remove function registration");
 
     *out_result = interf;
     return REMIXAPI_ERROR_CODE_SUCCESS;

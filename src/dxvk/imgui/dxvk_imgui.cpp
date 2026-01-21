@@ -65,6 +65,7 @@
 #include "dxvk_memory_tracker.h"
 #include "rtx_render/rtx_particle_system.h"
 #include "rtx_render/rtx_overlay_window.h"
+#include "rtx_render/rtx_auto_pbr_manager.h"
 
 
 namespace dxvk {
@@ -3071,6 +3072,98 @@ namespace dxvk {
       ImGui::BeginDisabled(!showLegacyTextureGui());
       ImGui::Checkbox("Only Show Assigned Textures in Category Lists", &legacyTextureGuiShowAssignedOnlyObject());
       ImGui::EndDisabled();
+
+      separator();
+
+      // Auto PBR Conversion Section
+      if (ImGui::CollapsingHeader("Auto PBR Conversion (Texture Dumping)", collapsingHeaderClosedFlags)) {
+        ImGui::Indent();
+        
+        auto& autoPbr = RtxAutoPBRManager::instance();
+        
+        // Enable toggle
+        bool enabled = autoPbr.isEnabled();
+        if (ImGui::Checkbox("Enable Auto PBR Tracking", &enabled)) {
+          autoPbr.setEnabled(enabled);
+        }
+        ImGui::SetTooltipToLastWidgetOnHover("When enabled, textures with category metadata set by the game will be tracked and dumped.");
+        
+        // Logging options
+        bool verboseLog = autoPbr.isVerboseLoggingEnabled();
+        if (ImGui::Checkbox("Verbose USDA Log", &verboseLog)) {
+          autoPbr.setVerboseLogging(verboseLog);
+        }
+        ImGui::SetTooltipToLastWidgetOnHover("Generate comp_autoconvert_log.txt with detailed material info.\nIncludes shader names and texture names if debug data is enabled.");
+
+        bool debugData = autoPbr.isDebugDataEnabled();
+        if (ImGui::Checkbox("Collect Debug Data (shader/texture names)", &debugData)) {
+          autoPbr.setDebugDataEnabled(debugData);
+        }
+        ImGui::SetTooltipToLastWidgetOnHover("Collect shader and texture name strings from the game.\nSlightly increases memory usage.");
+
+        if (enabled) {
+          separator();
+          
+          // Stats
+          ImGui::Text("Tracked Associations: %d", autoPbr.getTrackedCount());
+          ImGui::Text("Dumped: Color=%d, Normal=%d, Spec=%d, Height=%d",
+            autoPbr.getDumpedColorCount(),
+            autoPbr.getDumpedNormalCount(),
+            autoPbr.getDumpedSpecularCount(),
+            autoPbr.getDumpedHeightCount());
+          
+          separator();
+          
+          // File operations
+          if (ImGui::Button("Load Associations")) {
+            autoPbr.loadAssociationsFromFile();
+          }
+          ImGui::SetTooltipToLastWidgetOnHover("Load previously saved associations from imgdump/associations.json");
+          
+          ImGui::SameLine();
+          if (ImGui::Button("Save Associations Now")) {
+            if (autoPbr.saveAssociationsToFile()) {
+              Logger::info("[AutoPBR] Associations saved manually");
+            }
+          }
+          ImGui::SetTooltipToLastWidgetOnHover("Manually save current associations to imgdump/associations.json");
+          
+          ImGui::SameLine();
+          if (ImGui::Button("Clear Tracked Data")) {
+            autoPbr.clearAllTrackedData();
+          }
+          ImGui::SetTooltipToLastWidgetOnHover("Clear all tracked associations from memory.\nDoes NOT delete files from disk.");
+          
+          // Auto-save settings
+          bool autoSave = autoPbr.isAutoSaveEnabled();
+          if (ImGui::Checkbox("Auto-Save Associations", &autoSave)) {
+            autoPbr.setAutoSaveEnabled(autoSave);
+          }
+          ImGui::SetTooltipToLastWidgetOnHover("Automatically save associations.json at regular intervals.");
+          
+          if (autoSave) {
+            ImGui::SameLine();
+            float interval = autoPbr.getAutoSaveIntervalSeconds();
+            ImGui::SetNextItemWidth(100);
+            if (ImGui::InputFloat("Interval (sec)", &interval, 1.0f, 10.0f, "%.0f")) {
+              autoPbr.setAutoSaveIntervalSeconds(interval);
+            }
+            ImGui::SetTooltipToLastWidgetOnHover("Auto-save interval in seconds (minimum 1 second).");
+          }
+          
+          separator();
+          
+          if (ImGui::Button("Generate USDA", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
+            if (autoPbr.generateCompAutoconvertUSDA()) {
+              Logger::info("[AutoPBR] USDA generation completed");
+            }
+          }
+          ImGui::SetTooltipToLastWidgetOnHover("Generate comp_autoconvert.usda with material overrides.\nUses octahedral/ for normals and roughness/ for roughness maps.");
+
+        }
+        
+        ImGui::Unindent();
+      }
 
       separator();
 

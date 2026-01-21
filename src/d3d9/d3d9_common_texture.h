@@ -8,6 +8,8 @@
 
 #include "../util/util_bit.h"
 
+#include <string>
+
 namespace dxvk {
 
     class D3D9DeviceEx;
@@ -476,6 +478,85 @@ namespace dxvk {
         : 0ull;
     }
 
+    // =========================================================================
+    // Auto PBR Conversion System
+    // =========================================================================
+    
+    /**
+     * \brief Texture category for Auto PBR conversion
+     * 
+     * Specifies what type of texture this is in the material pipeline.
+     * Set by game-side code via remixapi_dxvk_SetTextureCategory().
+     */
+    enum class AutoPBRTextureCategory : uint8_t {
+      Unknown   = 0,
+      Colormap  = 1,
+      NormalMap = 2,
+      Specular  = 3,
+      Height    = 4
+    };
+
+    /**
+     * \brief Per-texture metadata for Auto PBR conversion
+     * 
+     * This data is set by the game via Remix API and read during
+     * draw call processing when the texture hash is valid.
+     */
+    struct AutoPBRMetadata {
+      AutoPBRTextureCategory category = AutoPBRTextureCategory::Unknown;
+      uint32_t textureSlot = 0;
+      int32_t specChannelIndex = -1;  // -1 = all channels, 0 = R, 1 = G, 2 = B
+      std::string shaderName;
+      std::string textureName;
+      bool isSet = false;
+      
+      void clear() {
+        category = AutoPBRTextureCategory::Unknown;
+        textureSlot = 0;
+        specChannelIndex = -1;
+        shaderName.clear();
+        textureName.clear();
+        isSet = false;
+      }
+    };
+
+    /**
+     * \brief Set Auto PBR metadata for this texture
+     * 
+     * Called from remixapi_dxvk_SetTextureCategory() when the game
+     * provides texture category information.
+     */
+    void setAutoPBRMetadata(AutoPBRTextureCategory cat, uint32_t slot,
+                            int32_t specChannel, const char* shader, const char* texName) {
+      m_autoPbrMetadata.category = cat;
+      m_autoPbrMetadata.textureSlot = slot;
+      m_autoPbrMetadata.specChannelIndex = specChannel;
+      m_autoPbrMetadata.shaderName = shader ? shader : "";
+      m_autoPbrMetadata.textureName = texName ? texName : "";
+      m_autoPbrMetadata.isSet = true;
+    }
+
+    /**
+     * \brief Get Auto PBR metadata for this texture
+     */
+    const AutoPBRMetadata& getAutoPBRMetadata() const {
+      return m_autoPbrMetadata;
+    }
+
+    /**
+     * \brief Check if Auto PBR metadata has been set
+     */
+    bool hasAutoPBRMetadata() const {
+      return m_autoPbrMetadata.isSet;
+    }
+
+    /**
+     * \brief Clear Auto PBR metadata after processing
+     */
+    void clearAutoPBRMetadata() {
+      m_autoPbrMetadata.clear();
+    }
+
   private:
 
     D3D9DeviceEx*                 m_device;
@@ -522,6 +603,9 @@ namespace dxvk {
     D3DTEXTUREFILTERTYPE          m_mipFilter = D3DTEXF_LINEAR;
 
     std::array<D3DBOX, 6>         m_dirtyBoxes;
+
+    // Auto PBR metadata (set by game via Remix API)
+    AutoPBRMetadata               m_autoPbrMetadata;
 
     /**
      * \brief Mip level

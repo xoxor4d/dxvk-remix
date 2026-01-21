@@ -179,6 +179,13 @@ namespace remix {
     Result< void >                           dxvk_RegisterD3D9Device(IDirect3DDevice9Ex* d3d9Device);
     Result< detail::dxvk_ExternalSwapchain > dxvk_GetExternalSwapchain();
     Result< detail::dxvk_VkImage >           dxvk_GetVkImage(IDirect3DSurface9* source);
+    Result< uint64_t >                       dxvk_GetTextureHash(IDirect3DTexture9* texture);
+    Result< void >                           dxvk_SetTextureCategory(IDirect3DTexture9* texture,
+                                                                     remixapi_dxvk_TextureCategory category,
+                                                                     uint32_t textureSlot,
+                                                                     int32_t specChannelIndex = -1,
+                                                                     const char* shaderName = nullptr,
+                                                                     const char* textureName = nullptr);
     Result< void >                           dxvk_CopyRenderingOutput(IDirect3DSurface9* destination,
                                                                       remixapi_dxvk_CopyRenderingOutputType type);
     Result< void >                           dxvk_SetDefaultOutput(remixapi_dxvk_CopyRenderingOutputType type,
@@ -208,7 +215,7 @@ namespace remix {
         return status;
       }
 
-      static_assert(sizeof(remixapi_Interface) == 168,
+      static_assert(sizeof(remixapi_Interface) == 184,
                     "Change version, update C++ wrapper when adding new functions");
 
       remix::Interface interfaceInCpp = {};
@@ -1018,6 +1025,24 @@ namespace remix {
       return status;
     }
     return externalImage;
+  }
+
+  inline Result< uint64_t > Interface::dxvk_GetTextureHash(IDirect3DTexture9* texture) {
+    uint64_t hash = 0;
+    remixapi_ErrorCode status = m_CInterface.dxvk_GetTextureHash(texture, &hash);
+    if (status != REMIXAPI_ERROR_CODE_SUCCESS) {
+      return status;
+    }
+    return hash;
+  }
+
+  inline Result< void > Interface::dxvk_SetTextureCategory(
+      IDirect3DTexture9* texture, remixapi_dxvk_TextureCategory category, uint32_t textureSlot,
+      int32_t specChannelIndex, const char* shaderName, const char* textureName) {
+    if (!m_CInterface.dxvk_SetTextureCategory) {
+      return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
+    }
+    return m_CInterface.dxvk_SetTextureCategory(texture, category, textureSlot, specChannelIndex, shaderName, textureName);
   }
 
   inline Result< void > Interface::dxvk_CopyRenderingOutput(
