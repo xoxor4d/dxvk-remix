@@ -89,32 +89,35 @@ class LightspeedOctahedralConverter:
 
 
 def batch_convert_normals():
-    input_dir = Path("normal")
+    input_dirs = [Path("normal"), Path("processed_normals")]
     output_dir = Path("octahedral")
 
     print("Starting conversion...")
 
-    if not input_dir.exists():
-        print("ERROR: 'normal' folder not found")
-        return
-
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    dds_files = [p for p in input_dir.iterdir() if p.suffix.lower() == ".dds"]
+    dds_files = []
+    for dir_path in input_dirs:
+        if not dir_path.exists():
+            print(f"  Skipping: '{dir_path}' not found")
+            continue
+        dds_files.extend(
+            p for p in dir_path.iterdir() if p.suffix.lower() == ".dds"
+        )
 
     if not dds_files:
-        print("No DDS files found in 'normal' folder")
+        print("No DDS files found in any input folder")
         return
 
     for dds_path in dds_files:
-        print(f"Processing {dds_path.name}")
+        print(f"Processing {dds_path.name} ({dds_path.parent.name})")
 
         try:
             with Image.open(dds_path) as img:
                 img = img.convert("RGB")
                 img_np = np.array(img)
         except Exception as e:
-            print(f"  Failed to load DDS: {e}")
+            print(f"  Failed to load: {e}")
             continue
 
         LightspeedOctahedralConverter._check_for_spherical_normals(

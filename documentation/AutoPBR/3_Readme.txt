@@ -26,15 +26,34 @@ Requirements:
 
 Short description:
 - copy all the following mentioned files to: "rtx-remix\imgdump"
+- run `python 0_normals_cleanup.py`
 - run `python 1_extractHeight.py`
 - run `python 1_normal2octahedral.py`
 - run `python 1_specular2roughness.py --brightness 30`
 - run `2_height_to_remix_dds_conv.bat`
 - run `2_octa_to_remix_dds_conv.bat`
 - run `2_rough_to_remix_dds_conv.bat`
-- grab the "autoconv" folder and put it into "YOUR_REMIX_MOD/assets/"
-- grab "comp_autoconvert.usda" and place it into your "YOUR_REMIX_MOD" directory
-- add `@./comp_autoconvert.usda@` as the lowest sublayer to your mod.usda 
+- grab the "autoconv" folder and put it into "rtx-remix\mods\z_YOURNAME\assets\"
+- grab "comp_autoconvert.usda" and place it into your "rtx-remix\mods\z_YOURNAME\" directory
+- create a mod.usda and add `@./comp_autoconvert.usda@` as the lowest sublayer
+
+> z_YOURNAME :: lowest priority, proper PBR mods will automatically take higher priority and replace AutoPBR textures
+
+
+--------------------------------------------------------
+
+0_normals_cleanup.py:
+    Removes some incorrect normal dumps to separate folders (prefixed with "_") for further processing.
+    Files are defined inside "0_normals_cleanup_list.txt".
+
+    Hashes below [bumpmaps] will be converted from bumpmap to 
+        proper dx9 normalmaps and placed back into the "normal" folder.
+
+    Hashes below [heightmaps_normal] will have their alpha channel 
+        extracted and be placed into the "height" folder.
+
+    Hashes below [alpha_red_channel] will have their alpha channel 
+        placed into the red channel, and the blue channel filled with pure white.
 
 --------------------------------------------------------
 
