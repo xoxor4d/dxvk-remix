@@ -1,6 +1,23 @@
 Remix AutoPBR
 ===============================
 
+How to use (game):
+
+Remix:
+- Use this Branch of the remix runtime paired with the AutoPBR branch of the GTAIV CompMod
+- Open the Remix menu, go to "Game Setup" -> Step 1 -> Auto PBR Conversation
+- Enable All 3 Checkboxes
+- ! If you have previous associations and want to continue from there, MAKE SURE to "Load Associations"
+
+CompMod:
+- Open the F4 menu and go to the Dev tab -> Other Settings
+- Enable "Provide AutoPBR Information
+
+The runtime will start to dump textures and build associations as they come in. 
+Only things that are rendered will be dumped.
+
+---------------------------------------------
+
 Requirements:
 - Python 3.8+
 - NVTT (for converting PNG -> BC5 DDS)

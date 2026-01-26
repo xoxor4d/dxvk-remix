@@ -708,7 +708,7 @@ namespace dxvk {
       if (assoc.heightHash != 0) {
         usdaFile << "                asset inputs:height_texture = @./assets/autoconv/" 
                  << hashToHexString(assoc.heightHash) << "_height.dds@\n";
-        usdaFile << "                float inputs:displace_in = 0.1\n";
+        usdaFile << "                float inputs:displace_in = 0.03\n";
       }
       
       usdaFile << "            }\n";
