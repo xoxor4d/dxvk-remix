@@ -216,9 +216,9 @@ namespace dxvk {
 
           RemixGui::Checkbox("Enable Particle World Collisions", &enableCollisionDetectionObject());
           ImGui::BeginDisabled(!enableCollisionDetection());
-          static auto collisionModeCombo = ImGui::ComboWithKey<ParticleCollisionMode>(
+          static auto collisionModeCombo = RemixGui::ComboWithKey<ParticleCollisionMode>(
             "Collision Mode",
-            ImGui::ComboWithKey<ParticleCollisionMode>::ComboEntries { {
+            RemixGui::ComboWithKey<ParticleCollisionMode>::ComboEntries { {
               {ParticleCollisionMode::ScreenSpace, "ScreenSpace (fast, view-dependent)"},
               {ParticleCollisionMode::TLAS, "TLAS (robust, expensive)"},
               {ParticleCollisionMode::Hybrid, "Hybrid (screenspace when valid, else TLAS)"},

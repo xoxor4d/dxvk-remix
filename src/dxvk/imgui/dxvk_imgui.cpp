@@ -1173,6 +1173,24 @@ namespace dxvk {
     RemixGui::TextCentered("[Alt + Del] Toggle cursor        [Alt + Backspace] Toggle game input");
     ImGui::End();
 
+/*    bool devmenu = true;
+    if (ImGui::Begin("Dev", &devmenu)) {
+      RemixGui::DragFloat("DevFloat01", &RemixGui::m_dbg_float1);
+      RemixGui::DragFloat("DevFloat02", &RemixGui::m_dbg_float2);
+      RemixGui::DragFloat("DevFloat03", &RemixGui::m_dbg_float3);
+      RemixGui::DragFloat("DevFloat04", &RemixGui::m_dbg_float4);
+      RemixGui::DragFloat("DevFloat05", &RemixGui::m_dbg_float5);
+      RemixGui::DragFloat("DevFloat06", &RemixGui::m_dbg_float6);
+      RemixGui::DragFloat("DevFloat07", &RemixGui::m_dbg_float7);
+      RemixGui::DragFloat("DevFloat08", &RemixGui::m_dbg_float8);
+
+      RemixGui::ColorEdit4("DevColor1", RemixGui::m_dbg_color1);
+      RemixGui::ColorEdit4("DevColor2", RemixGui::m_dbg_color2);
+      RemixGui::ColorEdit4("DevColor3", RemixGui::m_dbg_color3);
+      RemixGui::ColorEdit4("DevColor4", RemixGui::m_dbg_color4);
+    }
+    ImGui::EndMenu();*/
+
     // Close via titlebar close button
     if (!advancedMenuOpen) {
       switchUI = (int) UIType::None;
@@ -3536,7 +3554,7 @@ namespace dxvk {
     style->WindowPadding = ImVec2(8.0f, 10.0f);
     style->FramePadding = compactGui() ? ImVec2(4.0f, 3.0f) : ImVec2(7.0f, 5.0f);
     style->CellPadding = ImVec2(5.0f, 4.0f);
-    style->ItemSpacing = compactGui() ? ImVec2(8.0f, 4.0f) : ImVec2(3.0f, 5.0f);
+    style->ItemSpacing = compactGui() ? ImVec2(8.0f, 0.0f) : ImVec2(3.0f, 3.0f);
     style->ItemInnerSpacing = compactGui() ? ImVec2(4.0f, 4.0f) : ImVec2(3.0f, 8.0f);
     style->IndentSpacing = 8.0f;
     style->ColumnsMinSpacing = 10.0f;
@@ -3568,10 +3586,10 @@ namespace dxvk {
 
     style->Colors[ImGuiCol_Text] = ImVec4(0.92f, 0.92f, 0.92f, 1.00f);
     style->Colors[ImGuiCol_TextDisabled] = ImVec4(0.38f, 0.38f, 0.38f, 1.00f);
-    style->Colors[ImGuiCol_WindowBg] = ImVec4(0.00f, 0.00f, 0.00f, backgroundAlpha());
+    style->Colors[ImGuiCol_WindowBg] = ImVec4(0.10f, 0.10f, 0.10f, backgroundAlpha());
     style->Colors[ImGuiCol_ChildBg] = ImVec4(0.21f, 0.21f, 0.21f, 0.80f);
     style->Colors[ImGuiCol_PopupBg] = ImVec4(0.28f, 0.28f, 0.28f, 1.00f);
-    style->Colors[ImGuiCol_Border] = ImVec4(0.15f, 0.15f, 0.15f, 1.00f);
+    style->Colors[ImGuiCol_Border] = ImVec4(0.26f, 0.26f, 0.26f, 1.00f);
     style->Colors[ImGuiCol_BorderShadow] = ImVec4(0.00f, 0.00f, 0.00f, 0.23f);
     style->Colors[ImGuiCol_FrameBg] = ImVec4(0.11f, 0.11f, 0.11f, 1.00f);
     style->Colors[ImGuiCol_FrameBgHovered] = ImVec4(0.40f, 0.40f, 0.40f, 1.00f);

@@ -63,9 +63,9 @@ namespace RemixGui {
         isNonDefault = (option->get() != option->getDefaultValue());
 
         // Split channels so we can paint the background under content and the button later.
-        window->DrawList->ChannelsSplit(2);
+/*        window->DrawList->ChannelsSplit(2);
         window->DrawList->ChannelsSetCurrent(1);
-        channelsSplit = true;
+        channelsSplit = true;*/
 
         ImGui::PushID((void*) option);
         ImGui::BeginGroup();
@@ -93,7 +93,7 @@ namespace RemixGui {
         window->WorkRect.Max.x = prevWorkRectMaxX;
 
         // Switch to background channel to draw under content.
-        if (channelsSplit) {
+/*        if (channelsSplit) {
           window->DrawList->ChannelsSetCurrent(0);
         }
 
@@ -122,7 +122,7 @@ namespace RemixGui {
         if (channelsSplit) {
           window->DrawList->ChannelsMerge();
           channelsSplit = false;
-        }
+        }*/
 
         // Draw the reset button on top.
         ImGuiContext& g = *ImGui::GetCurrentContext();
