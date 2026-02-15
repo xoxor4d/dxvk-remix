@@ -542,7 +542,7 @@ struct RtOpaqueSurfaceMaterial {
     bool ignoreAlphaChannel, bool enableThinFilm, bool alphaIsThinFilmThickness, float thinFilmThicknessConstant,
     uint32_t samplerIndex, float displaceIn, float displaceOut,
     uint32_t subsurfaceMaterialIndex, bool isRaytracedRenderTarget,
-    uint16_t samplerFeedbackStamp, bool freeFlag01, bool freeFlag02, bool freeFlag03,
+    uint16_t samplerFeedbackStamp, bool freeFlag01, bool freeFlag02, bool freeFlag03, bool freeFlag04, bool freeFlag05, bool freeFlag06
     uint32_t secondaryTextureIndex = 0
   ) :
     m_albedoOpacityTextureIndex{ albedoOpacityTextureIndex }, m_secondaryTextureIndex{secondaryTextureIndex}, m_normalTextureIndex{ normalTextureIndex },
@@ -556,7 +556,7 @@ struct RtOpaqueSurfaceMaterial {
     m_thinFilmThicknessConstant { thinFilmThicknessConstant }, m_samplerIndex{ samplerIndex }, m_displaceIn{ displaceIn },
     m_displaceOut{ displaceOut }, m_subsurfaceMaterialIndex(subsurfaceMaterialIndex), m_isRaytracedRenderTarget(isRaytracedRenderTarget),
     m_samplerFeedbackStamp{ samplerFeedbackStamp },
-    m_freeFlag01 { freeFlag01 }, m_freeFlag02 { freeFlag02 }, m_freeFlag03 { freeFlag03 }
+    m_freeFlag01 { freeFlag01 }, m_freeFlag02 { freeFlag02 }, m_freeFlag03 { freeFlag03 }, m_freeFlag04 { freeFlag04 }, m_freeFlag05 { freeFlag05 }, m_freeFlag06 { freeFlag06 }
   {
     updateCachedData();
     updateCachedHash();
@@ -599,6 +599,18 @@ struct RtOpaqueSurfaceMaterial {
 
     if (m_freeFlag03) {
       flags |= OPAQUE_SURFACE_MATERIAL_FLAG_FREE03;
+    }
+
+    if (m_freeFlag04) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_FREE04;
+    }
+
+    if (m_freeFlag05) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_FREE05;
+    }
+
+    if (m_freeFlag06) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_FREE06;
     }
 
     float displaceIn = m_displaceIn * getDisplacementFactor();
@@ -767,6 +779,18 @@ struct RtOpaqueSurfaceMaterial {
     return m_freeFlag03;
   }
 
+  uint32_t getFreeFlag04() const {
+    return m_freeFlag04;
+  }
+
+  uint32_t getFreeFlag05() const {
+    return m_freeFlag05;
+  }
+
+  uint32_t getFreeFlag06() const {
+    return m_freeFlag06;
+  }
+
 private:
   void updateCachedHash() {
     static_assert(
@@ -882,6 +906,9 @@ private:
   bool m_freeFlag01;
   bool m_freeFlag02;
   bool m_freeFlag03;
+  bool m_freeFlag04;
+  bool m_freeFlag05;
+  bool m_freeFlag06;
 
   XXH64_hash_t m_cachedHash;
 
@@ -1732,7 +1759,7 @@ struct LegacyMaterialData {
     REMIX_MODIFIER_FROM_D3D_ROUGHNESS = 1 << 1,
     REMIX_MODIFIER_FROM_D3D_ENABLE_VERTEX_COLOR = 1 << 2,
     REMIX_MODIFIER_FROM_D3D_FREE_03 = 1 << 3,
-    REMIX_MODIFIER_FROM_D3D_FREE_04 = 1 << 4,
+    REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA = 1 << 4,
     REMIX_MODIFIER_FROM_D3D_FREE_05 = 1 << 5,
     REMIX_MODIFIER_FROM_D3D_FREE_06 = 1 << 6,
   };

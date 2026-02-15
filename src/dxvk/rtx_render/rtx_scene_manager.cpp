@@ -1152,6 +1152,9 @@ namespace dxvk {
       bool freeFlag01 = false;
       bool freeFlag02 = false;
       bool freeFlag03 = false;
+      bool freeFlag04 = false;
+      bool freeFlag05 = false;
+      bool freeFlag06 = false;
 
       constexpr Vector4 kWhiteModeAlbedo = Vector4(0.7f, 0.7f, 0.7f, 1.0f);
 
@@ -1206,6 +1209,11 @@ namespace dxvk {
 
       if (drawCallState.materialData.remixModifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_ENABLE_VERTEX_COLOR) {
         freeFlag02 = true;
+      }
+
+      // sets vertex color to white but keeps alpha
+      if (drawCallState.testCategoryFlags(InstanceCategories::Terrain) || drawCallState.materialData.remixModifierFromD3D & LegacyMaterialData::REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA) {
+        freeFlag04 = true;
       }
 
       subsurfaceMeasurementDistance = opaqueMaterialData.getSubsurfaceMeasurementDistance() * RtxOptions::SubsurfaceScattering::surfaceThicknessScale();
@@ -1276,7 +1284,7 @@ namespace dxvk {
         ignoreAlphaChannel, thinFilmEnable, alphaIsThinFilmThickness,
         thinFilmThicknessConstant, samplerIndex, displaceIn, displaceOut, 
         subsurfaceMaterialIndex, isUsingRaytracedRenderTarget,
-        samplerFeedbackStamp, freeFlag01, freeFlag02, freeFlag03,
+        samplerFeedbackStamp, freeFlag01, freeFlag02, freeFlag03, freeFlag04, freeFlag05, freeFlag06,
         secondaryTextureIndex
       };
 
