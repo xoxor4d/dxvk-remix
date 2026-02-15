@@ -563,9 +563,9 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
   opaqueSurfaceMaterialInteraction.flags |= thinFilmEnabled ? OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_USE_THIN_FILM_LAYER : 0;
 
-  const bool d3dModRoughnessScalar = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_ROUGHNESS_SCALAR;
+  const bool d3dModRoughness = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_ROUGHNESS;
   const bool d3dModEnableVertexColor = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_ENABLE_VERTEX_COLOR;
-  const bool d3dModDecalDirt = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_DECAL_DIRT;
+  const bool d3dFlag03 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_03;
   const bool d3dModRemVertexColorKeepAlpha = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_REM_VERTEX_COLOR_KEEP_ALPHA;
   const bool d3dModVehicleDecalDirt = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_VEHICLE_DECAL_DIRT;
   const bool d3dFlag06 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_06;
@@ -856,12 +856,6 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
   float16_t roughness = opaqueSurfaceMaterial.roughnessConstant;
 
-  if (d3dModRoughnessScalar)
-  {
-      // we are using opaqueSurfaceMaterial.roughnessConstant as a custom scalar so set the general roughness to 0.7 first
-      roughness = 0.7;
-  }
-
   if (roughnessLoaded)
   {
     roughness = roughnessSample.x;
@@ -876,27 +870,15 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   // Apply material modifiers
   roughness = saturate(roughness * cb.opaqueMaterialArgs.roughnessScale + cb.opaqueMaterialArgs.roughnessBias);
 
-  if (d3dModRoughnessScalar)
+  if (d3dModRoughness)
   {
-    float16_t wetblend = saturate((normal.z - 0.35h) / 0.65h);
-    roughness = lerp(roughness, roughness * opaqueSurfaceMaterial.roughnessConstant, wetblend);
-  }
+    float16_t scalar = opaqueSurfaceMaterial.m_freeFloat01; 
+    float16_t z_normal = opaqueSurfaceMaterial.m_freeFloat02;
+    float16_t blend_width = opaqueSurfaceMaterial.m_freeFloat03;
 
-  if (d3dModDecalDirt && albedoOpacityLoaded)
-  {
-      //f16vec4 maskSample;
-      //surfaceMaterialInteractionTextureReadHelper(opaqueSurfaceMaterial.tangentTextureIndex, opaqueSurfaceMaterial.samplerIndex, surfaceInteraction, maskSample);
+    float16_t wetblend = saturate(smoothstep(z_normal - blend_width, z_normal + blend_width, normal.z));
+    roughness = saturate(lerp(roughness, roughness * scalar, wetblend));
 
-      // dot: dp3 r0.x, r0, dirtDecalMask
-      float decalDirtMask = dot(albedoOpacitySample.rgb, opaqueSurfaceMaterial.emissiveColorConstant.rrr); //opaqueSurfaceMaterial.roughnessConstant);
-
-      decalDirtMask = saturate((decalDirtMask - 0.5h) * opaqueSurfaceMaterial.emissiveColorConstant.g + 0.5h);
-
-      // mul by vertex color alpha: mul r0.x, r0.x, vertex_color.w
-      decalDirtMask *= surfaceInteraction.vertexColor.w; 
-      
-      albedo.rgb = opaqueSurfaceMaterial.albedoOpacityConstant.rgb;
-      opacity = decalDirtMask;
   }
 
   // Load Metallic
