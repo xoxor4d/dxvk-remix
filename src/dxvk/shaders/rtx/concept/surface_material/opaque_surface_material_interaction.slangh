@@ -766,10 +766,55 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
         //float vinyl_mask = albedoOpacitySample.a; // 0 = paint, 1 = vinyl
         //albedo = lerp(albedo, albedoOpacitySample.rgb, vinyl_mask); // good but does not use vinylscale
         
-        albedo = opaqueSurfaceMaterial.albedoOpacityConstant.rgb;
+
+
+        // PRETTY GOOD
+        //albedo = opaqueSurfaceMaterial.albedoOpacityConstant.rgb;
+        //f16vec3 vinyl_color = lerp(albedoOpacitySample.rgb, albedoOpacitySample.rgb * albedo, d3dModVehicleShader_vinylscale);
+        //float vinyl_mask = albedoOpacitySample.a; // 0 = paint, 1 = vinyl
+        //albedo = lerp(albedo, vinyl_color, vinyl_mask); // good but does not use vinylscale
+
+
+
+
+        //albedo = lerp(albedo, surfaceInteraction.vertexColor.rgb, cb.debugKnob.x); // does not work
+        //albedo = lerp(albedo, tFactor.rgb, cb.debugKnob.y); // works
+
+        // cvDiffuseMin = TFACTOR
+        // cvDiffuseRange = opaqueSurfaceMaterial.albedoOpacityConstant.rgb
+        // cvPowers.x = opaqueSurfaceMaterial.albedoOpacityConstant.w
+
+
+        // surfaceInteraction.interpolatedNormal
+
+        //CameraDirections c = cameraScreenUVToDirection(cb.camera, vec2(0.5, 0.5));
+        //c.viewDirection
+
+        vec3 viewDirection = normalize(cameraGetWorldPosition(cb.camera) - surfaceInteraction.position);
+
+        float invDist = rsqrt(dot(viewDirection, viewDirection));
+        vec3 V = viewDirection * invDist;
+
+        float NdotV_raw = dot(surfaceInteraction.interpolatedNormal, V);
+        float NdotV = saturate(NdotV_raw);
+
+        float viewPower = tFactor.a + cb.debugKnob.x; // Powers.x
+        float viewSpec = pow(NdotV, viewPower);
+
+        float specDiff = min(viewSpec, opaqueSurfaceMaterial.m_freeFloat03 + cb.debugKnob.y); // ClampScales.x
+        float scaledDiff = specDiff * opaqueSurfaceMaterial.m_freeFloat04 + cb.debugKnob.z; // ClampScales.z
+
+        albedo = tFactor.rgb + scaledDiff * opaqueSurfaceMaterial.albedoOpacityConstant.rgb;
+
+        
+
+        //albedo = opaqueSurfaceMaterial.albedoOpacityConstant.rgb;
         f16vec3 vinyl_color = lerp(albedoOpacitySample.rgb, albedoOpacitySample.rgb * albedo, d3dModVehicleShader_vinylscale);
         float vinyl_mask = albedoOpacitySample.a; // 0 = paint, 1 = vinyl
         albedo = lerp(albedo, vinyl_color, vinyl_mask); // good but does not use vinylscale
+
+
+
 
         //f16vec4 paintCol = opaqueSurfaceMaterial.albedoOpacityConstant;
         //f16vec4 diffuseTex = albedoOpacitySample;

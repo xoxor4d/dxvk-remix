@@ -1244,6 +1244,8 @@ namespace dxvk {
 
         packedParams1 = uint16_t(p2 & 0xFFFF);       // Lower 16 bits
         packedParams2 = uint16_t(p2 >> 16 & 0xFFFF); // Upper 16 bits
+        freeFloat03 = drawCallState.materialData.remixFloatRS213FromD3D; // cvClampAndScales.x
+        freeFloat04 = drawCallState.materialData.remixFloatRS214FromD3D; // cvClampAndScales.z
       }
 
       subsurfaceMeasurementDistance = opaqueMaterialData.getSubsurfaceMeasurementDistance() * RtxOptions::SubsurfaceScattering::surfaceThicknessScale();
