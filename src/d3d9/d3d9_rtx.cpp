@@ -646,6 +646,13 @@ namespace dxvk {
       return prepareFlagsForIgnoredDraws;
     }
 
+    // force vertex color modulation with BEAM category ;)
+    if (m_activeDrawCallState.testCategoryFlags(InstanceCategories::Beam) || CategoryFlags(m_activeDrawCallState.materialData.remixTextureCategoryFlagsFromD3D).test(InstanceCategories::Beam)) {
+      m_activeDrawCallState.materialData.textureColorOperation = DxvkRtTextureOperation::Modulate;
+      m_activeDrawCallState.materialData.textureColorArg1Source = RtTextureArgSource::Texture;
+      m_activeDrawCallState.materialData.textureColorArg2Source = RtTextureArgSource::VertexColor0;
+    }
+
     // Max offseted index value within a buffer slice that geoData contains
     const uint32_t maxOffsetedIndex = maxIndex - minIndex;
 
