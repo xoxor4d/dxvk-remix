@@ -567,12 +567,31 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
   const bool d3dModRoughness = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_ROUGHNESS;
   const bool d3dModEnableVertexColor = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_ENABLE_VERTEX_COLOR;
-  const bool d3dFlag03 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_03;
+  const bool d3dModRoughnessScalar = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_03;
   const bool d3dModRemVertexColorKeepAlpha = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_REM_VERTEX_COLOR_KEEP_ALPHA;
   const bool d3dModVehicleShader = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_VEHICLE_SHADER;
   const bool d3dFlag06 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_06;
   const bool d3dFlag07 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_07;
   const bool d3dFlag08 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_08;
+
+  float d3dModVehicleShader_rough = 0.0f;
+  float d3dModVehicleShader_metal = 0.0f;
+  float d3dModVehicleShader_vinylscale = 0.0f;
+  uint  d3dModVehicleShader_flags = 0;
+
+  if (d3dModVehicleShader)
+  {
+    uint byte0 = opaqueSurfaceMaterial.m_packedParams1 & 0xFFu;        // bits 0-7
+    uint byte1 = (opaqueSurfaceMaterial.m_packedParams1 >> 8) & 0xFFu; // bits 8-15
+    uint byte2 = opaqueSurfaceMaterial.m_packedParams2 & 0xFFu;        // bits 16-23
+    uint byte3 = (opaqueSurfaceMaterial.m_packedParams2 >> 8) & 0xFFu; // bits 24-31
+
+    d3dModVehicleShader_rough = byte0 / 255.0f;
+    d3dModVehicleShader_metal = byte1 / 255.0f;
+    d3dModVehicleShader_vinylscale = byte2 / 255.0f;
+    d3dModVehicleShader_flags = byte3;
+  }
+
 
   if (d3dModRemVertexColorKeepAlpha)
   {
@@ -728,14 +747,39 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
     if (d3dModVehicleShader)
     {
+      //float d3dModVehicleShader_rough = 0.0f;
+      //float d3dModVehicleShader_metal = 0.0f;
+      //float d3dModVehicleShader_vinylscale = 0.0f;
+      //uint  d3dModVehicleShader_flags = 0;
+
       // car base color:
-      f16vec3 albedo = opaqueSurfaceMaterial.albedoOpacityConstant.rgb;
-      float16_t opacity = opaqueSurfaceMaterial.albedoOpacityConstant.a;
+      //f16vec3 albedo = opaqueSurfaceMaterial.albedoOpacityConstant.rgb;
+      //float16_t opacity = opaqueSurfaceMaterial.albedoOpacityConstant.a;
+
+      opacity = 1.0h;
 
       if (albedoOpacityLoaded)
       {
-        albedo += albedoOpacitySample.rgb;
-        opacity = 1.0h; //albedoOpacitySample.a;
+        // solid paint layer
+        //albedo = opaqueSurfaceMaterial.albedoOpacityConstant.rgb;
+        //f16vec3 vinyl_color = albedoOpacitySample.rgb  lerp(albedoOpacitySample.rgb, albedo, d3dModVehicleShader_vinylscale);
+        //float vinyl_mask = albedoOpacitySample.a; // 0 = paint, 1 = vinyl
+        //albedo = lerp(albedo, albedoOpacitySample.rgb, vinyl_mask); // good but does not use vinylscale
+        
+        albedo = opaqueSurfaceMaterial.albedoOpacityConstant.rgb;
+        f16vec3 vinyl_color = lerp(albedoOpacitySample.rgb, albedoOpacitySample.rgb * albedo, d3dModVehicleShader_vinylscale);
+        float vinyl_mask = albedoOpacitySample.a; // 0 = paint, 1 = vinyl
+        albedo = lerp(albedo, vinyl_color, vinyl_mask); // good but does not use vinylscale
+
+        //f16vec4 paintCol = opaqueSurfaceMaterial.albedoOpacityConstant;
+        //f16vec4 diffuseTex = albedoOpacitySample;
+        //float scale     = d3dModVehicleShader_vinylscale;
+        //float invScale  = scale * -1.0f + 1.0f;
+        //
+        //f16vec3 blend     = scale * paintCol.rgb; //+ invScale * v1.w;           // scalar v1.w broadcast to rgb
+        //f16vec3 modulated = diffuseTex.rgb * blend;
+        //f16vec3 color     = lerp(paintCol.rgb, modulated, diffuseTex.a);     // blend using diffuse alpha
+        //albedo = color;
       }
     }
     else
@@ -1299,21 +1343,13 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
   if (d3dModVehicleShader)
   {
-    uint packedBits1 = uint(opaqueSurfaceMaterial.m_packedParams1);
-    uint packedBits2 = uint(opaqueSurfaceMaterial.m_packedParams2);
-    
-    uint byte0 = packedParams1 & 0xFFu;        // bits 0-7
-    uint byte1 = (packedParams1 >> 8) & 0xFFu; // bits 8-15
-    uint byte2 = packedParams2 & 0xFFu;        // bits 16-23
-    uint byte3 = (packedParams2 >> 8) & 0xFFu; // bits 24-31
-
-    float rough = byte0 / 255.0f;
-    float metal = byte1 / 255.0f;
-    float free =  byte2 / 255.0f;
-    uint  flags = byte3;  // or uint8_t if available
-
-    roughness = rough;
-    metallic = metal;
+    //float d3dModVehicleShader_rough = 0.0f;
+    //float d3dModVehicleShader_metal = 0.0f;
+    //float d3dModVehicleShader_vinylscale = 0.0f;
+    //uint  d3dModVehicleShader_flags = 0;
+   
+    roughness = saturate(d3dModVehicleShader_rough * cb.opaqueMaterialArgs.roughnessScale + cb.opaqueMaterialArgs.roughnessBias);
+    metallic =  saturate(d3dModVehicleShader_metal * cb.opaqueMaterialArgs.metallicScale + cb.opaqueMaterialArgs.metallicBias);
   }
 
   // Transform to desired Opaque Material Interaction values
