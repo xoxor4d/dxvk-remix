@@ -563,14 +563,16 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
   opaqueSurfaceMaterialInteraction.flags |= thinFilmEnabled ? OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_USE_THIN_FILM_LAYER : 0;
 
-  const bool freeFlag01 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_FREE01;
-  const bool freeFlag02 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_FREE02;
-  const bool freeFlag03 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_FREE03;
-  const bool freeFlag04 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_FREE04;
-  const bool freeFlag05 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_FREE05;
-  const bool freeFlag06 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_FREE06;
+  const bool d3dModRoughnessScalar = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_ROUGHNESS_SCALAR;
+  const bool d3dModEnableVertexColor = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_ENABLE_VERTEX_COLOR;
+  const bool d3dModDecalDirt = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_DECAL_DIRT;
+  const bool d3dModRemVertexColorKeepAlpha = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_REM_VERTEX_COLOR_KEEP_ALPHA;
+  const bool d3dModVehicleDecalDirt = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_VEHICLE_DECAL_DIRT;
+  const bool d3dFlag06 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_06;
+  const bool d3dFlag07 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_07;
+  const bool d3dFlag08 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_08;
 
-  if (freeFlag04)
+  if (d3dModRemVertexColorKeepAlpha)
   {
     surfaceInteraction.vertexColor.rgb = f16vec3(1.0);
   }
@@ -710,7 +712,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   if (applyTextureOperations) 
 #endif
   {
-    if (surface.isVertexColorBakedLighting && !freeFlag02) {
+    if (surface.isVertexColorBakedLighting && !d3dModEnableVertexColor) {
       // "Normalize" vertex color to remove lighting contribution in different vertices.
       // We assume the diffuse term contributes most lighting. Therefore, vertex color = diffuseColor * (N*L).
       // By dividing the vertex color by its largest component, the result is irrelavant to N*L, but proportional to the 
@@ -722,38 +724,50 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
       surfaceInteraction.vertexColor.rgb = mix(f16vec3(1), surfaceInteraction.vertexColor.rgb, float16_t(cb.vertexColorStrength));
     }
 
-    // Fixed function texture stage setting
-    f16vec3 textureArg1 = f16vec3(1.0), textureArg2 = f16vec3(1.0);
-    chooseTextureArgument(textureArg1, surface.textureColorArg1Source, albedo, surfaceInteraction.vertexColor.rgb, tFactor.rgb, f16vec3(1.0));
-    chooseTextureArgument(textureArg2, surface.textureColorArg2Source, albedo, surfaceInteraction.vertexColor.rgb, tFactor.rgb, f16vec3(1.0));
-    chooseTextureOperationColor(albedo, surface.textureColorOperation, textureArg1, textureArg2);
-    if (surface.isTextureFactorBlend) {
-      albedo *= tFactor.rgb;
+    if (d3dModVehicleDecalDirt)
+    {
+      if (albedo.x > 0.0)
+      {
+        opacity = albedo.r * tFactor.a; // dirtMask.r * dirtLevel
+        albedo = tFactor.rgb;
+      }
+      else
+      {
+        opacity = 0.h;
+      }
     }
+    else
+    {
+      // Fixed function texture stage setting
+      f16vec3 textureArg1 = f16vec3(1.0), textureArg2 = f16vec3(1.0);
+      chooseTextureArgument(textureArg1, surface.textureColorArg1Source, albedo, surfaceInteraction.vertexColor.rgb, tFactor.rgb, f16vec3(1.0));
+      chooseTextureArgument(textureArg2, surface.textureColorArg2Source, albedo, surfaceInteraction.vertexColor.rgb, tFactor.rgb, f16vec3(1.0));
+      chooseTextureOperationColor(albedo, surface.textureColorOperation, textureArg1, textureArg2);
 
-    // Fixed function texture stage setting (emissive)
-    chooseTextureArgument(textureArg1, surface.textureColorArg1Source, emissiveColor, surfaceInteraction.vertexColor.rgb, tFactor.rgb, f16vec3(1.0));
-    chooseTextureArgument(textureArg2, surface.textureColorArg2Source, emissiveColor, surfaceInteraction.vertexColor.rgb, tFactor.rgb, f16vec3(1.0));
-    chooseTextureOperationColor(emissiveColor, surface.textureColorOperation, textureArg1, textureArg2);
-    if (surface.isTextureFactorBlend) {
-      emissiveColor *= tFactor.rgb;
+      if (surface.isTextureFactorBlend) {
+        albedo *= tFactor.rgb;
+      }
+      
+      // Fixed function texture stage setting (emissive)
+      chooseTextureArgument(textureArg1, surface.textureColorArg1Source, emissiveColor, surfaceInteraction.vertexColor.rgb, tFactor.rgb, f16vec3(1.0));
+      chooseTextureArgument(textureArg2, surface.textureColorArg2Source, emissiveColor, surfaceInteraction.vertexColor.rgb, tFactor.rgb, f16vec3(1.0));
+      chooseTextureOperationColor(emissiveColor, surface.textureColorOperation, textureArg1, textureArg2);
+      if (surface.isTextureFactorBlend) {
+        emissiveColor *= tFactor.rgb;
+      }
+      
+      // Adjust opacity via texture operations.
+      // Fixed function texture stage state for alpha channel
+      
+      float16_t textureAlphaArg1, textureAlphaArg2;
+      chooseTextureArgument(textureAlphaArg1, surface.textureAlphaArg1Source, opacity, surfaceInteraction.vertexColor.a, tFactor.a, opacity);
+      chooseTextureArgument(textureAlphaArg2, surface.textureAlphaArg2Source, opacity, surfaceInteraction.vertexColor.a, tFactor.a, float16_t(1.0h));
+      chooseTextureOperationAlpha(opacity, surface.textureAlphaOperation, textureAlphaArg1, textureAlphaArg2);
+      
+      // Ensure we perform these opacity calculations after the texture operations have been applied to abledo and alpha.
+      calcOpaqueSurfaceMaterialOpacity(
+        albedo, opacity, surface, opacity, emissiveBlendOverrideInfluence, cb.wboitEnabled);
     }
-
-    //if (freeFlag01) {
-    //    emissiveColor.rgb *= surfaceInteraction.vertexColor.rrr;
-    //}
-    
-    // Adjust opacity via texture operations.
-    // Fixed function texture stage state for alpha channel
-
-    float16_t textureAlphaArg1, textureAlphaArg2;
-    chooseTextureArgument(textureAlphaArg1, surface.textureAlphaArg1Source, opacity, surfaceInteraction.vertexColor.a, tFactor.a, opacity);
-    chooseTextureArgument(textureAlphaArg2, surface.textureAlphaArg2Source, opacity, surfaceInteraction.vertexColor.a, tFactor.a, float16_t(1.0h));
-    chooseTextureOperationAlpha(opacity, surface.textureAlphaOperation, textureAlphaArg1, textureAlphaArg2);
-    
-    // Ensure we perform these opacity calculations after the texture operations have been applied to abledo and alpha.
-    calcOpaqueSurfaceMaterialOpacity(
-      albedo, opacity, surface, opacity, emissiveBlendOverrideInfluence, cb.wboitEnabled);
   }
 
   if (opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_IGNORE_ALPHA_CHANNEL)
@@ -842,7 +856,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
   float16_t roughness = opaqueSurfaceMaterial.roughnessConstant;
 
-  if (freeFlag01)
+  if (d3dModRoughnessScalar)
   {
       // we are using opaqueSurfaceMaterial.roughnessConstant as a custom scalar so set the general roughness to 0.7 first
       roughness = 0.7;
@@ -862,13 +876,13 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   // Apply material modifiers
   roughness = saturate(roughness * cb.opaqueMaterialArgs.roughnessScale + cb.opaqueMaterialArgs.roughnessBias);
 
-  if (freeFlag01)
+  if (d3dModRoughnessScalar)
   {
     float16_t wetblend = saturate((normal.z - 0.35h) / 0.65h);
     roughness = lerp(roughness, roughness * opaqueSurfaceMaterial.roughnessConstant, wetblend);
   }
 
-  if (freeFlag03 && albedoOpacityLoaded)
+  if (d3dModDecalDirt && albedoOpacityLoaded)
   {
       //f16vec4 maskSample;
       //surfaceMaterialInteractionTextureReadHelper(opaqueSurfaceMaterial.tangentTextureIndex, opaqueSurfaceMaterial.samplerIndex, surfaceInteraction, maskSample);

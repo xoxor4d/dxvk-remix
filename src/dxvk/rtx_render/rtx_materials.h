@@ -75,6 +75,30 @@ static_assert((int)AlphaTestType::kNotEqual == (int)VkCompareOp::VK_COMPARE_OP_N
 static_assert((int)AlphaTestType::kGreaterOrEqual == (int)VkCompareOp::VK_COMPARE_OP_GREATER_OR_EQUAL);
 static_assert((int)AlphaTestType::kAlways == (int)VkCompareOp::VK_COMPARE_OP_ALWAYS);
 
+enum REMIX_MODIFIER_FROM_D3D : std::uint8_t {
+  REMIX_MODIFIER_FROM_D3D_NONE = 0,
+  REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR = 1 << 0,
+  REMIX_MODIFIER_FROM_D3D_ROUGHNESS = 1 << 1,
+  REMIX_MODIFIER_FROM_D3D_ENABLE_VERTEX_COLOR = 1 << 2,
+  REMIX_MODIFIER_FROM_D3D_FREE_03 = 1 << 3,
+  REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA = 1 << 4,
+  REMIX_MODIFIER_FROM_D3D_VEHICLE_DECAL_DIRT = 1 << 5,
+  REMIX_MODIFIER_FROM_D3D_FREE_07 = 1 << 6,
+  REMIX_MODIFIER_FROM_D3D_FREE_08 = 1 << 7,
+};
+
+enum REMIX_MODIFIER_TO_SHADER : std::uint8_t {
+  REMIX_MODIFIER_TO_SHADER_NONE = 0,
+  REMIX_MODIFIER_TO_SHADER_ROUGHNESS = 1 << 0,
+  REMIX_MODIFIER_TO_SHADER_ENABLE_VERTEX_COLOR = 1 << 1,
+  REMIX_MODIFIER_TO_SHADER_DECAL_DIRT = 1 << 2,
+  REMIX_MODIFIER_TO_SHADER_REM_VERTEX_COLOR_KEEP_ALPHA = 1 << 3,
+  REMIX_MODIFIER_TO_SHADER_VEHICLE_DECAL_DIRT = 1 << 4,
+  REMIX_MODIFIER_TO_SHADER_FREE_06 = 1 << 5,
+  REMIX_MODIFIER_TO_SHADER_FREE_07 = 1 << 6,
+  REMIX_MODIFIER_TO_SHADER_FREE_08 = 1 << 7,
+};
+
 // Note: "Temporary" hacks to get RtxOptions data from this header file as we cannot include rtx_options directly
 // due to cyclic includes. This should be removed once the rtx_materials implementation is moved to a source file.
 bool getEnableDiffuseLayerOverrideHack();
@@ -542,7 +566,7 @@ struct RtOpaqueSurfaceMaterial {
     bool ignoreAlphaChannel, bool enableThinFilm, bool alphaIsThinFilmThickness, float thinFilmThicknessConstant,
     uint32_t samplerIndex, float displaceIn, float displaceOut,
     uint32_t subsurfaceMaterialIndex, bool isRaytracedRenderTarget,
-    uint16_t samplerFeedbackStamp, bool freeFlag01, bool freeFlag02, bool freeFlag03, bool freeFlag04, bool freeFlag05, bool freeFlag06
+    uint16_t samplerFeedbackStamp, uint8_t d3dModifierFlags,
     uint32_t secondaryTextureIndex = 0
   ) :
     m_albedoOpacityTextureIndex{ albedoOpacityTextureIndex }, m_secondaryTextureIndex{secondaryTextureIndex}, m_normalTextureIndex{ normalTextureIndex },
@@ -556,7 +580,7 @@ struct RtOpaqueSurfaceMaterial {
     m_thinFilmThicknessConstant { thinFilmThicknessConstant }, m_samplerIndex{ samplerIndex }, m_displaceIn{ displaceIn },
     m_displaceOut{ displaceOut }, m_subsurfaceMaterialIndex(subsurfaceMaterialIndex), m_isRaytracedRenderTarget(isRaytracedRenderTarget),
     m_samplerFeedbackStamp{ samplerFeedbackStamp },
-    m_freeFlag01 { freeFlag01 }, m_freeFlag02 { freeFlag02 }, m_freeFlag03 { freeFlag03 }, m_freeFlag04 { freeFlag04 }, m_freeFlag05 { freeFlag05 }, m_freeFlag06 { freeFlag06 }
+    m_d3dModifierFlags { d3dModifierFlags }
   {
     updateCachedData();
     updateCachedHash();
@@ -589,28 +613,36 @@ struct RtOpaqueSurfaceMaterial {
       flags |= OPAQUE_SURFACE_MATERIAL_FLAG_IS_RAYTRACED_RENDER_TARGET;
     }
 
-    if (m_freeFlag01) {
-      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_FREE01;
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_SHADER_ROUGHNESS_SCALAR) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_ROUGHNESS_SCALAR;
     }
 
-    if (m_freeFlag02) {
-      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_FREE02;
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_SHADER_ENABLE_VERTEX_COLOR) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_ENABLE_VERTEX_COLOR;
     }
 
-    if (m_freeFlag03) {
-      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_FREE03;
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_SHADER_DECAL_DIRT) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_DECAL_DIRT;
     }
 
-    if (m_freeFlag04) {
-      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_FREE04;
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_SHADER_REM_VERTEX_COLOR_KEEP_ALPHA) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_REM_VERTEX_COLOR_KEEP_ALPHA;
     }
 
-    if (m_freeFlag05) {
-      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_FREE05;
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_SHADER_VEHICLE_DECAL_DIRT) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_VEHICLE_DECAL_DIRT;
     }
 
-    if (m_freeFlag06) {
-      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_FREE06;
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_SHADER_FREE_06) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_06;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_SHADER_FREE_07) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_07;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_SHADER_FREE_08) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_08;
     }
 
     float displaceIn = m_displaceIn * getDisplacementFactor();
@@ -767,28 +799,8 @@ struct RtOpaqueSurfaceMaterial {
     return m_isRaytracedRenderTarget;
   }
 
-  uint32_t getFreeFlag01() const {
-    return m_freeFlag01;
-  }
-
-  uint32_t getFreeFlag02() const {
-    return m_freeFlag02;
-  }
-
-  uint32_t getFreeFlag03() const {
-    return m_freeFlag03;
-  }
-
-  uint32_t getFreeFlag04() const {
-    return m_freeFlag04;
-  }
-
-  uint32_t getFreeFlag05() const {
-    return m_freeFlag05;
-  }
-
-  uint32_t getFreeFlag06() const {
-    return m_freeFlag06;
+  uint32_t getD3DModifierFlags() const {
+    return m_d3dModifierFlags;
   }
 
 private:
@@ -903,12 +915,7 @@ private:
 
   uint16_t m_samplerFeedbackStamp;
 
-  bool m_freeFlag01;
-  bool m_freeFlag02;
-  bool m_freeFlag03;
-  bool m_freeFlag04;
-  bool m_freeFlag05;
-  bool m_freeFlag06;
+  uint8_t m_d3dModifierFlags;
 
   XXH64_hash_t m_cachedHash;
 
@@ -1753,7 +1760,7 @@ struct LegacyMaterialData {
     return colorTextureSlot[slot];
   }
 
-  enum REMIX_MODIFIER_FROM_D3D : std::uint32_t {
+  /*enum REMIX_MODIFIER_FROM_D3D : std::uint32_t {
     REMIX_MODIFIER_FROM_D3D_NONE = 0,
     REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR = 1 << 0,
     REMIX_MODIFIER_FROM_D3D_ROUGHNESS = 1 << 1,
@@ -1762,7 +1769,7 @@ struct LegacyMaterialData {
     REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA = 1 << 4,
     REMIX_MODIFIER_FROM_D3D_FREE_05 = 1 << 5,
     REMIX_MODIFIER_FROM_D3D_FREE_06 = 1 << 6,
-  };
+  };*/
 
   bool alphaTestEnabled = false;
   uint8_t alphaTestReferenceValue = 0;
