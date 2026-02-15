@@ -82,7 +82,7 @@ enum REMIX_MODIFIER_FROM_D3D : std::uint8_t {
   REMIX_MODIFIER_FROM_D3D_ENABLE_VERTEX_COLOR = 1 << 2,
   REMIX_MODIFIER_FROM_D3D_FREE_03 = 1 << 3,
   REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA = 1 << 4,
-  REMIX_MODIFIER_FROM_D3D_VEHICLE_DECAL_DIRT = 1 << 5,
+  REMIX_MODIFIER_FROM_D3D_VEHICLE_SHADER = 1 << 5,
   REMIX_MODIFIER_FROM_D3D_FREE_07 = 1 << 6,
   REMIX_MODIFIER_FROM_D3D_FREE_08 = 1 << 7,
 };
@@ -93,7 +93,7 @@ enum REMIX_MODIFIER_TO_SHADER : std::uint8_t {
   REMIX_MODIFIER_TO_SHADER_ENABLE_VERTEX_COLOR = 1 << 1,
   REMIX_MODIFIER_TO_SHADER_FREE_03 = 1 << 2,
   REMIX_MODIFIER_TO_SHADER_REM_VERTEX_COLOR_KEEP_ALPHA = 1 << 3,
-  REMIX_MODIFIER_TO_SHADER_VEHICLE_DECAL_DIRT = 1 << 4,
+  REMIX_MODIFIER_TO_SHADER_VEHICLE_SHADER = 1 << 4,
   REMIX_MODIFIER_TO_SHADER_FREE_06 = 1 << 5,
   REMIX_MODIFIER_TO_SHADER_FREE_07 = 1 << 6,
   REMIX_MODIFIER_TO_SHADER_FREE_08 = 1 << 7,
@@ -566,7 +566,7 @@ struct RtOpaqueSurfaceMaterial {
     bool ignoreAlphaChannel, bool enableThinFilm, bool alphaIsThinFilmThickness, float thinFilmThicknessConstant,
     uint32_t samplerIndex, float displaceIn, float displaceOut,
     uint32_t subsurfaceMaterialIndex, bool isRaytracedRenderTarget,
-    uint16_t samplerFeedbackStamp, uint8_t d3dModifierFlags, float freeFloat01, float freeFloat02, float freeFloat03, float freeFloat04,
+    uint16_t samplerFeedbackStamp, uint8_t d3dModifierFlags, uint16_t packedParams1, uint16_t packedParams2, float freeFloat03, float freeFloat04,
     uint32_t secondaryTextureIndex = 0
   ) :
     m_albedoOpacityTextureIndex{ albedoOpacityTextureIndex }, m_secondaryTextureIndex{secondaryTextureIndex}, m_normalTextureIndex{ normalTextureIndex },
@@ -580,7 +580,7 @@ struct RtOpaqueSurfaceMaterial {
     m_thinFilmThicknessConstant { thinFilmThicknessConstant }, m_samplerIndex{ samplerIndex }, m_displaceIn{ displaceIn },
     m_displaceOut{ displaceOut }, m_subsurfaceMaterialIndex(subsurfaceMaterialIndex), m_isRaytracedRenderTarget(isRaytracedRenderTarget),
     m_samplerFeedbackStamp{ samplerFeedbackStamp },
-    m_d3dModifierFlags { d3dModifierFlags }, m_freeFloat01 { freeFloat01 }, m_freeFloat02 { freeFloat02 }, m_freeFloat03 { freeFloat03 }, m_freeFloat04 { freeFloat04 }
+    m_d3dModifierFlags { d3dModifierFlags }, m_packedParams1 { packedParams1 }, m_packedParams2 { packedParams2 }, m_freeFloat03 { freeFloat03 }, m_freeFloat04 { freeFloat04 }
   {
     updateCachedData();
     updateCachedHash();
@@ -629,8 +629,8 @@ struct RtOpaqueSurfaceMaterial {
       flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_REM_VERTEX_COLOR_KEEP_ALPHA;
     }
 
-    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_SHADER_VEHICLE_DECAL_DIRT) {
-      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_VEHICLE_DECAL_DIRT;
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_SHADER_VEHICLE_SHADER) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_VEHICLE_SHADER;
     }
 
     if (m_d3dModifierFlags & REMIX_MODIFIER_TO_SHADER_FREE_06) {
@@ -699,8 +699,8 @@ struct RtOpaqueSurfaceMaterial {
     // data[24 - 27]
     writeGPUHelperExplicit<2>(data, offset, m_samplerFeedbackStamp);
     writeGPUHelperExplicit<2>(data, offset, m_secondaryTextureIndex);
-    writeGPUHelper(data, offset, glm::packHalf1x16(m_freeFloat01));
-    writeGPUHelper(data, offset, glm::packHalf1x16(m_freeFloat02));
+    writeGPUHelper(data, offset, m_packedParams1); // Write uint16_t directly (bitwise identical to float16_t)
+    writeGPUHelper(data, offset, m_packedParams2); // Write uint16_t directly (bitwise identical to float16_t)
 
 
     // data[28 -  31]
@@ -806,12 +806,11 @@ struct RtOpaqueSurfaceMaterial {
     return m_d3dModifierFlags;
   }
 
-  float getFreeFloat01() const {
-    return m_freeFloat01;
+  uint16_t getPackedParams1() const {
+    return m_packedParams1;
   }
-
-  float getFreeFloat02() const {
-    return m_freeFloat02;
+  uint16_t getPackedParams2() const {
+    return m_packedParams1;
   }
 
   float getFreeFloat03() const {
@@ -825,7 +824,7 @@ struct RtOpaqueSurfaceMaterial {
 private:
   void updateCachedHash() {
     static_assert(
-      sizeof(*this) == 144,
+      sizeof(*this) == 136,
       "add new member for hashing if needed: add a MEMBER into the struct + add a VALUE into the list-init"
     );
     struct HashStruct {
@@ -855,8 +854,8 @@ private:
       uint32_t samplerFeedbackStamp;      // NOTE: uint32_t to avoid padding
       uint32_t secondaryTextureIndex;
       uint32_t m_d3dModifierFlags;        // NOTE: uint32_t to avoid padding
-      float m_freeFloat01;
-      float m_freeFloat02;
+      uint32_t m_packedParams1; // NOTE: uint32_t to avoid padding
+      uint32_t m_packedParams2; // NOTE: uint32_t to avoid padding
       float m_freeFloat03;
       float m_freeFloat04;
       // NOTE: There must be NO padding between members, as the struct is used for hashing
@@ -889,8 +888,8 @@ private:
       m_samplerFeedbackStamp,
       m_secondaryTextureIndex,
       m_d3dModifierFlags,
-      m_freeFloat01,
-      m_freeFloat02,
+      m_packedParams1,
+      m_packedParams2,
       m_freeFloat03,
       m_freeFloat04,
     };
@@ -945,8 +944,8 @@ private:
   uint16_t m_samplerFeedbackStamp;
 
   uint8_t m_d3dModifierFlags;
-  float m_freeFloat01;
-  float m_freeFloat02;
+  uint16_t m_packedParams1; // Packed parameters
+  uint16_t m_packedParams2; // Packed parameters
   float m_freeFloat03;
   float m_freeFloat04;
 
@@ -1830,9 +1829,9 @@ struct LegacyMaterialData {
   float remixTempFloat02FromD3D = 0.0f; // RS 177
   //uint32_t remixTempFloatPack4FromD3D = 0u; // RS 196
 
-  float remixFloatRS210FromD3D = 0.0f; // RS 210
-  float remixFloatRS211FromD3D = 0.0f; // RS 211
-  float remixFloatRS212FromD3D = 0.0f; // RS 212
+  uint32_t remixPackedFloat4_RS210FromD3D = 0u; // RS 210 - Packed DWORD containing 2x uint16_t (lower 16 bits = wetnessParams1, upper 16 bits = wetnessParams2)
+  uint32_t remixPackedParams_RS211FromD3D = 0u; // RS 211 - Packed DWORD
+  uint32_t remixPackedParams_RS212FromD3D = 0u; // RS 212 - Packed DWORD
   float remixFloatRS213FromD3D = 0.0f; // RS 213
   float remixFloatRS214FromD3D = 0.0f; // RS 214
   float remixFloatRS215FromD3D = 0.0f; // RS 215

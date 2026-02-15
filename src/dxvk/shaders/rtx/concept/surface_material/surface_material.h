@@ -97,8 +97,10 @@ struct OpaqueSurfaceMaterial
   // 24-27
   uint16_t samplerFeedbackStamp;
   uint16_t secondaryTextureIndex;
-  float16_t m_freeFloat01;
-  float16_t m_freeFloat02;
+  uint16_t m_packedParams1; // Packed parameters
+  uint16_t m_packedParams2; // Packed parameters
+  
+
 
   // 28-29
   float16_t m_freeFloat03;

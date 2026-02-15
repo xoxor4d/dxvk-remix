@@ -1151,8 +1151,8 @@ namespace dxvk {
       bool ignoreAlphaChannel = false;
 
       uint8_t d3dModifierFlags = REMIX_MODIFIER_TO_SHADER_NONE;
-      float freeFloat01 = 0.0f;
-      float freeFloat02 = 0.0f;
+      uint16_t packedParams1 = 0u;
+      uint16_t packedParams2 = 0u;
       float freeFloat03 = 0.0f;
       float freeFloat04 = 0.0f;
 
@@ -1209,14 +1209,14 @@ namespace dxvk {
       if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR) {
         emissiveIntensity *= drawCallState.materialData.remixTempFloat01FromD3D;
       }
-       
+
       if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ROUGHNESS) {
-        const float scalar = drawCallState.materialData.remixFloatRS210FromD3D; // x
-        const float z_normal = drawCallState.materialData.remixFloatRS211FromD3D; // y
-        const float blend_width = drawCallState.materialData.remixFloatRS212FromD3D; // z
-        freeFloat01 = scalar; // scalar
-        freeFloat02 = z_normal; // z-normal limit
-        freeFloat03 = blend_width; // blending width
+        // Read packed DWORD from RS_210_ROUGHNESS
+        // The client side packs 3 parameters using bit packing: scalar(6 bits) + max_z(5 bits) + blend_width(5 bits) = 16 bits
+        // The DWORD contains: lower 16 bits = wetnessParams1, upper 16 bits = wetnessParams2
+        const uint32_t packedDword = drawCallState.materialData.remixPackedFloat4_RS210FromD3D;
+        packedParams1 = uint16_t(packedDword & 0xFFFF);        // Lower 16 bits
+        packedParams2 = uint16_t((packedDword >> 16) & 0xFFFF); // Upper 16 bits
 
         d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_ROUGHNESS; // ff01
       }
@@ -1230,6 +1230,20 @@ namespace dxvk {
       if ((drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA || drawCallState.testCategoryFlags(InstanceCategories::Terrain)) 
            && !forceVertexColorModulate) {
         d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_REM_VERTEX_COLOR_KEEP_ALPHA; // ff04
+      }
+
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_VEHICLE_SHADER) {
+        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_VEHICLE_SHADER;
+        const uint32_t p1 = drawCallState.materialData.remixPackedParams_RS211FromD3D; // rgba
+        const uint32_t p2 = drawCallState.materialData.remixPackedParams_RS212FromD3D; // roughness, metallic, free, flags
+
+        albedoOpacityConstant.x = ((p1 >> 0) & 0xFF) / 255.0f;
+        albedoOpacityConstant.y = ((p1 >> 8) & 0xFF) / 255.0f;
+        albedoOpacityConstant.z = ((p1 >> 16) & 0xFF) / 255.0f;
+        albedoOpacityConstant.w = ((p1 >> 16) & 0xFF) / 255.0f;
+
+        packedParams1 = uint16_t(p2 & 0xFFFF);       // Lower 16 bits
+        packedParams2 = uint16_t(p2 >> 16 & 0xFFFF); // Upper 16 bits
       }
 
       subsurfaceMeasurementDistance = opaqueMaterialData.getSubsurfaceMeasurementDistance() * RtxOptions::SubsurfaceScattering::surfaceThicknessScale();
@@ -1301,7 +1315,7 @@ namespace dxvk {
         thinFilmThicknessConstant, samplerIndex, displaceIn, displaceOut, 
         subsurfaceMaterialIndex, isUsingRaytracedRenderTarget,
         samplerFeedbackStamp,
-        d3dModifierFlags, freeFloat01, freeFloat02, freeFloat03, freeFloat04,
+        d3dModifierFlags, packedParams1, packedParams2, freeFloat03, freeFloat04,
         secondaryTextureIndex
       };
 
