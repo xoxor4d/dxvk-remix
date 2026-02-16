@@ -1032,11 +1032,12 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     const float16_t wetblendBase = wetblend;            // preserves smooth world blending (normal-based)
     float16_t wetblendForRoughness = wetblendBase;      // allows puddle logic to add detail without destroying base blend
 
-    const bool enablePuddles = wetnessFlags & (1u << 0);
+    const bool enableWetnessVariation = wetnessFlags & (1u << 0);
     const bool enableRaindrops = wetnessFlags & (1u << 1);
     const bool useTextureCoordsForRaindrops = wetnessFlags & (1u << 2);
     const bool useExpRaindrops = wetnessFlags & (1u << 3);
     const bool raindropsHalfDensity = wetnessFlags & (1u << 4);
+    const bool enablePuddleLayer = wetnessFlags & (1u << 5);
 
     const float raindropScaleMultDefault = 3.0f;
     float raindropScaleMult = (raindrop_scale > 0.0f ? max(raindrop_scale, 0.1f) : raindropScaleMultDefault);
@@ -1065,7 +1066,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     // -------
     // puddles
 
-    if (enablePuddles && wetblendBase > float16_t(0.0f) && cameraDistanceHalf <= float16_t(maxPuddleDistance))
+    if (enableWetnessVariation && wetblendBase > float16_t(0.0f) && cameraDistanceHalf <= float16_t(maxPuddleDistance))
     {
       const float puddleNoiseScale = 0.2f;
       float noiseValue = simplexNoise3D(surfaceInteraction.position * puddleNoiseScale);
@@ -1100,6 +1101,98 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
       float16_t puddleMask = float16_t(saturate(puddleMaskRaw));
       float16_t puddledWetblend = wetblendBase * puddleMask;
       wetblendForRoughness = lerp(wetblendBase, puddledWetblend, float16_t(puddleStrength));
+    }
+
+    // -------
+    // reflective puddles layer (sharp puddles with low roughness)
+    
+    if (enablePuddleLayer && wetblendBase > float16_t(0.0f) && cameraDistanceHalf <= float16_t(maxPuddleDistance))
+    {
+      // Hardcoded horizontal threshold for puddles (very flat surfaces only)
+      const float16_t puddleHorizontalThreshold = float16_t(0.98f);
+      if (originalNormalZ >= puddleHorizontalThreshold)
+      {
+        // Scalar influences puddle size, density, and reflectivity
+        // scalar = 0 → fully wet (roughness 0, larger/denser puddles)
+        // scalar = 1 → dry (puddles disappear)
+        // scalar < 0 → not used for global wetness (treat as dry)
+        // scalar ranges from -2 to +2, but only 0-1 range is used for wetness
+        // Map: scalar 0 = fully wet, scalar 1 = dry, scale smoothly in between
+        float wetnessFromScalar = 0.0f;
+        if (scalar >= 0.0f)
+        {
+          wetnessFromScalar = 1.0f - saturate(scalar); // 1.0 when scalar=0 (wet), 0.0 when scalar=1 (dry)
+        }
+        
+        // Hardcoded noise grid scale (larger = larger puddles but fewer)
+        // Hardcoded value: 0.3 (was cb.debugKnob.w)
+        const float baseNoiseScale = 0.15f;
+        const float noiseGridScale = 0.3f;
+        float reflectivePuddleNoiseScale = baseNoiseScale * max(0.1f, noiseGridScale);
+        
+        // Use multiple noise octaves for better puddle distribution
+        float reflectivePuddleNoise = simplexNoise3D(surfaceInteraction.position * reflectivePuddleNoiseScale);
+        
+        // Add a second octave for more variation
+        float reflectivePuddleNoise2 = simplexNoise3D(surfaceInteraction.position * reflectivePuddleNoiseScale * 2.3f) * 0.4f;
+        reflectivePuddleNoise = saturate(reflectivePuddleNoise + reflectivePuddleNoise2);
+        
+        // Hardcoded base density influence (was cb.debugKnob.y * 0.3f)
+        // Scalar influences density and size - wetter surfaces get more and larger puddles
+        const float baseDensityInfluenceValue = 0.3f * 0.3f; // Hardcoded: 0.3 * 0.3 = 0.09
+        float baseThreshold = 0.65f;
+        float baseDensityInfluence = baseDensityInfluenceValue;
+        float wetnessDensityInfluence = wetnessFromScalar * 0.25f; // More puddles when wetter
+        float wetnessSizeInfluence = wetnessFromScalar * 0.15f; // Larger puddles when wetter
+        float puddleThreshold = baseThreshold - baseDensityInfluence - wetnessDensityInfluence - wetnessSizeInfluence;
+        
+        // Create puddle mask with smooth but defined edges
+        // Use smoothstep for natural blending like games typically do
+        const float transitionZone = 0.15f; // Larger zone = smoother edges
+        float reflectivePuddleMask = smoothstep(
+          puddleThreshold - transitionZone * 0.5f,
+          puddleThreshold + transitionZone * 0.5f,
+          reflectivePuddleNoise
+        );
+        
+        // Apply additional sharpening for definition while keeping smooth edges
+        reflectivePuddleMask = pow(reflectivePuddleMask, 1.5f);
+        
+        // Scale puddle visibility by wetness - fully wet = full visibility, dry = no puddles
+        reflectivePuddleMask *= wetnessFromScalar;
+        
+        // Save the roughness mask before applying horizontal factor
+        // This ensures roughness is applied consistently regardless of slope
+        float roughnessMask = reflectivePuddleMask * saturate(wetblendBase);
+        
+        // Only apply puddles where surface is wet enough and horizontal enough
+        // Use a smooth falloff based on how horizontal the surface is
+        const float horizontalTransitionWidth = 0.2f; // Wider transition for smoother, earlier falloff
+        float horizontalFactor = saturate((originalNormalZ - (puddleHorizontalThreshold - horizontalTransitionWidth)) / max(horizontalTransitionWidth * 2.0f, 0.01f));
+        
+        // Apply horizontal factor to visibility mask only
+        float visibilityMask = reflectivePuddleMask * saturate(wetblendBase) * horizontalFactor;
+        
+        if (visibilityMask > 0.001f)
+        {
+          // Hardcoded base puddle roughness offset (was cb.debugKnob.z)
+          // Scalar at 0 (fully wet) should make roughness = 0
+          // Scalar at 1 (dry) should make puddles disappear (handled by visibilityMask)
+          const float basePuddleRoughnessOffset = 0.0f; // Hardcoded: 0.0
+          
+          // When fully wet (scalar = 0, wetnessFromScalar = 1.0), roughness should be 0
+          // When dry (scalar = 1, wetnessFromScalar = 0.0), puddles are invisible anyway
+          // Scale smoothly: at scalar 0 → roughness 0, at scalar 1 → use base offset
+          float targetRoughness = roughness + basePuddleRoughnessOffset;
+          // Apply wetness: fully wet (wetness=1) → roughness 0, dry (wetness=0) → full roughness
+          targetRoughness = lerp(targetRoughness, 0.0f, wetnessFromScalar);
+          float16_t puddleRoughness = float16_t(saturate(targetRoughness));
+          
+          // Apply puddle roughness using the roughness mask (without horizontalFactor)
+          // This ensures consistent roughness application regardless of slope near threshold
+          roughness = lerp(roughness, float16_t(puddleRoughness), float16_t(roughnessMask));
+        }
+      }
     }
 
     // ------
@@ -1477,8 +1570,21 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
     roughness = saturate(lerp(roughness, roughness * scalar, wetblendForRoughness));
 
-    roughness *= (1.0f + cb.debugKnob.w);
-
+    
+    
+    // Apply additional reflectivity boost for fully wet surfaces (low scalar)
+    // Hardcoded strength value: 0.4 (was cb.debugKnob.x)
+    const float wetnessReflectivityStrength = 0.4f;
+    if (wetnessReflectivityStrength > 0.0f && wetblendForRoughness > float16_t(0.0f))
+    {
+      // When scalar is low (fully wet), reduce roughness more
+      // scalar ranges from -2 to +2, so low scalar means wetter
+      float wetnessFactor = saturate(1.0f - (scalar + 2.0f) / 4.0f); // 1.0 when scalar = -2 (fully wet), 0.0 when scalar = +2 (dry)
+      
+      // Apply additional roughness reduction based on wetness and hardcoded strength
+      float16_t additionalRoughnessReduction = float16_t(wetnessFactor * wetblendForRoughness * wetnessReflectivityStrength);
+      roughness = saturate(roughness * (float16_t(1.0f) - additionalRoughnessReduction));
+    }
   }
   #endif
 
