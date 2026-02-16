@@ -1113,8 +1113,8 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     const bool enableOcclusionCheck = wetnessFlags & (1u << 6);
     const bool useSmoothOcclusion = wetnessFlags & (1u << 7);
 
-    float16_t originalNormalZ = normal.z;
-    float16_t wetblend = saturate(smoothstep(zNormal - blendWidth, zNormal + blendWidth, normal.z));
+    float16_t originalNormalZ = surfaceInteraction.interpolatedNormal.z; //normal.z;
+    float16_t wetblend = saturate(smoothstep(zNormal - blendWidth, zNormal + blendWidth, originalNormalZ));
 
     const float16_t wetblendBase = wetblend;            // preserves smooth world blending (normal-based)
     float16_t wetblendForRoughness = wetblendBase;      // allows puddle logic to add detail without destroying base blend
@@ -1133,7 +1133,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     layerRoughnessScale[3] = raindropRoughnessScale;
     
     const float16_t maxRaindropDistance = float16_t(35.0f);
-    const float16_t maxPuddleDistance = float16_t(200.0f);
+    const float16_t maxPuddleDistance = float16_t(300.0f);
     
     float combinedRaindropMask = 0.0f;
     f16vec3 raindropNormalOffset = f16vec3(0.0h);
@@ -1311,22 +1311,19 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
         
         if (visibilityMask > 0.001f)
         {
-          // Hardcoded base puddle roughness offset
-          // Scalar at 0 (fully wet) should make roughness = 0
-          // Scalar at 1 (dry) should make puddles disappear (handled by visibilityMask)
-          const float basePuddleRoughnessOffset = 0.0f; // Hardcoded: 0.0
-          
-          // When fully wet (scalar = 0, wetnessFromScalar = 1.0), roughness should be 0
-          // When dry (scalar = 1, wetnessFromScalar = 0.0), puddles are invisible anyway
-          // Scale smoothly: at scalar 0 → roughness 0, at scalar 1 → use base offset
-          float targetRoughness = roughness + basePuddleRoughnessOffset;
           // Apply wetness: fully wet (wetness=1) → roughness 0, dry (wetness=0) → full roughness
-          targetRoughness = lerp(targetRoughness, 0.0f, wetnessFromScalar);
+          float targetRoughness = lerp(roughness, 0.0f, wetnessFromScalar);
           float16_t puddleRoughness = float16_t(saturate(targetRoughness));
           
           // Apply puddle roughness using the roughness mask (without horizontalFactor)
           // This ensures consistent roughness application regardless of slope near threshold
           roughness = lerp(roughness, float16_t(puddleRoughness), float16_t(roughnessMask));
+
+          float normalFlattenMask = roughnessMask * wetnessFromScalar;
+          normal = normalize(lerp(normal, surfaceInteraction.interpolatedNormal, float16_t(normalFlattenMask)));
+
+          // Slightly darken albedo
+          albedo.xyz *= lerp(1.0f, 0.85f, normalFlattenMask);
         }
       }
     }
