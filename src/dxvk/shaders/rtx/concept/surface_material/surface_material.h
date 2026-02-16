@@ -136,8 +136,11 @@ struct TranslucentSurfaceMaterial
   // Note: Source values only used for serialization purposes.
   uint16_t sourceSurfaceMaterialIndex;
 
+  uint16_t m_wetnessParams1; // Packed wetness parameters (scalar 6 bits + max_z 5 bits + blend_width 5 bits)
+  uint16_t m_wetnessParams2; // Packed wetness parameters 2 (raindrop_scale 8 bits + bitflags 8 bits)
+
   // padding (to keep size matching with MemoryPolymorphicSurfaceMaterial)
-  uint16_t data[16];
+  uint16_t data[14];
 };
 
 struct RayPortalSurfaceMaterial
