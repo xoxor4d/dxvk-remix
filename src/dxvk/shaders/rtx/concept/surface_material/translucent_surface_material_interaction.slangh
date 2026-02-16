@@ -163,7 +163,7 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
 
     float z_normal = (float((packedBits1 >> 5) & 0x1F) / 31.0f);
     //float blend_width = (float((packedBits1) & 0x1F) / 31.0f);
-    float raindrop_scale = float(packedBits2 & 0xFF) * (10.0f / 255.0f);
+    float raindrop_scale = float(packedBits2 & 0xFF) * (10.0f / 255.0f) + -4.3f;
 
     uint wetnessFlags = (packedBits2 >> 8) & 0xFF;
     //const bool useTextureCoordsForRaindrops = wetnessFlags & (1u << 2);
@@ -172,9 +172,8 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
 
     float16_t originalNormalZ = normal.z;
 
-    const float raindropScaleMultDefault = 3.0f;
-    float raindropScaleMult = (raindrop_scale > 0.0f ? max(raindrop_scale, 0.1f) : raindropScaleMultDefault);
-    float animationSpeedMult = 0.4f;
+    float raindropScaleMult = (raindrop_scale > 0.0f ? max(raindrop_scale, 0.1f) : 3.0f);
+    float animationSpeedMult = 0.1f + cb.debugKnob.x;
     float raindropStrength = 5.0f;
     float raindropNormalScale = 0.5f;
     float raindropVisibilityMult = 14.0f;

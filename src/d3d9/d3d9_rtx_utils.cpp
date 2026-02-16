@@ -234,7 +234,7 @@ namespace dxvk {
     materialData.remixPackedParams_RS212FromD3D = d3d9State.renderStates[212] != 0xfefefefe ? d3d9State.renderStates[212] : 0u;
     materialData.remixFloatRS213FromD3D = d3d9State.renderStates[213] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[213]) : 0.0f;
     materialData.remixFloatRS214FromD3D = d3d9State.renderStates[214] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[214]) : 0.0f;
-    materialData.remixFloatRS215FromD3D = d3d9State.renderStates[215] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[215]) : 0.0f;
+    materialData.remixPackedParams_RS215FromD3D = d3d9State.renderStates[215] != 0xfefefefe ? d3d9State.renderStates[215] : 0u;
     materialData.remixFloatRS216FromD3D = d3d9State.renderStates[216] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[216]) : 0.0f;
     materialData.remixFloatRS217FromD3D = d3d9State.renderStates[217] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[217]) : 0.0f;
     materialData.remixFloatRS218FromD3D = d3d9State.renderStates[218] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[218]) : 0.0f;

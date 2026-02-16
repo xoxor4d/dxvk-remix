@@ -1155,6 +1155,8 @@ namespace dxvk {
       uint16_t packedParams2 = 0u;
       float freeFloat03 = 0.0f;
       float freeFloat04 = 0.0f;
+      uint16_t packedParams3 = 0u;
+      uint16_t packedParams4 = 0u;
 
       constexpr Vector4 kWhiteModeAlbedo = Vector4(0.7f, 0.7f, 0.7f, 1.0f);
 
@@ -1211,12 +1213,12 @@ namespace dxvk {
       }
 
       if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ROUGHNESS) {
-        // Read packed DWORD from RS_210_ROUGHNESS
+        // Read packed DWORD from RS_215
         // The client side packs 3 parameters using bit packing: scalar(6 bits) + max_z(5 bits) + blend_width(5 bits) = 16 bits
         // The DWORD contains: lower 16 bits = wetnessParams1, upper 16 bits = wetnessParams2
-        const uint32_t packedDword = drawCallState.materialData.remixPackedFloat4_RS210FromD3D;
-        packedParams1 = uint16_t(packedDword & 0xFFFF);        // Lower 16 bits
-        packedParams2 = uint16_t((packedDword >> 16) & 0xFFFF); // Upper 16 bits
+        const uint32_t packedDword = drawCallState.materialData.remixPackedParams_RS215FromD3D;
+        packedParams3 = uint16_t(packedDword & 0xFFFF);        // Lower 16 bits
+        packedParams4 = uint16_t((packedDword >> 16) & 0xFFFF); // Upper 16 bits
 
         d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_ROUGHNESS; // ff01
       }
@@ -1317,7 +1319,7 @@ namespace dxvk {
         thinFilmThicknessConstant, samplerIndex, displaceIn, displaceOut, 
         subsurfaceMaterialIndex, isUsingRaytracedRenderTarget,
         samplerFeedbackStamp,
-        d3dModifierFlags, packedParams1, packedParams2, freeFloat03, freeFloat04,
+        d3dModifierFlags, packedParams1, packedParams2, freeFloat03, freeFloat04, packedParams3, packedParams4,
         secondaryTextureIndex
       };
 
@@ -1351,15 +1353,15 @@ namespace dxvk {
       float thinWallThickness = translucentMaterialData.getThinWallThickness();
       bool useDiffuseLayer = translucentMaterialData.getEnableDiffuseLayer();
 
-      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR) {
-        // read packed DWORD from RS_210_WETNESS_PARAMS_PACKED - lower 16 bits = wetnessParams1, upper 16 bits = wetnessParams2
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ROUGHNESS) {
+        // read packed DWORD from RS_215 - lower 16 bits = wetnessParams1, upper 16 bits = wetnessParams2
         // lower 16 bits: comp mod packs 3 parameters using bit packing: scalar(6 bits) + max_z(5 bits) + blend_width(5 bits) = 16 bits
         // upper 16 bits: 8 bits for raindrop_scale and 8 bits for bitflag modifiers
 
-        const uint32_t packedDword = drawCallState.materialData.remixPackedFloat4_RS210FromD3D;
+        const uint32_t packedDword = drawCallState.materialData.remixPackedParams_RS215FromD3D;
         wetnessParams1 = uint16_t(packedDword & 0xFFFF);        // lower 16 bits
         wetnessParams2 = uint16_t((packedDword >> 16) & 0xFFFF); // upper 16 bits
-        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_ROUGHNESS_SCALAR;
+        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_ROUGHNESS;
       }
 
       const RtTranslucentSurfaceMaterial translucentSurfaceMaterial{

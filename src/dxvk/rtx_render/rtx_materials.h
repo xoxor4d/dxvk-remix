@@ -566,7 +566,7 @@ struct RtOpaqueSurfaceMaterial {
     bool ignoreAlphaChannel, bool enableThinFilm, bool alphaIsThinFilmThickness, float thinFilmThicknessConstant,
     uint32_t samplerIndex, float displaceIn, float displaceOut,
     uint32_t subsurfaceMaterialIndex, bool isRaytracedRenderTarget,
-    uint16_t samplerFeedbackStamp, uint8_t d3dModifierFlags, uint16_t packedParams1, uint16_t packedParams2, float freeFloat03, float freeFloat04,
+    uint16_t samplerFeedbackStamp, uint8_t d3dModifierFlags, uint16_t packedParams1, uint16_t packedParams2, float freeFloat03, float freeFloat04, uint16_t packedParams3, uint16_t packedParams4,
     uint32_t secondaryTextureIndex = 0
   ) :
     m_albedoOpacityTextureIndex{ albedoOpacityTextureIndex }, m_secondaryTextureIndex{secondaryTextureIndex}, m_normalTextureIndex{ normalTextureIndex },
@@ -580,7 +580,7 @@ struct RtOpaqueSurfaceMaterial {
     m_thinFilmThicknessConstant { thinFilmThicknessConstant }, m_samplerIndex{ samplerIndex }, m_displaceIn{ displaceIn },
     m_displaceOut{ displaceOut }, m_subsurfaceMaterialIndex(subsurfaceMaterialIndex), m_isRaytracedRenderTarget(isRaytracedRenderTarget),
     m_samplerFeedbackStamp{ samplerFeedbackStamp },
-    m_d3dModifierFlags { d3dModifierFlags }, m_packedParams1 { packedParams1 }, m_packedParams2 { packedParams2 }, m_freeFloat03 { freeFloat03 }, m_freeFloat04 { freeFloat04 }
+    m_d3dModifierFlags { d3dModifierFlags }, m_packedParams1 { packedParams1 }, m_packedParams2 { packedParams2 }, m_freeFloat03 { freeFloat03 }, m_freeFloat04 { freeFloat04 }, m_packedParams3 { packedParams3 }, m_packedParams4 { packedParams4 }
   {
     updateCachedData();
     updateCachedHash();
@@ -706,7 +706,9 @@ struct RtOpaqueSurfaceMaterial {
     // data[28 -  31]
     writeGPUHelper(data, offset, glm::packHalf1x16(m_freeFloat03));
     writeGPUHelper(data, offset, glm::packHalf1x16(m_freeFloat04));
-    writeGPUPadding<4>(data, offset);
+    writeGPUHelper(data, offset, m_packedParams3); // Write uint16_t directly (bitwise identical to float16_t)
+    writeGPUHelper(data, offset, m_packedParams4); // Write uint16_t directly (bitwise identical to float16_t)
+    //writeGPUPadding<4>(data, offset);
     assert(offset - oldOffset == kSurfaceMaterialGPUSize);
   }
 
@@ -821,10 +823,17 @@ struct RtOpaqueSurfaceMaterial {
     return m_freeFloat04;
   }
 
+  uint16_t getPackedParams3() const {
+    return m_packedParams3;
+  }
+  uint16_t getPackedParams4() const {
+    return m_packedParams4;
+  }
+
 private:
   void updateCachedHash() {
     static_assert(
-      sizeof(*this) == 136,
+      sizeof(*this) == 144,
       "add new member for hashing if needed: add a MEMBER into the struct + add a VALUE into the list-init"
     );
     struct HashStruct {
@@ -858,6 +867,8 @@ private:
       uint32_t m_packedParams2; // NOTE: uint32_t to avoid padding
       float m_freeFloat03;
       float m_freeFloat04;
+      uint32_t m_packedParams3; // NOTE: uint32_t to avoid padding
+      uint32_t m_packedParams4; // NOTE: uint32_t to avoid padding
       // NOTE: There must be NO padding between members, as the struct is used for hashing
     };
     static_assert(alignof(HashStruct) == 4 && sizeof(HashStruct) % 4 == 0);
@@ -892,6 +903,8 @@ private:
       m_packedParams2,
       m_freeFloat03,
       m_freeFloat04,
+      m_packedParams3,
+      m_packedParams4,
     };
     m_cachedHash = XXH3_64bits(&hashData, sizeof(hashData));
   }
@@ -948,6 +961,8 @@ private:
   uint16_t m_packedParams2; // Packed parameters
   float m_freeFloat03;
   float m_freeFloat04;
+  uint16_t m_packedParams3; // Packed parameters
+  uint16_t m_packedParams4; // Packed parameters
 
   XXH64_hash_t m_cachedHash;
 
@@ -965,7 +980,7 @@ struct RtTranslucentSurfaceMaterial {
     float transmittanceMeasurementDistance, const Vector3& transmittanceColor,
     bool enableEmission, float emissiveIntensity, const Vector3& emissiveColorConstant,
     bool isThinWalled, float thinWallThickness, bool useDiffuseLayer, uint32_t samplerIndex,
-    uint8_t d3dModifierFlags, uint16_t wetnessParams1, uint16_t wetnessParams2) :
+    uint8_t d3dModifierFlags, uint16_t packedParams1, uint16_t packedParams2) :
     m_normalTextureIndex(normalTextureIndex),
     m_transmittanceTextureIndex(transmittanceTextureIndex),
     m_emissiveColorTextureIndex(emissiveColorTextureIndex),
@@ -973,7 +988,7 @@ struct RtTranslucentSurfaceMaterial {
     m_transmittanceMeasurementDistance(transmittanceMeasurementDistance), m_transmittanceColor(transmittanceColor),
     m_enableEmission(enableEmission), m_emissiveIntensity(emissiveIntensity), m_emissiveColorConstant(emissiveColorConstant),
     m_isThinWalled(isThinWalled), m_thinWallThickness(thinWallThickness), m_useDiffuseLayer(useDiffuseLayer), m_samplerIndex(samplerIndex),
-    m_d3dModifierFlags(d3dModifierFlags), m_wetnessParams1(wetnessParams1), m_wetnessParams2(wetnessParams2)
+    m_d3dModifierFlags(d3dModifierFlags), m_packedParams1(packedParams1), m_packedParams2(packedParams2)
   {
     updateCachedData();
     updateCachedHash();
@@ -992,7 +1007,7 @@ struct RtTranslucentSurfaceMaterial {
       flags |= TRANSLUCENT_SURFACE_MATERIAL_FLAG_USE_DIFFUSE_LAYER;
     }
 
-    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_SHADER_ROUGHNESS_SCALAR) {
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_SHADER_ROUGHNESS) {
       flags |= TRANSLUCENT_SURFACE_MATERIAL_FLAG_D3D_RAINDROPS;
     }
 
@@ -1029,8 +1044,8 @@ struct RtTranslucentSurfaceMaterial {
     writeGPUHelperExplicit<2>(data, offset, surfaceIndex);
 
     // data[16-17]
-    writeGPUHelper(data, offset, m_wetnessParams1); // Write uint16_t directly (bitwise identical to float16_t)
-    writeGPUHelper(data, offset, m_wetnessParams2); // Write uint16_t directly (bitwise identical to float16_t)
+    writeGPUHelper(data, offset, m_packedParams1); // Write uint16_t directly (bitwise identical to float16_t)
+    writeGPUHelper(data, offset, m_packedParams1); // Write uint16_t directly (bitwise identical to float16_t)
 
     // data[18 - 31]
     writeGPUPadding<28>(data, offset); // was 32
@@ -1137,8 +1152,8 @@ private:
   bool m_useDiffuseLayer;
 
   uint8_t m_d3dModifierFlags;
-  uint16_t m_wetnessParams1; // Packed wetness parameters (scalar 6 bits + max_z 5 bits + blend_width 5 bits)
-  uint16_t m_wetnessParams2; // Packed wetness parameters 2 (raindrop_scale 8 bits + bitflags 8 bits)
+  uint16_t m_packedParams1; // Packed parameters
+  uint16_t m_packedParams2; // Packed parameters
 
   XXH64_hash_t m_cachedHash;
 
@@ -1854,7 +1869,7 @@ struct LegacyMaterialData {
   uint32_t remixPackedParams_RS212FromD3D = 0u; // RS 212 - Packed DWORD
   float remixFloatRS213FromD3D = 0.0f; // RS 213
   float remixFloatRS214FromD3D = 0.0f; // RS 214
-  float remixFloatRS215FromD3D = 0.0f; // RS 215
+  uint32_t remixPackedParams_RS215FromD3D = 0u; // RS 215 - Packed DWORD
   float remixFloatRS216FromD3D = 0.0f; // RS 216
   float remixFloatRS217FromD3D = 0.0f; // RS 217
   float remixFloatRS218FromD3D = 0.0f; // RS 218

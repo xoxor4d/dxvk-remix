@@ -99,8 +99,6 @@ struct OpaqueSurfaceMaterial
   uint16_t secondaryTextureIndex;
   uint16_t m_packedParams1; // Packed parameters
   uint16_t m_packedParams2; // Packed parameters
-  
-
 
   // 28-29
   float16_t m_freeFloat03;
@@ -109,7 +107,9 @@ struct OpaqueSurfaceMaterial
   // Todo: Fixed function blend state info here in the future (Actually this should go on a Legacy Material, or some sort of non-PBR Legacy Surface)
 
   // padding (to keep size matching with MemoryPolymorphicSurfaceMaterial)
-  uint16_t data[2];
+  uint16_t m_packedParams3; // Packed parameters
+  uint16_t m_packedParams4; // Packed parameters
+  //uint16_t data[2];
 
   bool hasValidDisplacement() {
     return flags & OPAQUE_SURFACE_MATERIAL_FLAG_HAS_DISPLACEMENT;
