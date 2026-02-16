@@ -567,7 +567,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
   const bool d3dModRoughness = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_ROUGHNESS;
   const bool d3dModEnableVertexColor = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_ENABLE_VERTEX_COLOR;
-  const bool d3dModRoughnessScalar = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_03;
+  const bool d3dFlag03 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_03;
   const bool d3dModRemVertexColorKeepAlpha = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_REM_VERTEX_COLOR_KEEP_ALPHA;
   const bool d3dModVehicleShader = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_VEHICLE_SHADER;
   const bool d3dFlag06 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_06;
@@ -760,13 +760,17 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
       if (albedoOpacityLoaded)
       {
+        // cvDiffuseMin = TFACTOR
+        // cvDiffuseRange = opaqueSurfaceMaterial.albedoOpacityConstant.rgb
+        // cvPowers.x = opaqueSurfaceMaterial.albedoOpacityConstant.w
+
+
         // solid paint layer
         //albedo = opaqueSurfaceMaterial.albedoOpacityConstant.rgb;
         //f16vec3 vinyl_color = albedoOpacitySample.rgb  lerp(albedoOpacitySample.rgb, albedo, d3dModVehicleShader_vinylscale);
         //float vinyl_mask = albedoOpacitySample.a; // 0 = paint, 1 = vinyl
         //albedo = lerp(albedo, albedoOpacitySample.rgb, vinyl_mask); // good but does not use vinylscale
         
-
 
         // PRETTY GOOD
         //albedo = opaqueSurfaceMaterial.albedoOpacityConstant.rgb;
@@ -775,21 +779,10 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
         //albedo = lerp(albedo, vinyl_color, vinyl_mask); // good but does not use vinylscale
 
 
-
-
         //albedo = lerp(albedo, surfaceInteraction.vertexColor.rgb, cb.debugKnob.x); // does not work
         //albedo = lerp(albedo, tFactor.rgb, cb.debugKnob.y); // works
 
-        // cvDiffuseMin = TFACTOR
-        // cvDiffuseRange = opaqueSurfaceMaterial.albedoOpacityConstant.rgb
-        // cvPowers.x = opaqueSurfaceMaterial.albedoOpacityConstant.w
-
-
-        // surfaceInteraction.interpolatedNormal
-
-        //CameraDirections c = cameraScreenUVToDirection(cb.camera, vec2(0.5, 0.5));
-        //c.viewDirection
-
+        
         vec3 viewDirection = normalize(cameraGetWorldPosition(cb.camera) - surfaceInteraction.position);
 
         float invDist = rsqrt(dot(viewDirection, viewDirection));
@@ -798,13 +791,17 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
         float NdotV_raw = dot(surfaceInteraction.interpolatedNormal, V);
         float NdotV = saturate(NdotV_raw);
 
-        float viewPower = tFactor.a + cb.debugKnob.x; // Powers.x
+        float viewPower = opaqueSurfaceMaterial.m_freeFloat03; // Powers.x
         float viewSpec = pow(NdotV, viewPower);
 
-        float specDiff = min(viewSpec, opaqueSurfaceMaterial.m_freeFloat03 + cb.debugKnob.y); // ClampScales.x
-        float scaledDiff = specDiff * opaqueSurfaceMaterial.m_freeFloat04 + cb.debugKnob.z; // ClampScales.z
+        float specDiff = min(viewSpec, tFactor.a); // ClampScales.x
+        float scaledDiff = specDiff * opaqueSurfaceMaterial.m_freeFloat04; // ClampScales.z
 
-        albedo = tFactor.rgb + scaledDiff * opaqueSurfaceMaterial.albedoOpacityConstant.rgb;
+        // some colors go above 1 so we assume a range of 0-2 on the game side, scaled down to 0-1 so they fit in 8bits
+        // -> rescale to 0-2 here
+
+        f16vec3 scaled_paint_color = opaqueSurfaceMaterial.albedoOpacityConstant.rgb * 2.0f; 
+        albedo = tFactor.rgb + scaledDiff * scaled_paint_color;
 
         
 
@@ -974,7 +971,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   #endif
 
   #if 1
-  if (d3dModRoughnessScalar)
+  if (d3dModRoughness)
   {
     uint packedBits1 = uint(opaqueSurfaceMaterial.m_packedParams1);
     uint packedBits2 = uint(opaqueSurfaceMaterial.m_packedParams2);
@@ -1371,6 +1368,9 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     }
 
     roughness = saturate(lerp(roughness, roughness * scalar, wetblendForRoughness));
+
+    roughness *= (1.0f + cb.debugKnob.w);
+
   }
   #endif
 
