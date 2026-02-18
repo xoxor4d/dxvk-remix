@@ -74,6 +74,7 @@ template<> OpaqueMaterialData LegacyMaterialData::as() const {
   if (!ignoreAlphaChannel) {
     ignoreAlphaChannel = lookupHash(RtxOptions::ignoreAlphaOnTextures(), getHash());
   }
+  opaqueMat.setHash(getHash());
   opaqueMat.setIgnoreAlphaChannel(ignoreAlphaChannel);
   return opaqueMat;
 }

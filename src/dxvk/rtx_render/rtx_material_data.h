@@ -269,6 +269,10 @@ struct name##Data {                                                             
     m_ignoreAlphaChannelOverride = ignoreAlphaChannel;                                               \
   }                                                                                                  \
                                                                                                      \
+  void setHash(XXH64_hash_t hash) {                                                                  \
+    m_cachedHash = hash;                                                                             \
+}                                                                                                    \
+                                                                                                     \
   const bool getIgnoreAlphaChannel() const {                                                         \
     return m_ignoreAlphaChannelOverride;                                                             \
   }                                                                                                  \
