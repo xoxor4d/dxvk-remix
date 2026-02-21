@@ -1235,19 +1235,23 @@ namespace dxvk {
       }
 
       if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_VEHICLE_SHADER) {
-        d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_VEHICLE_SHADER;
-        const uint32_t p1 = drawCallState.materialData.remixPackedParams_RS211FromD3D; // rgba
-        const uint32_t p2 = drawCallState.materialData.remixPackedParams_RS212FromD3D; // roughness, metallic, free, flags
+        const bool disableCarPaint = drawCallState.testCategoryFlags(InstanceCategories::IgnoreAntiCulling);
+        if (!disableCarPaint) // can be used to manually disable car paint shader for certain textures
+        {
+          d3dModifierFlags |= REMIX_MODIFIER_TO_SHADER_VEHICLE_SHADER;
+          const uint32_t p1 = drawCallState.materialData.remixPackedParams_RS211FromD3D; // rgba
+          const uint32_t p2 = drawCallState.materialData.remixPackedParams_RS212FromD3D; // roughness, metallic, free, flags
 
-        albedoOpacityConstant.x = ((p1 >> 0) & 0xFF) / 255.0f;
-        albedoOpacityConstant.y = ((p1 >> 8) & 0xFF) / 255.0f;
-        albedoOpacityConstant.z = ((p1 >> 16) & 0xFF) / 255.0f;
-        albedoOpacityConstant.w = ((p1 >> 16) & 0xFF) / 255.0f;
+          albedoOpacityConstant.x = ((p1 >> 0) & 0xFF) / 255.0f;
+          albedoOpacityConstant.y = ((p1 >> 8) & 0xFF) / 255.0f;
+          albedoOpacityConstant.z = ((p1 >> 16) & 0xFF) / 255.0f;
+          albedoOpacityConstant.w = ((p1 >> 16) & 0xFF) / 255.0f;
 
-        packedParams1 = uint16_t(p2 & 0xFFFF);       // Lower 16 bits
-        packedParams2 = uint16_t(p2 >> 16 & 0xFFFF); // Upper 16 bits
-        freeFloat03 = drawCallState.materialData.remixFloatRS213FromD3D; // cvClampAndScales.x
-        freeFloat04 = drawCallState.materialData.remixFloatRS214FromD3D; // cvClampAndScales.z
+          packedParams1 = uint16_t(p2 & 0xFFFF);       // Lower 16 bits
+          packedParams2 = uint16_t(p2 >> 16 & 0xFFFF); // Upper 16 bits
+          freeFloat03 = drawCallState.materialData.remixFloatRS213FromD3D; // cvClampAndScales.x
+          freeFloat04 = drawCallState.materialData.remixFloatRS214FromD3D; // cvClampAndScales.z
+        }
       }
 
       subsurfaceMeasurementDistance = opaqueMaterialData.getSubsurfaceMeasurementDistance() * RtxOptions::SubsurfaceScattering::surfaceThicknessScale();
