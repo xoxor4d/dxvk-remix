@@ -1108,7 +1108,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     const bool enableRaindrops = wetnessFlags & (1u << 1);
     const bool useTextureCoordsForRaindrops = wetnessFlags & (1u << 2);
     const bool useExpRaindrops = wetnessFlags & (1u << 3);
-    const bool raindropsHalfDensity = wetnessFlags & (1u << 4);
+    const bool largeOcclusionDistance = wetnessFlags & (1u << 4);
     const bool enablePuddleLayer = wetnessFlags & (1u << 5);
     const bool enableOcclusionCheck = wetnessFlags & (1u << 6);
     const bool useSmoothOcclusion = wetnessFlags & (1u << 7);
@@ -1120,7 +1120,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     float16_t wetblendForRoughness = wetblendBase;      // allows puddle logic to add detail without destroying base blend
 
     float raindropScaleMult = (raindropScale > 0.0f ? max(raindropScale, 0.1f) : 3.0f);
-    float animationSpeedMult = 0.1f + cb.debugKnob.x;
+    float animationSpeedMult = 0.1f;
     float raindropStrength = 5.0f;
     float raindropRoughnessScale = 2.7f;
     float raindropNormalScale = 0.5f;
@@ -1149,7 +1149,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     // Calculate occlusion factor for wetness (only check within occlusion distance)
     // Distance fade: blend from half the distance to full distance for smooth transition
     // Only check occlusion for horizontal surfaces - vertical walls don't need overhead occlusion checks
-    float16_t occlusionCheckDistance = float16_t(120.0h + cb.debugKnob.y);
+    float16_t occlusionCheckDistance = float16_t(120.0h * (largeOcclusionDistance ? 4.0h : 1.0h) + cb.debugKnob.y);
     float occlusionFactor = 1.0f;
 
     if (enableOcclusionCheck && !isVerticalWall && cameraDistanceHalf <= float16_t(occlusionCheckDistance))
@@ -1255,8 +1255,8 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
         }
         
         // Hardcoded noise grid scale (larger = larger puddles but fewer)
-        const float baseNoiseScale = 0.15f;
-        const float noiseGridScale = 0.3f;
+        const float baseNoiseScale = 0.15f + cb.debugKnob.x;
+        const float noiseGridScale = 0.3f + cb.debugKnob.z;
         float reflectivePuddleNoiseScale = baseNoiseScale * max(0.1f, noiseGridScale);
         
         // Use multiple noise octaves for better puddle distribution
@@ -1338,7 +1338,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     
         // params
         const int GRID_NEIGHBOR = 2;
-        float grid_scale = 3.4f * raindropScaleMult + (-4.4f) * (raindropsHalfDensity ? 0.3f : 0.85f); // 0.3 and 0.8
+        float grid_scale = 3.4f * raindropScaleMult + (-4.4f) * 0.85f;
         float spawn_period = 3.5f + (-2.9f);
         float drop_life = 1.2f + (-0.9f);
         float ripple_speed = 1.6f * raindropScaleMult;
@@ -1558,7 +1558,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
       const float speedBase = 1.6f;
       const float radiusBase = 0.1f;
       const float normalBase = 5.9f;
-      float densityBias = max(0.1f, densityBase + (raindropsHalfDensity ? -0.2f : 0.4f)); // +0.4 lighting density and -0.2 for drizzle?
+      float densityBias = max(0.1f, densityBase + 0.4f);
       float speedBias = max(0.2f, speedBase);
       float radiusBias = max(0.02f, radiusBase);
       float normalBias = max(0.1f, normalBase + 3.0f);
