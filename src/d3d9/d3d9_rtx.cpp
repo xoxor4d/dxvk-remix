@@ -650,6 +650,7 @@ namespace dxvk {
       m_activeDrawCallState.materialData.textureColorOperation = DxvkRtTextureOperation::Modulate;
       m_activeDrawCallState.materialData.textureColorArg1Source = RtTextureArgSource::Texture;
       m_activeDrawCallState.materialData.textureColorArg2Source = RtTextureArgSource::VertexColor0;
+      m_activeDrawCallState.materialData.isTextureFactorBlend = true; // always mul with tFactor (fine because set to 1 1 1 1 by default) - fixes vehicle paint/rims
     }
 
     // Max offseted index value within a buffer slice that geoData contains
