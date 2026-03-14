@@ -588,8 +588,8 @@ struct RtOpaqueSurfaceMaterial {
     uint32_t samplerIndex, float displaceIn, float displaceOut,
     uint32_t subsurfaceMaterialIndex, bool isRaytracedRenderTarget,
     uint16_t samplerFeedbackStamp,
-    uint32_t secondaryTextureIndex = 0,
-    uint32_t samplerIndex1, uint32_t samplerIndex2, uint32_t bikRTextureIndex, uint32_t bikBTextureIndex, uint8_t d3dModifierFlags
+    uint32_t samplerIndex1, uint32_t samplerIndex2, uint32_t bikRTextureIndex, uint32_t bikBTextureIndex, uint8_t d3dModifierFlags,
+    uint32_t secondaryTextureIndex = 0
   ) :
     m_albedoOpacityTextureIndex{ albedoOpacityTextureIndex }, m_secondaryTextureIndex{secondaryTextureIndex}, m_normalTextureIndex{ normalTextureIndex },
     m_tangentTextureIndex { tangentTextureIndex }, m_heightTextureIndex { heightTextureIndex }, m_roughnessTextureIndex{ roughnessTextureIndex },
@@ -602,7 +602,7 @@ struct RtOpaqueSurfaceMaterial {
     m_thinFilmThicknessConstant { thinFilmThicknessConstant }, m_samplerIndex{ samplerIndex }, m_displaceIn{ displaceIn },
     m_displaceOut{ displaceOut }, m_subsurfaceMaterialIndex(subsurfaceMaterialIndex), m_isRaytracedRenderTarget(isRaytracedRenderTarget),
     m_samplerFeedbackStamp{ samplerFeedbackStamp },
-    m_bikRTextureIndex{ bikRTextureIndex }, m_bikBTextureIndex{ bikBTextureIndex }, m_samplerIndex1{ samplerIndex1 }, m_samplerIndex2{ samplerIndex2 }, m_d3dModifierFlags{ d3dModifierFlags }
+    m_samplerIndex1{ samplerIndex1 }, m_samplerIndex2{ samplerIndex2 }, m_bikRTextureIndex { bikRTextureIndex }, m_bikBTextureIndex { bikBTextureIndex }, m_d3dModifierFlags{ d3dModifierFlags }
   {
     updateCachedData();
     updateCachedHash();

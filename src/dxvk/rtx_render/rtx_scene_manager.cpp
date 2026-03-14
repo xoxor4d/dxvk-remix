@@ -1339,8 +1339,8 @@ namespace dxvk {
         thinFilmThicknessConstant, samplerIndex, displaceIn, displaceOut, 
         subsurfaceMaterialIndex, isUsingRaytracedRenderTarget,
         samplerFeedbackStamp,
-        secondaryTextureIndex,
         samplerIndex1, samplerIndex2, bikRTextureIndex, bikBTextureIndex, d3dModifierFlags,
+        secondaryTextureIndex,
       };
 
       if (opaqueSurfaceMaterial.hasValidDisplacement()) {
