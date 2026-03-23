@@ -137,6 +137,7 @@ std::unordered_map<uint32_t, void*> gMapRemixApi;
 
 // Global state
 bool gbBridgeRunning = true;
+bool gbDeviceReused = false;
 HANDLE hWait;
 
 namespace {
@@ -321,8 +322,22 @@ void ProcessDeviceCommandQueue() {
         DeviceBridge::get_data((void**) &rawPresentationParameters);
         D3DPRESENT_PARAMETERS PresentationParameters = getPresParamFromRaw(rawPresentationParameters);
 
+        HRESULT hresult;
+        if (!gpD3DDevices.empty()) {
+          Logger::info("Skipping second CreateDeviceEx - returning existing device to client.");
+          gpD3DDevices[pHandle] = gpD3DDevices.begin()->second;
+          gbDeviceReused = true;
+          hresult = S_OK;
+          Logger::debug("Sending CreateDevice ack response back to client.");
+          {
+            ServerMessage c(Commands::Bridge_Response, currentUID);
+            c.send_data(hresult);
+          }
+          break;
+        }
+
         IDirect3DDevice9Ex* pD3DDevice = nullptr;
-        const auto hresult = ((IDirect3D9Ex*) gpD3D)->CreateDeviceEx(IN Adapter, IN DeviceType, IN TRUNCATE_HANDLE(HWND, hFocusWindow), IN BehaviorFlags, IN OUT & PresentationParameters, IN pFullscreenDisplayMode, OUT & pD3DDevice);
+        hresult = ((IDirect3D9Ex*) gpD3D)->CreateDeviceEx(IN Adapter, IN DeviceType, IN TRUNCATE_HANDLE(HWND, hFocusWindow), IN BehaviorFlags, IN OUT & PresentationParameters, IN pFullscreenDisplayMode, OUT & pD3DDevice);
         if (!SUCCEEDED(hresult)) {
           std::stringstream ss;
           ss << format_string("CreateDeviceEx() call failed with error code 0x%x", hresult) << std::endl;
@@ -356,17 +371,17 @@ void ProcessDeviceCommandQueue() {
         DeviceBridge::get_data((void**) &rawPresentationParameters);
         D3DPRESENT_PARAMETERS PresentationParameters = getPresParamFromRaw(rawPresentationParameters);
 
-        IDirect3DDevice9* pD3DDevice = nullptr;
-        const auto hresult = gpD3D->CreateDevice(IN Adapter, IN DeviceType, IN TRUNCATE_HANDLE(HWND, hFocusWindow), IN BehaviorFlags, IN OUT & PresentationParameters, OUT & pD3DDevice);
+        IDirect3DDevice9Ex* pD3DDevice = nullptr;
+        const auto hresult = ((IDirect3D9Ex*) gpD3D)->CreateDeviceEx(IN Adapter, IN DeviceType, IN TRUNCATE_HANDLE(HWND, hFocusWindow), IN BehaviorFlags, IN OUT & PresentationParameters, IN nullptr, OUT & pD3DDevice);
         if (!SUCCEEDED(hresult)) {
           std::stringstream ss;
           ss << format_string("CreateDevice() call failed with error code 0x%x", hresult) << std::endl;
           Logger::err(ss.str());
         } else {
-          Logger::info("Server side D3D9 Device created successfully!");
-          gpD3DDevices[pHandle] = (IDirect3DDevice9Ex*) pD3DDevice;
+          Logger::info("Server side D3D9 DeviceEx created successfully (upgraded from CreateDevice)!");
+          gpD3DDevices[pHandle] = pD3DDevice;
           if(GlobalOptions::getExposeRemixApi()) {
-            remixapi::g_device = (IDirect3DDevice9Ex*) pD3DDevice;
+            remixapi::g_device = pD3DDevice;
             remixapi::g_remix.dxvk_RegisterD3D9Device(remixapi::g_device);
           }
         }
@@ -500,9 +515,15 @@ void ProcessDeviceCommandQueue() {
         break;
       case IDirect3DDevice9Ex_Destroy:
       {
-        GET_RES(pD3DDevice, gpD3DDevices);
-        safeDestroy(pD3DDevice, pD3DDeviceHandle);
-        gpD3DDevices.erase(pD3DDeviceHandle);
+        if (gbDeviceReused) {
+          Logger::info("Skipping device Release (reused device) - removing old handle from map only.");
+          GET_HND(pD3DDeviceHandle);
+          gpD3DDevices.erase(pD3DDeviceHandle);
+        } else {
+          GET_RES(pD3DDevice, gpD3DDevices);
+          safeDestroy(pD3DDevice, pD3DDeviceHandle);
+          gpD3DDevices.erase(pD3DDeviceHandle);
+        }
         break;
       }
       case IDirect3DDevice9Ex_TestCooperativeLevel:
@@ -3436,8 +3457,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
     return 1;
   }
   if (wcscmp(argList[1], BRIDGE_VERSION_W) != 0) {
-    Logger::err(format_string("Client (%s) and server (%s) version numbers do not match. Mixed version runtime execution is currently not supported! Exiting...", argList[1], BRIDGE_VERSION));
-    return 1;
+    Logger::warn(format_string("Client (%s) and server (%s) version numbers do not match. Continuing anyway (patched build)...", argList[1], BRIDGE_VERSION));
   }
   LocalFree(argList);
 
