@@ -98,8 +98,7 @@ void processModuleCommandQueue(std::atomic<bool>* const pbSignalEnd) {
       }
       case IDirect3D9Ex_Destroy:
       {
-        bridge_util::Logger::info("D3D9 Module destroyed.");
-        destroyReceived = true;
+        bridge_util::Logger::info("D3D9 Module destroy requested (ignored - keeping module thread alive for device reuse).");
         break;
       }
       case IDirect3D9Ex_RegisterSoftwareDevice:
