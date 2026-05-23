@@ -21,6 +21,7 @@
 */
 #include "rtx/pass/tonemap/tonemapping.slangh"
 #include "rtx/pass/tonemap/tonemapping_noise.slangh"
+#include "rtx/pass/tonemap/color_grading.slangh"
 #include "rtx/utility/math.slangh"
 #include "rtx/utility/color.slangh"
 
@@ -41,33 +42,6 @@ RWTexture2D<float4> OutColorBuffer;
 
 layout(push_constant)
 ConstantBuffer<ToneMappingApplyToneMappingArgs> cb;
-
-float lumaAverage(float3 color) 
-{
-  return dot(color, float3(1.f / 3.f));
-}
-
-float3 setSaturation(float3 color, float saturation) 
-{
-  return mix(float3(calcBt709Luminance(color)), color, saturation);
-}
-
-float3 setSaturationAverage(float3 color, float saturation) 
-{
-  return mix(float3(lumaAverage(color)), color, saturation);
-}
-
-float3 colorGrading(float3 inputColor) 
-{
-  // Apply color temperature & tint
-  inputColor = inputColor * cb.colorBalance;
-  
-  // Adjust contrast & saturation
-  inputColor = saturate((cb.contrast * (inputColor - 0.18f)) + 0.18f); // 0.18 = Mid level grey
-  inputColor = setSaturation(inputColor, cb.saturation);
-  
-  return inputColor;
-}
 
 // Photographic Tone Reproduction for Digital Images
 // http://www.cs.utah.edu/~reinhard/cdrom/tonemap.pdf
@@ -166,7 +140,7 @@ float3 applyToneMapping(float3 color, uint2 pixelPosition)
   
   if (cb.colorGradingEnabled > 0)
   {
-    color = colorGrading(color);
+    color = applyColorGrading(color, cb.colorBalance, cb.contrast, cb.saturation);
   }
 
   if (cb.performSRGBConversion > 0)

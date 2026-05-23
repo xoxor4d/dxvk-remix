@@ -20,6 +20,7 @@
 * DEALINGS IN THE SOFTWARE.
 */
 #include "rtx_local_tone_mapping.h"
+#include "rtx_tone_mapping.h"
 #include "dxvk_device.h"
 #include "dxvk_scoped_annotation.h"
 #include "rtx_render/rtx_shader_manager.h"
@@ -278,6 +279,10 @@ namespace dxvk {
       pushArgs.performSRGBConversion = performSRGBConversion;
       pushArgs.finalizeWithACES = finalizeWithACES();
       pushArgs.useLegacyACES = RtxOptions::useLegacyACES();
+      pushArgs.colorGradingEnabled = DxvkToneMapping::colorGradingEnabled();
+      pushArgs.colorBalance = DxvkToneMapping::colorBalance();
+      pushArgs.contrast = DxvkToneMapping::contrast();
+      pushArgs.saturation = DxvkToneMapping::saturation();
       switch (ditherMode()) {
       case DitherMode::None: pushArgs.ditherMode = ditherModeNone; break;
       case DitherMode::Spatial: pushArgs.ditherMode = ditherModeSpatialOnly; break;
