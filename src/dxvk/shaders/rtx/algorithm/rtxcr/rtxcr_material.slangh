@@ -73,7 +73,7 @@ SssTracingResult traceSssRay(
   SssTracingResult sssTracingResult;
   sssTracingResult.hasHit = rayHitInfo.hasHit;
   sssTracingResult.hitDistance = sssTracingResult.hasHit ? rayHitInfo.hitDistance : -1.0h;
-  sssTracingResult.subsurfaceMaterialIndex = sssTracingResult.hasHit ? sssOpaqueSurfaceMaterial.subsurfaceMaterialIndex : SURFACE_INDEX_INVALID;
+  sssTracingResult.subsurfaceMaterialIndex = sssTracingResult.hasHit ? sssOpaqueSurfaceMaterial.subsurfaceMaterialIndex : BINDING_INDEX_INVALID;
   sssTracingResult.sssMinimalSurfaceInteraction.position = surfaceInteraction.position;
   sssTracingResult.sssMinimalSurfaceInteraction.positionError = surfaceInteraction.positionError;
   sssTracingResult.sssMinimalSurfaceInteraction.triangleNormal = surfaceInteraction.triangleNormal;
