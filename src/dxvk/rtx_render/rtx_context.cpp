@@ -22,6 +22,9 @@
 #include <cstring>
 #include <cmath>
 #include <cassert>
+#include <array>
+#include <fstream>
+#include <chrono>
 
 #include "dxvk_device.h"
 #include "dxvk_scoped_annotation.h"
@@ -70,6 +73,9 @@
 
 #include "rtx_matrix_helpers.h"
 #include "../util/util_fastops.h"
+
+#include "rtx_fork_hooks.h"
+#include "rtx_fork_weather.h"
 
 // Destructor requires the struct definitions
 #include "rtx_sky.h"
@@ -197,6 +203,9 @@ namespace dxvk {
 
     GlobalTime::get().init(RtxOptions::timeDeltaBetweenFrames() * 0.001f);
     GlobalTime::get().setAdvanceTime(RtxOptions::advanceTime());
+
+    fork_hooks::initAtmosphere(*this);
+    m_weatherBlender = std::make_unique<fork_weather::WeatherBlender>();
   }
 
   RtxContext::~RtxContext() {
@@ -731,6 +740,9 @@ namespace dxvk {
         const bool performSRGBConversion = !captureScreenImage && g_allowSrgbConversionForOutput;
         dispatchToneMapping(rtOutput, performSRGBConversion);
 
+        // Composite screen overlay (from external C API) after tone mapping, before screenshot capture.
+        dispatchScreenOverlay(rtOutput);
+
         if (captureScreenImage) {
           if (m_common->metaDebugView().debugViewIdx() == DEBUG_VIEW_DISABLED) {
             takeScreenshot("rtxImagePostTonemapping", rtOutput.m_finalOutput.resource(Resources::AccessType::Read).image);
@@ -817,6 +829,7 @@ namespace dxvk {
 
     // Update time on the frame end so all other systems can benefit from a global time
     GlobalTime::get().update();
+    fork_hooks::updateWeatherBlender(*this, GlobalTime::get().deltaTime());
   }
 
   // Called right before D3D9 present
@@ -978,6 +991,14 @@ namespace dxvk {
 
   void RtxContext::commitExternalGeometryToRT(ExternalDrawState&& state) {
     getSceneManager().submitExternalDraw(this, std::move(state));
+  }
+
+  void RtxContext::setScreenOverlayData(Rc<DxvkBuffer> stagingBuffer, uint32_t width, uint32_t height, VkFormat format, float opacity) {
+    m_pendingScreenOverlay = ScreenOverlayFrame {
+      std::move(stagingBuffer),
+      width, height,
+      format, opacity
+    };
   }
 
   static uint32_t jenkinsHash(uint32_t a) {
@@ -1322,6 +1343,8 @@ namespace dxvk {
     constants.resolveStochasticAlphaBlendThreshold = m_common->metaComposite().stochasticAlphaBlendOpacityThreshold();
 
     constants.skyBrightness = RtxOptions::skyBrightness();
+    fork_hooks::updateAtmosphereConstants(*this, constants);
+
     constants.isLastCompositeOutputValid = restirGI.isActive() && restirGI.getLastCompositeOutput().matchesWriteFrameIdx(frameIdx - 1);
     constants.isZUp = RtxOptions::zUp();
     constants.enableCullingSecondaryRays = RtxOptions::enableCullingInSecondaryRays();
@@ -1412,6 +1435,8 @@ namespace dxvk {
     bindResourceView(BINDING_VALUE_NOISE_SAMPLER, valueNoiseLut, nullptr);
     bindResourceSampler(BINDING_VALUE_NOISE_SAMPLER, linearSampler);
     bindResourceBuffer(BINDING_SAMPLER_READBACK_BUFFER, DxvkBufferSlice(samplerFeedbackBuffer, 0, samplerFeedbackBuffer.ptr() ? samplerFeedbackBuffer->info().size : 0));
+
+    fork_hooks::bindAtmosphereLuts(*this);
   }
 
   void RtxContext::bindResourceView(const uint32_t slot, const Rc<DxvkImageView>& imageView, const Rc<DxvkBufferView>& bufferView)
@@ -1755,19 +1780,12 @@ namespace dxvk {
     // but the reset of denoised buffers causes wide tone curve differences
     // until it converges and thus making comparison of raytracing mode outputs more difficult
     setFramePassStage(RtxFramePassStage::ToneMapping);
-    if (RtxOptions::tonemappingMode() == TonemappingMode::Global) {
+    // Operator-only tonemapping (dynamic tone curve removed in the 2026-05-13 refactor).
+    {
       DxvkToneMapping& toneMapper = m_common->metaToneMapping();
-      toneMapper.dispatch(this, 
-        getResourceManager().getSampler(VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER),
+      toneMapper.dispatch(this,
         autoExposure.getExposureTexture().view,
-        rtOutput, GlobalTime::get().deltaTimeMs(), performSRGBConversion, autoExposure.enabled());
-    }
-    DxvkLocalToneMapping& localTonemapper = m_common->metaLocalToneMapping();
-    if (localTonemapper.isActive()) {
-      localTonemapper.dispatch(this,
-        getResourceManager().getSampler(VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE),
-        autoExposure.getExposureTexture().view,
-        rtOutput, GlobalTime::get().deltaTimeMs(), performSRGBConversion, autoExposure.enabled());
+        rtOutput, performSRGBConversion, autoExposure.enabled());
     }
   }
 
@@ -1802,6 +1820,10 @@ namespace dxvk {
       RtxOptions::rngSeedWithFrameIndex() ? m_device->getCurrentFrameId() : 0,
       rtOutput,
       mainCamera.isViewHistoryInvalidated(m_device->getCurrentFrameId()));
+  }
+
+  void RtxContext::dispatchScreenOverlay(Resources::RaytracingOutput& rtOutput) {
+    fork_hooks::dispatchScreenOverlay(*this, rtOutput);
   }
 
   void RtxContext::dispatchDebugView(Rc<DxvkImage>& srcImage, const Resources::RaytracingOutput& rtOutput, bool captureScreenImage)  {
@@ -2596,6 +2618,10 @@ namespace dxvk {
   }
 
   void RtxContext::rasterizeSky(const DrawParameters& params, const DrawCallState& drawCallState) {
+    if (fork_hooks::injectRtxAtmosphereSkySkip()) {
+      return;
+    }
+
     // Grab and apply replacement texture if any
     // NOTE: only the original color texture will be replaced with albedo-opacity texture
     MaterialData* replacementMaterial = getSceneManager().getAssetReplacer()->getReplacementMaterial(drawCallState.getMaterialData().getHash());

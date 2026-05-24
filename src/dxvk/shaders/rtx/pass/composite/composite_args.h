@@ -109,6 +109,9 @@ struct CompositeArgs {
 
   float alphaBlendSurfacePackMult; // for packing/unpacking hitT into Float16 in AlphaBlendSurface
   float postFilterThreshold;
-  float pad1;
+  // pow exponent applied to PrimaryCloudShadowFactor in composite. 1.0 keeps
+  // the wire-in factor as-is; >1 darkens cumulus shadows, <1 fades them.
+  // Mirrored from RtxOptions::cloudShadowFactorStrength().
+  float cloudShadowFactorStrength;
   float pad2;
 };

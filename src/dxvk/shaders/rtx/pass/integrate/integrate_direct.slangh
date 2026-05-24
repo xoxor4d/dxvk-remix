@@ -82,6 +82,11 @@ void integrate_direct_pass(uvec2 threadIndex)
     return;
   }
 
+  // Default the per-pixel cumulus shadow factor to 1.0 (no modulation) before
+  // any early-out below can skip the sun-NEE call site. evalAtmosphereSunNEE
+  // overwrites this for the pixels it actually visits (fork — 2026-05-18).
+  PrimaryCloudShadowFactor[threadIndex] = 1.0f;
+
   uvec2 pixelCoordinate = threadIndex;
 
   // Deserialize flags

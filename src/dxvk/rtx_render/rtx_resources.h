@@ -267,6 +267,14 @@ namespace dxvk
       Resource m_primaryPositionError;
       AliasedResource m_primaryRtxdiIlluminance[2];
       AliasedResource m_primaryRtxdiTemporalPosition;
+      // Per-pixel cumulus shadow factor (fork — 2026-05-18). Written by
+      // integrate_direct's surface sun NEE (ratio newShadow / oldShadow against
+      // the legacy uniform shadow that is already baked into the radiance via
+      // getTransmittanceToSun), consumed by composite to modulate the
+      // post-denoise primary direct radiance. Carries the high-frequency
+      // cumulus pattern around the denoiser so NRD/DLSS-RR cannot smooth the
+      // per-cloud variation away. 1.0 = no modulation.
+      Resource m_primaryCloudShadowFactor;
       Resource m_primarySurfaceFlags;
       Resource m_primaryDisocclusionThresholdMix;
       AliasedResource m_primaryDisocclusionMaskForRR;
@@ -398,6 +406,9 @@ namespace dxvk
     Rc<DxvkImageView> getWhiteTexture(Rc<DxvkContext> ctx);
     Resources::Resource getSkyProbe(Rc<DxvkContext> ctx, VkFormat format = VK_FORMAT_UNDEFINED);
     Resources::Resource getSkyMatte(Rc<DxvkContext> ctx, VkFormat format = VK_FORMAT_UNDEFINED);
+    Resources::Resource getAtmosphereTransmittanceLut(Rc<DxvkContext> ctx);
+    Resources::Resource getAtmosphereMultiscatteringLut(Rc<DxvkContext> ctx);
+    Resources::Resource getAtmosphereSkyViewLut(Rc<DxvkContext> ctx);
     Rc<DxvkImageView> getCompatibleViewForView(const Rc<DxvkImageView>& view, VkFormat format);
 
     Rc<DxvkSampler> getSampler(const VkFilter filter, const VkSamplerMipmapMode mipFilter,
@@ -470,6 +481,10 @@ namespace dxvk
 
     Resources::Resource m_skyProbe;
     Resources::Resource m_skyMatte;
+
+    Resources::Resource m_atmosphereTransmittanceLut;
+    Resources::Resource m_atmosphereMultiscatteringLut;
+    Resources::Resource m_atmosphereSkyViewLut;
 
     fast_unordered_cache<Rc<DxvkSampler>> m_samplerCache;
     fast_unordered_cache<std::pair<Rc<DxvkImageView>, uint32_t>> m_viewCache;
