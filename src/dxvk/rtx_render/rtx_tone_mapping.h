@@ -53,6 +53,8 @@ namespace dxvk {
 
     void showImguiSettings();
 
+    static void showImguiColorGradingSettings();
+
   private:
     void createResources(Rc<RtxContext> ctx);
 

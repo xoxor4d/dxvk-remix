@@ -22,6 +22,7 @@
 #include "rtx/pass/local_tonemap/local_tonemapping.slangh"
 #include "rtx/pass/tonemap/tonemapping.slangh"
 #include "rtx/pass/tonemap/tonemapping_noise.slangh"
+#include "rtx/pass/tonemap/color_grading.slangh"
 
 [[vk::binding(FINAL_COMBINE_BLUE_NOISE_TEXTURE_INPUT)]]
 Texture2DArray BlueNoise;
@@ -108,6 +109,10 @@ void main(uint2 threadId : SV_DispatchThreadID)
   if (cb.finalizeWithACES)
   {
     texelFinal = ACESFilm(texelFinal, cb.useLegacyACES);
+  }
+  if (cb.colorGradingEnabled > 0)
+  {
+    texelFinal = applyColorGrading(texelFinal, cb.colorBalance, cb.contrast, cb.saturation);
   }
   if (cb.performSRGBConversion)
   {

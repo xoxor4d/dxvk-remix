@@ -103,10 +103,19 @@ struct FinalCombineArgs
   uint enableAutoExposure;
   uint pad0;
 
+  // Color grading (rtx.tonemap options)
+  vec3 colorBalance;
+  uint colorGradingEnabled;
+
+  float contrast;
+  float saturation;
   uint ditherMode;
   uint frameIndex;
+
   uint useLegacyACES;
+  uint pad1;
   uint pad2;
+  uint pad3;
 };
 
 
