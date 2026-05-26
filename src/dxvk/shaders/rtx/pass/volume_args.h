@@ -99,7 +99,7 @@ struct VolumeArgs {
   uint resetHistory;
   uint16_t enableTranslucentShadows;
   uint16_t pad0;
-  uint pad1;
+  float fogSunVisibilityGain;
 };
 
 #ifdef __cplusplus
