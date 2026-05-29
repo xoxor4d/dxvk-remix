@@ -45,22 +45,22 @@
 #define DEBUG_VIEW_BINDING_TERRAIN_INPUT                                                   17
 
 // Fork: per-frame cloud-occluded sky-ambient transmittance LUT (32x16 R16F)
-#define DEBUG_VIEW_BINDING_CLOUD_SKY_TRANSMITTANCE_LUT_INPUT                                34
+#define DEBUG_VIEW_BINDING_CLOUD_SKY_TRANSMITTANCE_LUT_INPUT                                35
 
 // Fork: Nubis Cubed cloud voxel grids (D_sun = sun-direction optical depth,
 // D_ambient = zenith optical depth). Sampled by DEBUG_VIEW_CLOUD_D_SUN /
 // DEBUG_VIEW_CLOUD_D_AMBIENT debug views.
-#define DEBUG_VIEW_BINDING_CLOUD_D_SUN_INPUT                                                35
-#define DEBUG_VIEW_BINDING_CLOUD_D_AMBIENT_INPUT                                            36
+#define DEBUG_VIEW_BINDING_CLOUD_D_SUN_INPUT                                                36
+#define DEBUG_VIEW_BINDING_CLOUD_D_AMBIENT_INPUT                                            37
 
 // Fork: Nubis Cubed screen-space cloud render RT (2026-05-12, C4). Sampled
 // by DEBUG_VIEW_CLOUD_RENDER_RT (enum 876).
-#define DEBUG_VIEW_BINDING_CLOUD_RENDER_RT_INPUT                                            37
+#define DEBUG_VIEW_BINDING_CLOUD_RENDER_RT_INPUT                                            38
 
 // Fork: post-denoise cumulus shadow factor texture (2026-05-18). Sampled by
 // DEBUG_VIEW_CLOUD_SHADOW_FACTOR_RAW (enum 878) to verify the saturate-clamp
 // hypothesis before changing composite math.
-#define DEBUG_VIEW_BINDING_PRIMARY_CLOUD_SHADOW_FACTOR_INPUT                                 38
+#define DEBUG_VIEW_BINDING_PRIMARY_CLOUD_SHADOW_FACTOR_INPUT                                 39
 
 #define DEBUG_VIEW_BINDING_VOLUME_RESERVOIRS_INPUT                                         19
 #define DEBUG_VIEW_BINDING_VOLUME_AGE_INPUT                                                20
