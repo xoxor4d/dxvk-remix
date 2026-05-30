@@ -821,8 +821,19 @@ namespace dxvk { namespace fork_weather {
       return;
     }
 
+    float t = 0.0f;
+
+    // check if absolute value was provided - use blend in sec otherwise
+    if (const auto curr = readFloatFromGameStateStore("__weather.blend_absolute", -1.0f); curr != -1.0f) {
+      t = curr;
+    } else {
+      // Step 5: compute interpolation parameter.
+      t = saturate((m_currentTimeSec - m_blendStartTimeSec) / m_blendDurationSec);
+    }
+
     // Step 4: handle retarget or first activation.
-    if (newTarget != m_targetPresetName) {
+    if (newTarget != m_targetPresetName || t == 0.0f) 
+    { // 
       if (m_targetPresetName.empty()) {
         // First activation: snapshot current live renderer state.
         m_previousSnapshot    = snapshotCurrentValues();
@@ -830,14 +841,14 @@ namespace dxvk { namespace fork_weather {
       } else {
         // Mid-blend retarget: capture the partially-blended state.
         // Lerp logic lives in lerpSnapshot (anonymous namespace).
-        float currentT = saturate(
-          (m_currentTimeSec - m_blendStartTimeSec) / std::max(0.001f, m_blendDurationSec));
+        //float currentT = saturate(
+        //  (m_currentTimeSec - m_blendStartTimeSec) / std::max(0.001f, m_blendDurationSec));
 
         WeatherSnapshot oldTargetValues;
         readPresetValues(m_targetPresetName, oldTargetValues);
 
         // Build retarget snapshot by lerping prev toward the old target at currentT.
-        m_previousSnapshot   = lerpSnapshot(m_previousSnapshot, oldTargetValues, currentT);
+        m_previousSnapshot = oldTargetValues; //lerpSnapshot(m_previousSnapshot, oldTargetValues, 1.0f /*t*/ /*currentT*/);
         m_previousPresetName = m_targetPresetName;
       }
 
@@ -846,8 +857,7 @@ namespace dxvk { namespace fork_weather {
       m_blendStartTimeSec  = m_currentTimeSec;
     }
 
-    // Step 5: compute interpolation parameter.
-    float t = saturate((m_currentTimeSec - m_blendStartTimeSec) / m_blendDurationSec);
+    
 
     // Step 6 + 7.
     applyBlendedValues(t);
