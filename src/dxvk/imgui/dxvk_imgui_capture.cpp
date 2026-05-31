@@ -66,6 +66,7 @@ namespace dxvk {
       }
       RemixGui::Separator();
       RemixGui::Checkbox("Correct baked world transforms", &GameCapturer::correctBakedTransformsObject());
+      RemixGui::Checkbox("Capture RemixApi Lights", &GameCapturer::captureApiLightsObject());
       RemixGui::Checkbox("Show menu on capture hotkey", &RtxOptions::captureShowMenuOnHotkeyObject());
       if(RtxOptions::captureShowMenuOnHotkey()) {
         ImGui::PushTextWrapPos(ImGui::GetCurrentWindow()->Size.x);

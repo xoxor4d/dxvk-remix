@@ -96,13 +96,18 @@ struct OpaqueSurfaceMaterial
   // 24-25
   uint subsurfaceMaterialIndex;
 
-  // 26
+  // 26-29
   uint16_t samplerFeedbackStamp;
+  uint16_t m_wetnessParams1; // Packed wetness parameters (scalar 6 bits + max_z 5 bits + blend_width 5 bits)
+  uint16_t m_wetnessParams2; // Packed wetness parameters 2 (raindrop_scale 8 bits + bitflags 8 bits)
+  float16_t m_freeFloat03;
 
+  // 30
+  float16_t m_freeFloat04;
   // Todo: Fixed function blend state info here in the future (Actually this should go on a Legacy Material, or some sort of non-PBR Legacy Surface)
 
   // padding (to keep size matching with MemoryPolymorphicSurfaceMaterial)
-  uint16_t data[5];
+  uint16_t data[1];
 
   bool hasValidDisplacement() {
     return flags & OPAQUE_SURFACE_MATERIAL_FLAG_HAS_DISPLACEMENT;
@@ -133,8 +138,14 @@ struct TranslucentSurfaceMaterial
   // 14-16
   f16vec3 emissiveColorConstant;
 
+  // 17-20
+  uint16_t m_wetnessParams1; // Packed wetness parameters (scalar 6 bits + max_z 5 bits + blend_width 5 bits)
+  uint16_t m_wetnessParams2; // Packed wetness parameters 2 (raindrop_scale 8 bits + bitflags 8 bits)
+  float16_t m_freeFloat01;
+  float16_t m_freeFloat02;
+
   // padding (to keep size matching with MemoryPolymorphicSurfaceMaterial)
-  uint16_t data[15];
+  uint16_t data[11];
 };
 
 struct RayPortalSurfaceMaterial
