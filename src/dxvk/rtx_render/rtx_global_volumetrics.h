@@ -148,7 +148,7 @@ namespace dxvk {
                     "Volumetric fog needs more energy than physical math delivers at normal exposure to read as fog; "
                     "this dial scales fog-side sun visibility without affecting surface lighting (decals/particles/PSR/SAB read the cache straight). "
                     "Historical default 5.0 matches the artistic gain the gmod-rtx port originally baked into the cache.",
-                    args.minValue = 0.0f, args.maxValue = 50.0f);
+                    args.minValue = 0.0f, args.maxValue = 5000.0f);
     RTX_OPTION("rtx.volumetrics", bool, enableInPortals, false,
                "Enables using extra frustum-aligned volumes for lighting in portals.\n"
                "Note that enabling this option will require 3x the memory of the typical froxel grid as well as degrade performance in some cases.\n"
