@@ -1012,7 +1012,7 @@ namespace dxvk {
     }
 
     if (instance.testCategoryFlags(InstanceCategories::IgnoreOpacityMicromap) ||
-        instance.testCategoryFlags(InstanceCategories::Terrain) ||
+        /*instance.testCategoryFlags(InstanceCategories::Terrain) ||*/ // GTA4 - reused category
         instance.testCategoryFlags(InstanceCategories::IgnoreAlphaChannel)) {
       return false;
     }
