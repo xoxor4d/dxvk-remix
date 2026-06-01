@@ -247,8 +247,7 @@ namespace dxvk {
     // Allocate only as many swapchain images as the configured multiplier needs (interpolated + 1 rendered),
     // rather than always allocating the hardware maximum. Swapchain will be recreated if the user increases
     // the multiplier at runtime (see acquireNextImage).
-    adjustedDesc.imageCount = m_ctx->dlfgMaxSupportedInterpolatedFrameCount() + 1;
-    //adjustedDesc.imageCount = m_ctx->dlfgInterpolatedFrameCount() + 1;
+    adjustedDesc.imageCount = m_ctx->dlfgInterpolatedFrameCount() + 1;
     
     VkResult res = vk::Presenter::recreateSwapChain(adjustedDesc);
     if (res != VK_SUCCESS) {
@@ -385,11 +384,11 @@ namespace dxvk {
     // Return VK_ERROR_OUT_OF_DATE_KHR to force recreation. Checking here on the present thread
     // (rather than on the CS thread) ensures no command list waits/signals or presents get
     // submitted against the old swapchain semaphores.
-    /*const uint32_t neededImages = m_ctx->dlfgInterpolatedFrameCount() + 1;
+    const uint32_t neededImages = m_ctx->dlfgInterpolatedFrameCount() + 1;
     if (neededImages != m_info.imageCount) {
       m_lastPresentStatus = VK_ERROR_OUT_OF_DATE_KHR;
       return false;
-    }*/
+    }
 
     assert(swapchainImage.index < m_blitCommandLists.size());
     swapchainImage.image = vk::Presenter::getImage(swapchainImage.index);
