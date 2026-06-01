@@ -1187,8 +1187,10 @@ AtmosphereVolumeSunSample sampleAtmosphereSunLightVolume(vec3 volumePos, vec3 vi
   // as the sun approaches/crosses the geodetic horizon, killing the
   // bright fog/decals when sun is visually below terrain. This is a
   // per-froxel visibility approximation, not an artistic gain.
-  const float sunUpAxis = (isZUp ? args.sunDirection.z : args.sunDirection.y);
-  const float sunElevationGate = smoothstep(0.0f, 0.3f, sunUpAxis);
+  //const float sunElevationGate = smoothstep(0.0f, 0.3f, sunUpAxis);
+
+  //const float sunElevationGate = saturate(args.sunDirection.y * 50.0f + 0.5f);
+  const float sunElevationGate = smoothstep(0.0f, 0.087f, args.sunDirection.y);
   result.radiance = args.sunIlluminance * transmittance * phase * mieModulation * sunVisibility * args.sunRayBrightness * sunElevationGate;
   result.valid = any(transmittance > vec3(0.0f));
 
