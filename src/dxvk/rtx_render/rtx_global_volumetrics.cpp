@@ -602,6 +602,7 @@ namespace dxvk {
     volumeArgs.volumetricFogAnisotropy = anisotropy();
     volumeArgs.fogSunVisibilityGain = fogSunVisibilityGain();
     volumeArgs.particleSunVisibilityScale = particleSunVisibilityScale();
+    volumeArgs.atmosphereSunVolumetricRadianceScale = atmosphereSunVolumetricRadianceScale();
 
     volumeArgs.enableNoiseFieldDensity = enableHeterogeneousFog();
     volumeArgs.noiseFieldSubStepSize = noiseFieldSubStepSizeMeters() * RtxOptions::getMeterToWorldUnitScale();

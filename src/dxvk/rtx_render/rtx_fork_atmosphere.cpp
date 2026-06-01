@@ -921,7 +921,8 @@ namespace fork_hooks {
           RemixGui::DragFloat("Ozone Layer Width", &RtxOptions::ozoneLayerWidthObject(), 0.5f, 1.0f, 30.0f, "%.1f km", sliderFlags);
 
           RemixGui::DragFloat("Fog Sun Visibility Gain", &RtxGlobalVolumetrics::fogSunVisibilityGainObject(), 0.005f, 0.0f, 5000.0f, "%.3f", sliderFlags);
-          RemixGui::DragFloat("Paricle Sun Visibility Scale", &RtxGlobalVolumetrics::particleSunVisibilityScaleObject(), 0.005f, 0.0f, 5.0f, "%.3f", sliderFlags);
+          RemixGui::DragFloat("Atmosphere Sun Volumetric Scale", &RtxGlobalVolumetrics::atmosphereSunVolumetricRadianceScaleObject(), 0.001f, 0.0f, 100.0f, "%.4f", sliderFlags);
+          RemixGui::DragFloat("Particle Sun Visibility Scale", &RtxGlobalVolumetrics::particleSunVisibilityScaleObject(), 0.005f, 0.0f, 5.0f, "%.3f", sliderFlags);
 
           RemixGui::DragFloat("Multiscatter Physical Strength", &RtxOptions::multiScatterPhysicalStrengthObject(), 0.01f, 0.0f, 1.0f, "%.3f", sliderFlags);
           RemixGui::SetTooltipToLastWidgetOnHover(

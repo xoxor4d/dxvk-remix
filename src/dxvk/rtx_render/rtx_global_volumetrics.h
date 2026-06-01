@@ -149,6 +149,10 @@ namespace dxvk {
                     "this dial scales fog-side sun visibility without affecting surface lighting (decals/particles/PSR/SAB read the cache straight). "
                     "Historical default 5.0 matches the artistic gain the gmod-rtx port originally baked into the cache.",
                     args.minValue = 0.0f, args.maxValue = 5000.0f);
+    RTX_OPTION_ARGS("rtx.volumetrics", float, atmosphereSunVolumetricRadianceScale, 0.01f,
+                    "Scale applied only to physical-atmosphere sun radiance before it is written into the volumetric froxel cache. "
+                    "Use this to reduce atmosphere sun fog influence without changing surface/ground sun lighting or Remix light volumetrics.",
+                    args.minValue = 0.0f, args.maxValue = 100.0f);
     RTX_OPTION_ARGS("rtx.volumetrics", float, particleSunVisibilityScale, 0.3f,
                     "Artistic scale applied to the sun's contribution to rtxdi particle lighting.",
                     args.minValue = 0.0f, args.maxValue = 5.0f);

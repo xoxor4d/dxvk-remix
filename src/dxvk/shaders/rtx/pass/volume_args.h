@@ -102,7 +102,8 @@ struct VolumeArgs {
   float fogSunVisibilityGain;
 
   float particleSunVisibilityScale;
-  vec3 pad1;
+  float atmosphereSunVolumetricRadianceScale;
+  vec2 pad1;
 };
 
 #ifdef __cplusplus
