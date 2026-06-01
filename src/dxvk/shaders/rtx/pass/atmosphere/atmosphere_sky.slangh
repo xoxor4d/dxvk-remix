@@ -861,6 +861,7 @@ vec4 evalClouds(vec3 viewDir, AtmosphereArgs args, uint2 pixelCoord, uint frameI
   // analytical cloud-ground-shadow term; per-sample shadow march handles it.
   vec3 airTrans = sampleTransmittanceLut(AtmosphereTransmittanceLut, AtmosphereSkyViewSampler,
                                          0.0f, sunDir.y, args);
+  float sunElevationGate = sunAboveHorizonGate(args);
 
   // Pre-compute warm tint (constant per ray). lowSunFactor peaks near the
   // horizon and fades on both sides — the below-horizon smoothstep gate
@@ -880,7 +881,7 @@ vec4 evalClouds(vec3 viewDir, AtmosphereArgs args, uint2 pixelCoord, uint frameI
   // max(cos, 0) had a 90° boundary; plain half-Lambert was too uniform;
   // smoothstep(-0.1, 0.3) had a 96° boundary. The exponent kills both.
   float warmFactor = pow(0.5f + 0.5f * cosTheta, 4.0f);
-  vec3 warmAdd = args.sunIlluminance * lowSunFactor * warmFactor * 0.3f * args.cloudSunsetWarmth;
+  vec3 warmAdd = args.sunIlluminance * lowSunFactor * warmFactor * 0.3f * args.cloudSunsetWarmth * sunElevationGate;
 
   // Pre-compute night light (constant per ray) + per-moon directional
   // coefficients (consumed per sample). Three contributions to the
@@ -1116,7 +1117,7 @@ vec4 evalClouds(vec3 viewDir, AtmosphereArgs args, uint2 pixelCoord, uint frameI
 
     vec3 directLight = args.sunIlluminance * airTrans
                      * args.cloudMultiScatterStrength
-                     * (msAniso + msIso);
+                     * (msAniso + msIso) * sunElevationGate;
 
     // Per-sample moon direct light: ONE shadow march along the brightness-
     // weighted combined moon direction (Lever 4), participating in the same
@@ -1182,7 +1183,7 @@ vec4 evalClouds(vec3 viewDir, AtmosphereArgs args, uint2 pixelCoord, uint frameI
     float sunTransmittance_n0 = exp(-sunOpticalDepth * baseSigma);
     float shadowFraction = 1.0f - sunTransmittance_n0;
     vec3 shadowTintAdd = args.cloudShadowTint * args.cloudShadowTintStrength
-                       * shadowFraction * args.sunIlluminance * airTrans * 0.05f;
+                       * shadowFraction * args.sunIlluminance * airTrans * 0.05f * sunElevationGate;
 
     vec3 sampleColor = args.cloudColor * (directLight + moonDirectLight)
                      + nightLight + shadowTintAdd + warmAdd;

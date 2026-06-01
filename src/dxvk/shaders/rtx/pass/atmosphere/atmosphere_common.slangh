@@ -637,6 +637,12 @@ float evalCloudGroundShadow(vec3 sunDir, AtmosphereArgs args) {
 #endif
 }
 
+// Smoothly gates sun-derived lighting at the geodetic horizon. The upper edge
+// is sin(5 degrees), matching the existing volumetric NEE fade.
+float sunAboveHorizonGate(AtmosphereArgs args) {
+  return smoothstep(0.0f, 0.087f, args.sunDirection.y);
+}
+
 // Sun disk angular radius is now dynamic (args.sunAngularRadius)
 // static const float kSunAngularRadius = 0.00873f;
 
@@ -916,12 +922,13 @@ AtmosphereSunSample sampleAtmosphereSunLight(vec3 surfacePos, vec3 surfaceNormal
   // g = 0.5  -> 0.8x (diffuse sun)
   // g = 0.0  -> 0.3x (very diffuse, faint sun)
   float mieModulation = mix(0.3f, 2.0f, args.mieAnisotropy);
+  float sunElevationGate = sunAboveHorizonGate(args);
   
   // Sun radiance = illuminance * transmittance * Mie modulation * visibility fade * user brightness
   // The 0.5x factor provides a baseline reduction, then user can adjust with sunRayBrightness
-  result.radiance = args.sunIlluminance * transmittance * mieModulation * sunVisibility * args.sunRayBrightness * 0.5f;
+  result.radiance = args.sunIlluminance * transmittance * mieModulation * sunVisibility * args.sunRayBrightness * 0.5f * sunElevationGate;
   result.solidAnglePdf = 1.0f;  // Directional light has delta PDF, but we use 1.0 for math
-  result.valid = any(transmittance > vec3(0.0f));
+  result.valid = any(result.radiance > vec3(0.0f));
 
 #ifdef ATMOSPHERE_AVAILABLE
   // Voxel-grid cloud-on-terrain shadow wire-in (fork — 2026-05-12, C6;
@@ -1187,12 +1194,9 @@ AtmosphereVolumeSunSample sampleAtmosphereSunLightVolume(vec3 volumePos, vec3 vi
   // as the sun approaches/crosses the geodetic horizon, killing the
   // bright fog/decals when sun is visually below terrain. This is a
   // per-froxel visibility approximation, not an artistic gain.
-  //const float sunElevationGate = smoothstep(0.0f, 0.3f, sunUpAxis);
-
-  //const float sunElevationGate = saturate(args.sunDirection.y * 50.0f + 0.5f);
-  const float sunElevationGate = smoothstep(0.0f, 0.087f, args.sunDirection.y);
+  const float sunElevationGate = sunAboveHorizonGate(args);
   result.radiance = args.sunIlluminance * transmittance * phase * mieModulation * sunVisibility * args.sunRayBrightness * sunElevationGate;
-  result.valid = any(transmittance > vec3(0.0f));
+  result.valid = any(result.radiance > vec3(0.0f));
 
 #ifdef ATMOSPHERE_AVAILABLE
   // Voxel-grid cloud-on-terrain shadow wire-in for volumetric NEE

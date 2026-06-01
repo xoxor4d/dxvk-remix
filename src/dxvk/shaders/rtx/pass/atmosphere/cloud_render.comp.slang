@@ -414,7 +414,8 @@ void main(uint3 dispatchId : SV_DispatchThreadID) {
   // scatter atmosphere color matching the paper's pp. 122/132/171-173 renders.
   vec3 sunDirYUp = normalize(args.sunDirection);
   vec3 airTrans = getAtmosphericTransmittanceForDir(sunDirYUp, args);
-  vec3 sunRadiance = args.sunIlluminance * airTrans;
+  float sunElevationGate = sunAboveHorizonGate(args);
+  vec3 sunRadiance = args.sunIlluminance * airTrans * sunElevationGate;
 
   vec3 sunDirForAmbient = sunDirYUp;
   sunDirForAmbient.y = max(sunDirForAmbient.y, 0.05f);
@@ -422,7 +423,8 @@ void main(uint3 dispatchId : SV_DispatchThreadID) {
   vec3 skyRadianceWarm = sampleSkyAmbientForVolume(sunDirForAmbient, args,
                                                     AtmosphereSkyViewLut,
                                                     AtmosphereCloudSkyTransmittanceLut,
-                                                    AtmosphereSkyViewSampler);
+                                                    AtmosphereSkyViewSampler)
+                        * sunElevationGate;
 
   // Anti-sun horizon sample for the per-sample warm/cool blend (fork —
   // 2026-05-21). Mirrors the sun-direction sample's small y-lift to keep
@@ -436,7 +438,8 @@ void main(uint3 dispatchId : SV_DispatchThreadID) {
   vec3 skyRadianceCool = sampleSkyAmbientForVolume(antiSunDir, args,
                                                     AtmosphereSkyViewLut,
                                                     AtmosphereCloudSkyTransmittanceLut,
-                                                    AtmosphereSkyViewSampler);
+                                                    AtmosphereSkyViewSampler)
+                        * sunElevationGate;
 
   // ===== Per-pixel moon-lighting precompute =====
   // Direct port of evalClouds (atmosphere_sky.slangh:756-884). The Nubis Cubed
