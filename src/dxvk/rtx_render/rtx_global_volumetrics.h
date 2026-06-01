@@ -149,6 +149,9 @@ namespace dxvk {
                     "this dial scales fog-side sun visibility without affecting surface lighting (decals/particles/PSR/SAB read the cache straight). "
                     "Historical default 5.0 matches the artistic gain the gmod-rtx port originally baked into the cache.",
                     args.minValue = 0.0f, args.maxValue = 5000.0f);
+    RTX_OPTION_ARGS("rtx.volumetrics", float, particleSunVisibilityScale, 0.3f,
+                    "Artistic scale applied to the sun's contribution to rtxdi particle lighting.",
+                    args.minValue = 0.0f, args.maxValue = 5.0f);
     RTX_OPTION("rtx.volumetrics", bool, enableInPortals, false,
                "Enables using extra frustum-aligned volumes for lighting in portals.\n"
                "Note that enabling this option will require 3x the memory of the typical froxel grid as well as degrade performance in some cases.\n"

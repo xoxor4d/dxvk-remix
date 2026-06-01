@@ -100,6 +100,9 @@ struct VolumeArgs {
   uint16_t enableTranslucentShadows;
   uint16_t pad0;
   float fogSunVisibilityGain;
+
+  float particleSunVisibilityScale;
+  vec3 pad1;
 };
 
 #ifdef __cplusplus
