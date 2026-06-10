@@ -163,7 +163,7 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
     {
       const float16_t fadeT = saturate((cameraDistance - fadeStartDistance) / fadeSpan);
       // Blend from detailed normal (fadeT=0) to interpolated normal (fadeT=1)
-      normal = normalize(mix(normal, surfaceInteraction.interpolatedNormal, fadeT));
+      normal = normalize(mix(normal, surfaceInteraction.geometryNormal, fadeT));
     }
   }
 
@@ -289,9 +289,9 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
           // No rotation available - use tangent space
           // Transform world position relative to object translation to tangent space for stable coordinates
           const mat3 worldToTangent = mat3(
-            surfaceInteraction.triangleTangent,
-            surfaceInteraction.triangleBitangent,
-            surfaceInteraction.triangleNormal
+            surfaceInteraction.geometryTangent,
+            surfaceInteraction.geometryBitangent,
+            surfaceInteraction.geometryNormal
           );
 
           // Extract a reference translation from objectToWorld

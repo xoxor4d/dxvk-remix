@@ -80,9 +80,9 @@ vec3 getStablePositionForRaindrops(Surface surface, SurfaceInteraction surfaceIn
         // Skinned mesh or no rotation - use tangent space for stable coordinates
         // Transform world position relative to triangle's local coordinate system
         const mat3 worldToTangent = mat3(
-            surfaceInteraction.triangleTangent,
-            surfaceInteraction.triangleBitangent,
-            surfaceInteraction.triangleNormal
+            surfaceInteraction.geometryTangent,
+            surfaceInteraction.geometryBitangent,
+            surfaceInteraction.geometryNormal
         );
         vec3 localPos = worldPosition - surfaceInteraction.position;
         return mul(worldToTangent, localPos);
@@ -1023,7 +1023,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     const bool enableOcclusionCheck = wetnessFlags & (1u << 6);
     const bool useSmoothOcclusion = wetnessFlags & (1u << 7);
 
-    float16_t originalNormalZ = surfaceInteraction.interpolatedNormal.z; //normal.z;
+    float16_t originalNormalZ = surfaceInteraction.geometryNormal.z; //normal.z;
     float16_t wetblend = saturate(smoothstep(zNormal - blendWidth, zNormal + blendWidth, originalNormalZ));
 
     const float16_t wetblendBase = wetblend;            // preserves smooth world blending (normal-based)
@@ -1230,7 +1230,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
           roughness = lerp(roughness, float16_t(puddleRoughness), float16_t(roughnessMask));
 
           float normalFlattenMask = roughnessMask * wetnessFromScalar;
-          normal = normalize(lerp(normal, surfaceInteraction.interpolatedNormal, float16_t(normalFlattenMask)));
+          normal = normalize(lerp(normal, surfaceInteraction.geometryNormal, float16_t(normalFlattenMask)));
 
           // Slightly darken albedo
           albedo.xyz *= lerp(1.0f, 0.85f, normalFlattenMask);
@@ -1447,9 +1447,9 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
           // No rotation available - use tangent space
           // Transform world position relative to object translation to tangent space for stable coordinates
           const mat3 worldToTangent = mat3(
-            surfaceInteraction.triangleTangent,
-            surfaceInteraction.triangleBitangent,
-            surfaceInteraction.triangleNormal
+            surfaceInteraction.geometryTangent,
+            surfaceInteraction.geometryBitangent,
+            surfaceInteraction.geometryNormal
           );
 
           // Extract a reference translation from objectToWorld
