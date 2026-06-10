@@ -21,6 +21,7 @@
 */
 #include "rtx/pass/local_tonemap/local_tonemapping.slangh"
 #include "rtx/pass/tonemap/tonemapping.slangh"
+#include "rtx/pass/tonemap/color_grading.slangh"
 
 [[vk::binding(FINAL_COMBINE_MIP_ASSEMBLE)]]
 Sampler2D MipAssembleTexture;
@@ -105,9 +106,11 @@ void main(uint2 threadId : SV_DispatchThreadID)
   {
     texelFinal = ACESFilm(texelFinal, cb.useLegacyACES);
   }
+  if (cb.colorGradingEnabled > 0)
+  {
+    texelFinal = applyColorGrading(texelFinal, cb.colorBalance, cb.contrast, cb.saturation);
+  }
 
-  // sRGB conversion and dithering are now performed by the final output pass,
-  // which runs after all post-process effects (lens effects, etc.).
   OutputTexture[threadId] = vec4(texelFinal, 1.0);
 
   if (cb.debugView == DEBUG_VIEW_LOCAL_TONEMAPPER_FINAL_COMBINE_OUTPUT)

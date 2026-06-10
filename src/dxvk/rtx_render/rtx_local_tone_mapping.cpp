@@ -20,6 +20,8 @@
 * DEALINGS IN THE SOFTWARE.
 */
 #include "rtx_local_tone_mapping.h"
+#include "rtx_tonemap_color_grading.h"
+#include "rtx_tonemap_operators.h"
 #include "dxvk_device.h"
 #include "dxvk_scoped_annotation.h"
 #include "rtx_render/rtx_shader_manager.h"
@@ -141,7 +143,7 @@ namespace dxvk {
   }
 
   bool DxvkLocalToneMapping::isEnabled() const {
-    return RtxOptions::tonemappingMode() == TonemappingMode::Local;
+    return RtxTonemapOperators::usesRemixLocalPath();
   }
 
    void DxvkLocalToneMapping::dispatch(
@@ -273,6 +275,7 @@ namespace dxvk {
       pushArgs.enableAutoExposure = enableAutoExposure;
       pushArgs.finalizeWithACES = finalizeWithACES();
       pushArgs.useLegacyACES = RtxOptions::useLegacyACES();
+      TonemapColorGrading::populateFinalCombineArgs(pushArgs);
 
       ctx->pushConstants(0, sizeof(pushArgs), &pushArgs);
 

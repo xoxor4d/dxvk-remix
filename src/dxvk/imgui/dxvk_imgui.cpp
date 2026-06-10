@@ -55,6 +55,9 @@
 #include "rtx_render/rtx_debug_view.h"
 #include "rtx_render/rtx_composite.h"
 #include "rtx_render/rtx_sparse_rendering.h"
+#include "rtx_render/rtx_tonemap_color_grading.h"
+#include "rtx_render/rtx_tonemap_operators.h"
+#include "rtx_render/rtx_tone_mapping.h"
 #include "dxvk_image.h"
 #include "../util/rc/util_rc_ptr.h"
 #include "../util/util_math.h"
@@ -4024,13 +4027,18 @@ namespace dxvk {
         RemixGui::SliderInt("User Brightness", &RtxOptions::userBrightnessObject(), 0, 100, "%d");
         RemixGui::DragFloat("User Brightness EV Range", &RtxOptions::userBrightnessEVRangeObject(), 0.5f, 0.f, 10.f, "%.1f");
         RemixGui::Separator();
-        RemixGui::Combo("Tonemapping Mode", &RtxOptions::tonemappingModeObject(), "Global\0Local\0");
-        if (RtxOptions::tonemappingMode() == TonemappingMode::Global) {
+        TonemapColorGrading::showImguiSettings();
+        RemixGui::Separator();
+        RtxTonemapOperators::showTonemapOperatorUI();
+        RemixGui::Separator();
+        if (RtxTonemapOperators::usesRemixGlobalPath()) {
           common->metaToneMapping().showImguiSettings();
-        } else {
+        } else if (RtxTonemapOperators::usesRemixLocalPath()) {
           common->metaLocalToneMapping().showImguiSettings();
+        } else {
+          DxvkToneMapping::showImguiApplySettings();
         }
-        if (RtxOptions::showLegacyACESOption()) {
+        if (RtxTonemapOperators::usesRemixGlobalPath() && RtxOptions::showLegacyACESOption()) {
           RemixGui::Separator();
           RemixGui::Checkbox("Use Legacy ACES", &RtxOptions::useLegacyACESObject());
           if (!RtxOptions::useLegacyACES()) {

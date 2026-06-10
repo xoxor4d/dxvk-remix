@@ -1,0 +1,78 @@
+/*
+* Copyright (c) 2026, NVIDIA CORPORATION. All rights reserved.
+*
+* Permission is hereby granted, free of charge, to any person obtaining a
+* copy of this software and associated documentation files (the "Software"),
+* to deal in the Software without restriction, including without limitation
+* the rights to use, copy, modify, merge, publish, distribute, sublicense,
+* and/or sell copies of the Software, and to permit persons to whom the
+* Software is furnished to do so, subject to the following conditions:
+*
+* The above copyright notice and this permission notice shall be included in
+* all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+* THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+* DEALINGS IN THE SOFTWARE.
+*/
+
+#ifndef RTX_UTILITY_PQ_SLANGH
+#define RTX_UTILITY_PQ_SLANGH
+
+static const float pq_m1 = 0.1593017578125;
+static const float pq_m2 = 78.84375;
+static const float pq_c1 = 0.8359375;
+static const float pq_c2 = 18.8515625;
+static const float pq_c3 = 18.6875;
+static const float pq_maxLuminanceCdM2 = 10000.0;
+static const float pq_gt7ReferenceLuminanceCdM2 = 100.0;
+
+float3 PQDecode(const float3 image, const float3 pqC)
+{
+  float3 Np = pow(max(image, 0.0), 1.0 / pq_m2);
+  float3 L = Np - pq_c1;
+  L = L / (pq_c2 - pq_c3 * Np);
+  L = pow(max(L, 0.0), 1.0 / pq_m1);
+
+  return L * pqC;
+}
+
+float3 PQEncode(float3 image, const float3 invPqC)
+{
+  float3 L = image * invPqC;
+  float3 Lm = pow(max(L, 0.0), pq_m1);
+  float3 N = (pq_c1 + pq_c2 * Lm) / (1.0 + pq_c3 * Lm);
+  image = pow(N, pq_m2);
+
+  return saturate(image);
+}
+
+float pq_eotfSt2084(float n, float exponentScaleFactor = 1.0)
+{
+  n = clamp(n, 0.0, 1.0);
+
+  const float m2Scaled = pq_m2 * exponentScaleFactor;
+  float np = pow(n, 1.0 / m2Scaled);
+  float l = max(np - pq_c1, 0.0);
+  l = l / (pq_c2 - pq_c3 * np);
+  l = pow(l, 1.0 / pq_m1);
+
+  return (l * pq_maxLuminanceCdM2) / pq_gt7ReferenceLuminanceCdM2;
+}
+
+float pq_inverseEotfSt2084(float v, float exponentScaleFactor = 1.0)
+{
+  const float m2Scaled = pq_m2 * exponentScaleFactor;
+
+  float physical = v * pq_gt7ReferenceLuminanceCdM2;
+  float y = physical / pq_maxLuminanceCdM2;
+
+  float ym = pow(y, pq_m1);
+  return exp2(m2Scaled * (log2(pq_c1 + pq_c2 * ym) - log2(1.0 + pq_c3 * ym)));
+}
+
+#endif
