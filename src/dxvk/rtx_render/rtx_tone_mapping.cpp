@@ -20,6 +20,8 @@
 * DEALINGS IN THE SOFTWARE.
 */
 #include "rtx_tone_mapping.h"
+#include "rtx_tonemap_color_grading.h"
+#include "rtx_tonemap_operators.h"
 #include "dxvk_device.h"
 #include "dxvk_scoped_annotation.h"
 #include "rtx_render/rtx_shader_manager.h"
@@ -87,29 +89,27 @@ namespace dxvk {
   DxvkToneMapping::~DxvkToneMapping()  {  }
 
   void DxvkToneMapping::prewarmShaders(DxvkPipelineManager& pipelineManager) const {
-    if (RtxOptions::tonemappingMode() != TonemappingMode::Global) {
+    if (RtxTonemapOperators::usesRemixLocalPath()) {
       return;
     }
 
-    HistogramShader::getShader();
-    ToneCurveShader::getShader();
+    if (RtxTonemapOperators::usesRemixGlobalPath()) {
+      HistogramShader::getShader();
+      ToneCurveShader::getShader();
+    }
+
     ApplyTonemappingShader::getShader();
+  }
+
+  void DxvkToneMapping::showImguiApplySettings() {
+    RemixGui::DragFloat("Global Exposure", &exposureBiasObject(), 0.01f, -4.f, 4.f);
+    RemixGui::Checkbox("Tonemapping Enabled", &tonemappingEnabledObject());
   }
 
   void DxvkToneMapping::showImguiSettings() {
 
     RemixGui::DragFloat("Global Exposure", &exposureBiasObject(), 0.01f, -4.f, 4.f);
-    
-    RemixGui::Checkbox("Color Grading Enabled", &colorGradingEnabledObject());
-    if (colorGradingEnabled()) {
-      ImGui::Indent();
-      RemixGui::DragFloat("Contrast", &contrastObject(), 0.01f, 0.f, 1.f);
-      RemixGui::DragFloat("Saturation", &saturationObject(), 0.01f, 0.f, 1.f);
-      RemixGui::DragFloat3("Color Balance", &colorBalanceObject(), 0.01f, 0.f, 1.f);
-      RemixGui::Separator();
-      ImGui::Unindent();
-    }
-
+    RemixGui::Separator();
     RemixGui::Checkbox("Tonemapping Enabled", &tonemappingEnabledObject());
     if (tonemappingEnabled()) {
       ImGui::Indent();
@@ -252,7 +252,6 @@ namespace dxvk {
     // Prepare shader arguments
     ToneMappingApplyToneMappingArgs pushArgs = {};
     pushArgs.toneMappingEnabled = tonemappingEnabled();
-    pushArgs.colorGradingEnabled = colorGradingEnabled();
     pushArgs.enableAutoExposure = autoExposureEnabled;
     pushArgs.finalizeWithACES = finalizeWithACES();
     pushArgs.useLegacyACES = RtxOptions::useLegacyACES();
@@ -265,10 +264,8 @@ namespace dxvk {
     pushArgs.toneCurveMaxStops = toneCurveMaxStops();
     pushArgs.debugMode = tuningMode();
 
-    // Color grad args
-    pushArgs.colorBalance = colorBalance();
-    pushArgs.contrast = contrast();
-    pushArgs.saturation = saturation();
+    TonemapColorGrading::populateApplyArgs(pushArgs);
+    RtxTonemapOperators::populateTonemapOperatorArgs(pushArgs);
 
     ctx->bindResourceView(TONEMAPPING_APPLY_TONEMAPPING_COLOR_INPUT, inputBuffer.view, nullptr);
     ctx->bindResourceView(TONEMAPPING_APPLY_TONEMAPPING_TONE_CURVE_INPUT, m_toneCurve.view, nullptr);
@@ -302,7 +299,8 @@ namespace dxvk {
     }
 
     const Resources::Resource& inputColorBuffer = rtOutput.m_finalOutput.resource(Resources::AccessType::Read);
-    if (tonemappingEnabled()) {
+    const bool runDynamicCurve = tonemappingEnabled() && RtxTonemapOperators::usesRemixGlobalPath();
+    if (runDynamicCurve) {
       dispatchHistogram(ctx, exposureView, inputColorBuffer, autoExposureEnabled);
       dispatchToneCurve(ctx);
     }

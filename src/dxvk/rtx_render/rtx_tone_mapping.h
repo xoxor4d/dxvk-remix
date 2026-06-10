@@ -55,6 +55,8 @@ namespace dxvk {
 
     void showImguiSettings();
 
+    static void showImguiApplySettings();
+
   private:
     void createResources(Rc<RtxContext> ctx);
 

@@ -101,6 +101,14 @@ struct FinalCombineArgs
   uint enableAutoExposure;
   uint useLegacyACES;
   uint pad0;
+
+  vec3 colorBalance;
+  uint colorGradingEnabled;
+
+  float contrast;
+  float saturation;
+  uint pad1;
+  uint pad2;
 };
 
 

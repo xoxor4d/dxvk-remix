@@ -116,7 +116,63 @@ struct ToneMappingApplyToneMappingArgs {
   float toneCurveMaxStops;
   uint finalizeWithACES;
   uint useLegacyACES;
+
+  uint tonemapOperator;
+  uint skipDynamicToneCurve;
+  uint operatorPad0;
+  uint operatorPad1;
+
+  float hableExposureBias;
+  float hableShoulderStrength;
+  float hableLinearStrength;
+  float hableLinearAngle;
+
+  float hableToeStrength;
+  float hableToeNumerator;
+  float hableToeDenominator;
+  float hableWhitePoint;
+
+  float agxSaturation;
+  uint  agxLook;
+  float agxPad0;
+  float agxPad1;
+
+  float psycho17PeakValue;
+  float psycho17Exposure;
+  float psycho17Highlights;
+  float psycho17Shadows;
+
+  float psycho17Contrast;
+  float psycho17PurityScale;
+  float psycho17BleachingIntensity;
+  float psycho17ClipPoint;
+
+  float psycho17HueRestore;
+  float psycho17AdaptationContrast;
+  uint  psycho17WhiteCurveMode;
+  float psycho17ConeResponseExponent;
+
+  float psycho17GamutCompression;
+  uint  psycho17GamutCompressionMode;
+  float psycho17Pad0;
+  float psycho17Pad1;
 };
 
+static const uint32_t tonemapOperatorRemixGlobal   = 0;
+static const uint32_t tonemapOperatorRemixLocal    = 1;
+static const uint32_t tonemapOperatorNone          = 2;
+static const uint32_t tonemapOperatorACESHill      = 3;
+static const uint32_t tonemapOperatorACESNarkowicz = 4;
+static const uint32_t tonemapOperatorHableFilmic   = 5;
+static const uint32_t tonemapOperatorAgX           = 6;
+static const uint32_t tonemapOperatorLottes        = 7;
+static const uint32_t tonemapOperatorPsycho17      = 8;
+static const uint32_t tonemapOperatorGT7           = 9;
+static const uint32_t tonemapOperatorNeutwo        = 10;
+
+#ifdef __cplusplus
+static_assert(sizeof(ToneMappingApplyToneMappingArgs) <= 256,
+              "ToneMappingApplyToneMappingArgs exceeds MaxPushConstantSize.");
+#endif
 
 #endif  // TONEMAPPING_H

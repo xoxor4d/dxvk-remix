@@ -18,7 +18,9 @@ namespace dxvk {
     MaxNumSpecConstants         =    14,
     MaxUniformBufferSize        = 65536,
     MaxVertexBindingStride      =  2048,
-    MaxPushConstantSize         =   128,
+    // NV-DXVK start: increase push constant budget for fork tonemap operator args (144 bytes)
+    MaxPushConstantSize         =   256,
+    // NV-DXVK end
   };
   
 }
