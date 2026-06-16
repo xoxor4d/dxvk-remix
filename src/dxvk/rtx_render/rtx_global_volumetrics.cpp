@@ -605,7 +605,7 @@ namespace dxvk {
     volumeArgs.enableReferenceMode = enableReferenceMode();
     volumeArgs.volumetricFogAnisotropy = anisotropy();
     volumeArgs.fogSunVisibilityGain = fogSunVisibilityGain();
-    volumeArgs.volumetricConsumerGain = volumetricConsumerGain();
+    //volumeArgs.volumetricConsumerGain = volumetricConsumerGain(); no space in the struct
 
     volumeArgs.enableNoiseFieldDensity = enableHeterogeneousFog();
     volumeArgs.noiseFieldSubStepSize = noiseFieldSubStepSizeMeters() * RtxOptions::getMeterToWorldUnitScale();
