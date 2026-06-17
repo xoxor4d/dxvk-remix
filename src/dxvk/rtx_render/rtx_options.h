@@ -1983,49 +1983,39 @@ namespace dxvk {
                "values darken cloud-on-terrain shadows, lower values lighten "
                "them. Only consumed when cloudVoxelShadowsEnable is on.");
 
-    // Post-denoise shadow-strength knob applied at composite time. The
-    // per-pixel cloud shadow factor written by integrate_direct is in [0, 1],
-    // where 1.0 means "no occlusion" and 0.0 means "fully shadowed". Composite
-    // applies `pow(factor, cloudShadowFactorStrength)` before multiplying it
-    // into the denoised direct radiance. Exponent rather than linear so the
-    // factor=1 (no-cloud) invariant is preserved at any strength value:
+    // Pow exponent applied to the per-pixel voxel-grid cloud shadow factor inside
+    // sampleCloudGroundShadow_OptionB_impl (surface + volumetric NEE). Exponent
+    // rather than linear so the factor=1 (no-cloud) invariant is preserved:
     //   1.0 = unchanged (matches the raw factor from the wire-in)
     //   > 1 = darker shadows (factor^2 at strength=2 → cumulus pixels at
     //         factor=0.5 read as 0.25, a 2x deepening)
     //   < 1 = fainter shadows (factor^0.5 at strength=0.5)
-    // Independent of cloudShadowMarchStrength (which acts pre-denoise inside
-    // the exp(-OD * density * march) call); this is a perception-side knob.
+    // Independent of cloudShadowMarchStrength (which acts inside the
+    // exp(-OD * density * march) call); this is a perception-side knob.
     RTX_OPTION("rtx.atmosphere", float, cloudShadowFactorStrength, 4.0f,
-               "Post-denoise pow exponent applied to the per-pixel cloud "
-               "shadow factor in composite. 1.0 = unchanged, higher values "
-               "deepen cumulus-on-terrain shadows, lower values fade them. "
-               "Default 4.0 chosen against the FNV reference scene on "
-               "2026-05-19 after the ratio->newShadow simplification — the "
-               "raw newShadow alone reads too faint, strength=4 lands the "
-               "cumulus-shadow contrast in the visible-but-not-aggressive "
-               "range. Lets the shadow strength be tuned independently of "
-               "the bake magnitude (cloudShadowMarchStrength) without re-baking.");
+               "Pow exponent on the raw voxel-grid cloud ground-shadow "
+               "transmittance inside sampleCloudGroundShadow_OptionB_impl. "
+               "1.0 = unchanged, higher values deepen cumulus-on-terrain "
+               "shadows, lower values fade them. Default 4.0 chosen against "
+               "the FNV reference scene on 2026-05-19. Lets shadow contrast be "
+               "tuned independently of cloudShadowMarchStrength without "
+               "re-baking. Paired with cloudShadowSoftness for penumbra width.");
 
-    // Cloud shadow on indirect lighting (fork — issue #37). The direct-only
-    // application of the per-pixel cloud shadow only darkens sun-facing
-    // surfaces, leaving the ambient/indirect-lit faces of a mesh bright so it
-    // never reads as fully shadowed. A cloud that occludes the sun reduces the
-    // sun-driven radiance across the whole shaded region, so this blends the raw
-    // cloud transmittance onto the primary indirect diffuse + specular lobes.
-    //   0.0 = indirect untouched (pre-fork behavior; only direct is shadowed)
-    //   1.0 = indirect fully reduced by the cloud transmittance (whole mesh
-    //         shadowed). No effect unless cloudVoxelShadowsEnable is on, since
-    //         the factor is a flat 1.0 everywhere otherwise.
-    // Uses the RAW factor, not pow(factor, cloudShadowFactorStrength): that
-    // exponent is an artistic contrast curve for the high-frequency direct
-    // cumulus shadow, whereas indirect is a smooth regional irradiance drop.
-    RTX_OPTION_ARGS("rtx.atmosphere", float, cloudShadowIndirectStrength, 1.0f,
-               "How strongly the cloud ground shadow attenuates primary indirect "
-               "(ambient/bounce) lighting in composite. 0 = indirect untouched "
-               "(only sun-facing surfaces darken). 1 = whole mesh shadowed by the "
-               "cloud transmittance. Only takes effect when cloudVoxelShadowsEnable "
-               "is on. Lower it if scattered-cloud scenes over-darken sky ambient.",
+    RTX_OPTION_ARGS("rtx.atmosphere", float, cloudShadowSoftness, 0.35f,
+               "Penumbra width for cloud ground shadows [0..1]. 0 = sharp "
+               "(full cloudShadowFactorStrength contrast). Higher values widen "
+               "the lit-to-shadow transition so shadows ease in and out smoothly "
+               "as clouds drift overhead. Applied inside "
+               "sampleCloudGroundShadow_OptionB_impl alongside the contrast "
+               "exponent.",
                args.minValue = 0.0f, args.maxValue = 1.0f);
+
+    RTX_OPTION_ARGS("rtx.atmosphere", float, cloudShadowHorizonFadeDeg, 8.0f,
+               "Sun elevation in degrees at which cloud ground shadows reach "
+               "full strength. Below ~37.5% of this (~3deg when 8) shadows "
+               "smoothstep-fade to off, avoiding low-sun flicker from long "
+               "grazing slab projections and aliased D_sun bake taps.",
+               args.minValue = 1.0f, args.maxValue = 30.0f);
 
     // Cloud Height LUT (slide 3 lift — RDR2 SIGGRAPH 2019, fork — 2026-05-15).
     // 64x128 R8 lookup table indexed by (cloud type slice, height fraction).

@@ -109,12 +109,6 @@ struct CompositeArgs {
 
   float alphaBlendSurfacePackMult; // for packing/unpacking hitT into Float16 in AlphaBlendSurface
   float postFilterThreshold;
-  // pow exponent applied to PrimaryCloudShadowFactor in composite. 1.0 keeps
-  // the wire-in factor as-is; >1 darkens cumulus shadows, <1 fades them.
-  // Mirrored from RtxOptions::cloudShadowFactorStrength().
-  float cloudShadowFactorStrength;
-  // Blend [0..1] of the raw cloud shadow factor onto primary indirect lighting
-  // (issue #37). 0 = indirect untouched, 1 = whole mesh shadowed. Reuses the
-  // former pad2 slot; CB layout unchanged. From RtxOptions::cloudShadowIndirectStrength().
-  float cloudShadowIndirectStrength;
+  float pad2;
+  float pad3;
 };

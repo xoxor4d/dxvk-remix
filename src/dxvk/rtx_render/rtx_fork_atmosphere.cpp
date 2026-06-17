@@ -1203,6 +1203,18 @@ namespace fork_hooks {
           RemixGui::SetTooltipToLastWidgetOnHover(
               "How strongly clouds cast shadows on terrain. 0 = no cloud "
               "shadows, 1 = full voxel-grid cumulus-shaped shadow patches.");
+          RemixGui::DragFloat("Shadow Softness", &RtxOptions::cloudShadowSoftnessObject(),
+                              0.01f, 0.0f, 1.0f, "%.2f", sliderFlags);
+          RemixGui::SetTooltipToLastWidgetOnHover(
+              "Penumbra width for cloud ground shadows. 0 = sharp edges; "
+              "higher widens the lit-to-shadow transition so shadows ease in "
+              "and out smoothly as clouds drift overhead.");
+          RemixGui::DragFloat("CloudShadow Horizon Fade", &RtxOptions::cloudShadowHorizonFadeDegObject(),
+                              0.5f, 1.0f, 30.0f, "%.1f deg", sliderFlags);
+          RemixGui::SetTooltipToLastWidgetOnHover(
+              "Sun elevation (degrees) at which ground shadows reach full "
+              "strength. Below ~37.5% of this they fade out smoothly, "
+              "avoiding low-sun flicker.");
           ImGui::BeginDisabled(columnsOn);
           RemixGui::DragFloat("Bottom Darkening", &RtxOptions::cloudBottomDarkeningObject(),
                               0.01f, 0.0f, 1.0f, "%.2f", sliderFlags);

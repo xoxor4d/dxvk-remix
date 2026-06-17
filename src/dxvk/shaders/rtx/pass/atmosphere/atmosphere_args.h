@@ -475,7 +475,12 @@ struct AtmosphereArgs {
 
   float sunsetSaturation;     // Saturation boost on sky radiance, ramped in near the horizon
                               // (midday untouched). >1 = punchier warm sunset. 1 = no change.
-  float pad_artistic0;
-  float pad_artistic1;
-  float pad_artistic2;
+  // Contrast / softness / horizon-fade knobs for the voxel-grid ground shadow
+  // (fork — 2026-06-17 sun-only fix; 2026-06-18 penumbra + horizon fade).
+  // All three are consumed inside sampleCloudGroundShadow_OptionB_impl so the
+  // surface and volumetric NEE paths share identical shadow shaping.
+  float cloudShadowFactorStrength; // pow exponent on raw transmittance; >1 deepens
+  float cloudShadowSoftness;       // [0,1] widens the lit->shadow penumbra
+  float cloudShadowHorizonFadeDeg; // Sun elevation (deg) at which shadows are fully on;
+                                   // fade starts at 37.5% of this (~3deg when 8).
 };

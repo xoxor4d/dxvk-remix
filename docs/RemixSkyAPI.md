@@ -226,7 +226,9 @@ Shadow and color polish:
 | `rtx.atmosphere.cloudSunsetWarmth` | float | `0.95` | Warm tint strength on the sunward side at low sun angles. 0 = disabled. |
 | `rtx.atmosphere.cloudVoxelShadowsEnable` | bool | `True` | Use the D_sun voxel grid for cumulus-shaped cloud-on-terrain shadows at NEE entry points. Replaces the legacy uniform coverage proxy. |
 | `rtx.atmosphere.cloudShadowMarchStrength` | float | `1.0` | Beer-Lambert exponent multiplier inside the voxel-grid shadow lookup. Higher = darker cumulus shadows on terrain. Only active when `cloudVoxelShadowsEnable` is on. |
-| `rtx.atmosphere.cloudShadowFactorStrength` | float | `4.0` | Post-denoise pow exponent on the per-pixel cloud shadow factor at composite time. 1.0 = unchanged; higher deepens shadow contrast without re-baking the voxel grid. |
+| `rtx.atmosphere.cloudShadowFactorStrength` | float | `4.0` | Pow exponent on the raw voxel-grid cloud ground-shadow transmittance inside `sampleCloudGroundShadow_OptionB_impl`. 1.0 = unchanged; higher deepens shadow contrast. Paired with `cloudShadowSoftness`. |
+| `rtx.atmosphere.cloudShadowSoftness` | float | `0.35` | Penumbra width for cloud ground shadows [0..1]. Higher widens the lit-to-shadow transition so shadows ease in/out as clouds drift. |
+| `rtx.atmosphere.cloudShadowHorizonFadeDeg` | float | `8.0` | Sun elevation (degrees) at which ground shadows reach full strength. Below ~37.5% of this they fade out smoothly to avoid low-sun flicker. |
 
 Aerial perspective (distant cloud softening):
 

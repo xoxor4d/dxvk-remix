@@ -95,18 +95,14 @@ The cloud field participates in three places outside its own RT:
   for the NEE path only -- terrain shows cumulus-shaped drifting
   shadow patches that match the cloud silhouettes overhead.
 
-  The per-pixel surface shadow rides a separate `PrimaryCloudShadowFactor`
-  R16F screen-extent texture *around* the denoiser:
-  `sampleAtmosphereSunLight` opts the pre-denoise radiance out of the
-  analytical cloud darkening (`getTransmittanceToSun(..., skipCloudShadow=true)`)
-  and writes the per-pixel `newShadow` ∈ [0, 1] into the texture;
-  composite multiplies `pow(newShadow, cloudShadowFactorStrength)` onto
-  post-denoise primary direct radiance. Routing the high-frequency
-  cumulus pattern around NRD / DLSS-RR prevents the denoiser from
-  smearing the shadow edges away. The volumetric path applies
-  `newShadow` directly to volumetric radiance (no factor texture --
-  the volumetric denoiser tolerates the high-frequency signal on its
-  own bilateral domain).
+  The per-pixel surface shadow is shaped inside
+  `sampleCloudGroundShadow_OptionB_impl` (contrast, softness, horizon fade)
+  and applied directly to sun NEE radiance in `sampleAtmosphereSunLight` as
+  `radiance *= shadowFactor`. The integrator still writes the shaped factor
+  into a `PrimaryCloudShadowFactor` R16F screen-extent texture for debug-view
+  consumption only. The pre-denoise radiance opts out of the analytical cloud
+  darkening (`getTransmittanceToSun(..., skipCloudShadow=true)`). Local lights
+  and GI are never attenuated by the cloud ground shadow.
 
   `computeGroundReflectionAnalytical` (multiscatter, sentinel position
   `vec3(0, 0, 0)`) keeps the analytical cloud darkening
@@ -158,9 +154,9 @@ The cloud field participates in three places outside its own RT:
    - `cloudShadowStrength` -- master enable for the same; defaults to 0,
      so out of the box cloud shadows on terrain are *off* even though
      the voxel grid is baked. Raise to 1.0 for the physical baseline.
-   - `cloudShadowFactorStrength` -- post-denoise visible-contrast knob
-     applied by composite as `pow(newShadow, strength)`. Default 4.0 --
-     raw `newShadow` at strength 1 reads too faint against the analytical
+   - `cloudShadowFactorStrength` -- visible-contrast knob applied inside
+     `sampleCloudGroundShadow_OptionB_impl`. Default 4.0 --
+     raw transmittance at strength 1 reads too faint against the analytical
      atmospheric transmittance. Raise to sharpen cumulus shadow contrast,
      lower to soften.
 
@@ -231,13 +227,10 @@ future-work item.
 - **Runtime-baked NVDF + SDF.** A C-procedural cloud field replacing
   the prebaked FBM noise volume; preserves the macro/micro decoupling
   at cumulus silhouettes that the FBM cannot.
-- **Post-DLSS cloud shadow re-modulation.** The current path applies
-  `pow(newShadow, cloudShadowFactorStrength)` to direct radiance
-  pre-DLSS (composite runs at downscale extent). Moving the apply to
-  post-DLSS at upscale resolution would prevent the DLSS / TAA temporal
-  reprojection from smearing cumulus shadow edges. Requires routing the
-  factor texture (or a recomputed version) through to a post-upscale
-  pass.
+- **Post-DLSS cloud shadow re-modulation.** Ground shadows are now applied
+  pre-denoise on sun NEE radiance only. A post-DLSS upscale apply could
+  sharpen edges further if needed; would require routing the factor texture
+  (or a recomputed version) through to a post-upscale pass.
 
 ## Cross-references
 

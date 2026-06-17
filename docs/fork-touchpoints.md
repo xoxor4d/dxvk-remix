@@ -1964,3 +1964,54 @@ Restructured the flat ~45-control `Clouds` menu (7 non-collapsible `TextDisabled
   *`Clouds` node rebuilt as: `Basic` (open by default: Coverage, Cloud Type, Density, Altitude, Depth, Color) · `Shaping ▸ {Variation, Detail & Edges, Columns}` · `Lighting` · `Wind` · `Layer 2` · `Performance` · `Horizon & Haze` (Curvature moved here from "Look"). The `Color` control is a `ColorEdit3` swatch/picker. Mode-inert controls are greyed via `ImGui::BeginDisabled`: the six Columns sliders when `cloudColumnShapingEnable` is off, `Bottom Darkening` when it is on (Underside Shading supersedes it), and the Layer 2 body when `cloudLayer2Enable` is off. The "Vertical Stretch" slider (`cloudVerticalStretch`) is removed from the menu — the option stays conf-only (experimental / superseded by Columns). All tooltips preserved.*
 
 ---
+
+## Workstream — Cloud ground-shadow sun-only fix (fork — 2026-06-17)
+
+Issue #37 applied the per-pixel cloud ground-shadow factor in composite onto the combined direct and indirect radiance buffers, which mix the atmospheric sun with every local light and all GI — so under a cloud every light source was darkened. Fix: apply `pow(cloudShadowFactor, cloudShadowFactorStrength)` directly to sun NEE radiance in `sampleAtmosphereSunLight` and remove the composite-side blanket multiplies. Local lights, sky-ambient, and non-sun GI stay untouched; cloud sky visuals unchanged.
+
+- **`src/dxvk/shaders/rtx/pass/atmosphere/atmosphere_common.slangh`** — fork-owned change.
+  *`sampleAtmosphereSunLight`: voxel-grid shadow factor computed after NdotL gate again; applied to `result.radiance` with `cloudShadowFactorStrength`. Reverted issue #37 NdotL-independent factor write for composite indirect.*
+
+- **`src/dxvk/shaders/rtx/pass/atmosphere/atmosphere_args.h`** — fork-owned change.
+  *`cloudShadowFactorStrength` added (reuses former `pad_artistic0` slot).*
+
+- **`src/dxvk/rtx_render/rtx_atmosphere.cpp`** — fork-owned change.
+  *Populate `args.cloudShadowFactorStrength` from `RtxOptions::cloudShadowFactorStrength()`.*
+
+- **`src/dxvk/shaders/rtx/pass/composite/composite.comp.slang`** — fork-owned change.
+  *Removed post-denoise direct and indirect cloud-shadow multiplies (issue #37).*
+
+- **`src/dxvk/shaders/rtx/pass/composite/composite_args.h`** — fork-owned change.
+  *`cloudShadowFactorStrength` / `cloudShadowIndirectStrength` replaced with `pad2` / `pad3`.*
+
+- **`src/dxvk/rtx_render/rtx_composite.cpp`** — fork-owned change.
+  *Dropped composite args population for cloud shadow knobs.*
+
+- **`src/dxvk/rtx_render/rtx_options.h`** — fork-owned change.
+  *Removed `cloudShadowIndirectStrength`; `cloudShadowFactorStrength` docstring updated for integrator-side application.*
+
+- **`src/dxvk/shaders/rtx/algorithm/integrator_direct.slangh`** — fork-owned change.
+  *Comment update: `PrimaryCloudShadowFactor` write is debug-view only.*
+
+---
+
+## Workstream — Cloud ground-shadow penumbra + horizon fade (fork — 2026-06-18)
+
+Ground shadows snapped in/out too fast as clouds drift (narrow penumbra + pow contrast), and low-sun elevations flickered because grazing slab projections sent the D_sun lookup across many frac()-wrapped voxel tiles. Fix: clamp `tEntry` in `intersectCloudSlabBottomFromBelow`, centralize contrast+softness+horizon-fade shaping in `applyCloudGroundShadowRemap` / `sampleCloudGroundShadow_OptionB_impl`, and expose `cloudShadowSoftness` + `cloudShadowHorizonFadeDeg` knobs.
+
+- **`src/dxvk/shaders/rtx/pass/atmosphere/atmosphere_common.slangh`** — fork-owned change.
+  *`intersectCloudSlabBottomFromBelow`: clamp `tEntry` to `cloudVoxelGridExtentKm`. New `applyCloudGroundShadowRemap` (contrast exponent + softness blend). `sampleCloudGroundShadow_OptionB_impl`: horizon `smoothstep` fade on `sunDirYUp.y`. Surface/volumetric call sites use shaped factor directly (no per-call `pow`).*
+
+- **`src/dxvk/shaders/rtx/pass/atmosphere/atmosphere_args.h`** — fork-owned change.
+  *`cloudShadowSoftness` / `cloudShadowHorizonFadeDeg` added (reuse former `pad_artistic1`/`pad_artistic2`).*
+
+- **`src/dxvk/rtx_render/rtx_atmosphere.cpp`** — fork-owned change.
+  *Populate the two new shadow-shaping args.*
+
+- **`src/dxvk/rtx_render/rtx_options.h`** — fork-owned change.
+  *`cloudShadowSoftness` (default 0.35) and `cloudShadowHorizonFadeDeg` (default 8.0); `cloudShadowFactorStrength` docstring updated for impl-side application.*
+
+- **`src/dxvk/rtx_render/rtx_fork_atmosphere.cpp`** — fork-owned change.
+  *"Shadow Softness" and "Horizon Fade" sliders under Clouds > Lighting.*
+
+---

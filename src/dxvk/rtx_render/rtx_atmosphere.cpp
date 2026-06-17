@@ -784,6 +784,9 @@ AtmosphereArgs RtxAtmosphere::getAtmosphereArgs() const {
   {
     args.cloudVoxelShadowsEnable  = RtxOptions::cloudVoxelShadowsEnable() ? 1u : 0u;
     args.cloudShadowMarchStrength = RtxOptions::cloudShadowMarchStrength();
+    args.cloudShadowFactorStrength = std::max(RtxOptions::cloudShadowFactorStrength(), 0.0f);
+    args.cloudShadowSoftness = std::clamp(RtxOptions::cloudShadowSoftness(), 0.0f, 1.0f);
+    args.cloudShadowHorizonFadeDeg = std::clamp(RtxOptions::cloudShadowHorizonFadeDeg(), 1.0f, 30.0f);
     const float sceneScale = std::max(RtxOptions::sceneScale(), 1e-5f);
     args.worldUnitsPerKm = 100000.0f * sceneScale;
     // Column presence feather band riding the former pad_c6_0 slot (fork —
