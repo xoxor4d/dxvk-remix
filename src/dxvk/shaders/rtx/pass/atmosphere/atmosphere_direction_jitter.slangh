@@ -1,0 +1,29 @@
+/*
+* Copyright (c) 2026, NVIDIA CORPORATION. All rights reserved.
+*
+* Minimal atmosphere NEE helpers that must not pull in atmosphere_common.slangh
+* (bindings, LUT globals, cloud volume). Used by rtxcr_material.slangh for
+* directional SSS cone jitter only.
+*/
+#pragma once
+
+static const float kAtmosphereDirectionJitterPi = 3.14159265358979323846f;
+
+// Generate a direction jittered within a cone around the main direction.
+// Direction-agnostic despite the name (also used for moon soft shadows).
+vec3 getJitteredSunDirection(vec3 sunDir, float coneAngle, float u1, float u2) {
+  if (coneAngle < 0.005f) {
+    return sunDir;
+  }
+
+  vec3 up = abs(sunDir.y) < 0.999f ? vec3(0.0f, 1.0f, 0.0f) : vec3(1.0f, 0.0f, 0.0f);
+  vec3 tangent = normalize(cross(up, sunDir));
+  vec3 bitangent = cross(sunDir, tangent);
+
+  float r = sqrt(u1) * tan(coneAngle);
+  float phi = u2 * 2.0f * kAtmosphereDirectionJitterPi;
+
+  vec3 offset = tangent * (r * cos(phi)) + bitangent * (r * sin(phi));
+
+  return normalize(sunDir + offset);
+}

@@ -1,6 +1,6 @@
 ---
 name: build-remix
-description: Build dxvk-remix from source. Use when the user asks to compile, build, or rebuild the project, or when code changes need to be compiled and tested.
+description: Build dxvk-remix from source. Use ONLY when the user explicitly asks to compile, build, or rebuild the project. Never invoke proactively after code changes.
 ---
 
 # Build dxvk-remix
@@ -37,7 +37,7 @@ This also generates the Visual Studio solution at `_vs/dxvk-remix.sln`.
 
 ## Incremental Build (day-to-day)
 
-Once a build directory exists, rebuild only changed files:
+Invoke only when the user asks for a build. Once a build directory exists, rebuild only changed files:
 
 ```powershell
 meson compile -C _Comp64DebugOptimized

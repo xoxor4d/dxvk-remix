@@ -1,6 +1,6 @@
 ---
 name: rtx-build
-description: Build the dxvk-remix runtime (64-bit d3d9.dll) via the fork-side scripts/build.ps1 wrapper. Use when the user asks to build, compile, compile-check, verify, or smoke-test the runtime. Runs in the background, reports exit code + verifies artifacts. Do NOT invoke for doc/skill/config-only edits — those don't affect compilation.
+description: Build the dxvk-remix runtime (64-bit d3d9.dll) via the fork-side scripts/build.ps1 wrapper. Use ONLY when the user explicitly asks to build, compile, compile-check, verify, or smoke-test the runtime. Never invoke proactively after making code changes. Runs in the background, reports exit code + verifies artifacts. Do NOT invoke for doc/skill/config-only edits — those don't affect compilation.
 ---
 
 # rtx-build
@@ -14,13 +14,12 @@ in a single isolated cmd.exe shell, and verifies artifacts.
 
 ## When to invoke
 
-- User asks to build, compile, compile-check, verify, or smoke-test
-- Before pushing code changes
-- After a code change that touches upstream files or `rtx_fork_*`
-  modules
+- User **explicitly** asks to build, compile, compile-check, verify, or smoke-test
 
 ## When NOT to invoke
 
+- **After completing a code change** — do not build unless the user asked
+- Before pushing code changes (unless the user asked for a build)
 - Doc-only changes (`.md`, `CLAUDE.md`, `docs/`, `.claude/`
   entries) — no compile impact
 - Skill / settings / config edits

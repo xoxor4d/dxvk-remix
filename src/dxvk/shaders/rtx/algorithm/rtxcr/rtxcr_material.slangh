@@ -11,6 +11,7 @@
 #pragma once
 
 #include "rtxcr.slangh"
+#include "rtx/pass/atmosphere/atmosphere_direction_jitter.slangh"
 
 #ifdef MAX_SSS_SAMPLE_COUNT
 #undef MAX_SSS_SAMPLE_COUNT
@@ -111,7 +112,7 @@ SssDiffusionProfileResult evalSssDiffusionProfile(
   subsurfaceMaterialData.transmissionColor = float3(subsurfaceMaterial.volumetricAttenuationCoefficient);
   subsurfaceMaterialData.scatteringColor = float3(subsurfaceMaterial.singleScatteringAlbedo);
   subsurfaceMaterialData.scale = subsurfaceMaterial.measurementDistance * cb.sssArgs.diffusionProfileScale;
-  subsurfaceMaterialData.g = subsurfaceMaterial.volumetricAnisotropy;
+  subsurfaceMaterialData.g = clamp(subsurfaceMaterial.volumetricAnisotropy, -0.99f, 0.99f);
 
   /// Create interaction
 
@@ -267,6 +268,101 @@ SssDiffusionProfileResult evalSssDiffusionProfile(
   sssDiffusionProfileResult.scatteringWeight = sssScatteringWeight / (float)(MAX_SSS_SAMPLE_COUNT) + singleScatteringTransmission;
   sssDiffusionProfileResult.allSamplesHaveHit = (validSampleCount == 0) && all(singleScatteringTransmission < 1e-5f);
 
+  return sssDiffusionProfileResult;
+}
+
+// Evaluate the Burley diffusion profile for an explicit directional light (physical
+// atmosphere sun/moon). Keeps all RTXCR symbols inside this file; integrators call
+// only this wrapper.
+SssDiffusionProfileResult evalSssDiffusionProfileDirectional(
+  OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteraction,
+  MinimalRayInteraction minimalRayInteraction,
+  MinimalSurfaceInteraction minimalSurfaceInteraction,
+  const uint8_t rayMask,
+  const uint8_t sampledTransportPortalIndex,
+  const GeometryFlags geometryFlags,
+  const Ray viewRay,
+  const uint primarySurfaceIndex,
+  ivec2 pixelCoordinate,
+  vec3 lightDirection,
+  vec3 lightRadiance,
+  float inverseSelectionPdf,
+  float coneAngle,
+  inout RNG randomState)
+{
+  vec3 sssScatteringWeight = 0.0f;
+
+  const SubsurfaceMaterial subsurfaceMaterial = subsurfaceMaterialCreate(opaqueSurfaceMaterialInteraction.subsurfaceMaterialInteraction);
+
+  RTXCR_SubsurfaceMaterialData subsurfaceMaterialData = RTXCR_CreateDefaultSubsurfaceMaterialData();
+  subsurfaceMaterialData.transmissionColor = float3(subsurfaceMaterial.volumetricAttenuationCoefficient);
+  subsurfaceMaterialData.scatteringColor = float3(subsurfaceMaterial.singleScatteringAlbedo);
+  subsurfaceMaterialData.scale = subsurfaceMaterial.measurementDistance * cb.sssArgs.diffusionProfileScale;
+  subsurfaceMaterialData.g = clamp(subsurfaceMaterial.volumetricAnisotropy, -0.99f, 0.99f);
+
+  const float rand = getNextSampleBlueNoise(randomState);
+  const vec3 diskNormalWorldSpace = (rand <= 0.5f) ? opaqueSurfaceMaterialInteraction.shadingNormal : minimalRayInteraction.viewDirection;
+
+  RTXCR_SubsurfaceInteraction subsurfaceInteraction =
+    RTXCR_CreateSubsurfaceInteraction(minimalSurfaceInteraction.position, diskNormalWorldSpace, minimalSurfaceInteraction.geometryTangent, minimalSurfaceInteraction.geometryBitangent);
+
+  uint16_t validSampleCount = 0;
+  const uint primarySubsurfaceMaterialIndex = opaqueSurfaceMaterialCreate(surfaceMaterials[primarySurfaceIndex]).subsurfaceMaterialIndex;
+
+  [unroll]
+  for (uint16_t i = 0; i < MAX_SSS_SAMPLE_COUNT; ++i)
+  {
+    const float2 rand2 = float2(getNextSampleBlueNoise(randomState), getNextSampleBlueNoise(randomState));
+
+    RTXCR_SubsurfaceSample subsurfaceSample;
+    RTXCR_EvalBurleyDiffusionProfile(subsurfaceMaterialData,
+                                     subsurfaceInteraction,
+                                     subsurfaceMaterial.maxSampleRadius,
+                                     cb.enableSssTransmission && cb.enableTransmissionDiffusionProfileCorrection,
+                                     rand2,
+                                     subsurfaceSample);
+
+    Ray sssSampleRay;
+    sssSampleRay.origin = subsurfaceSample.samplePosition;
+    sssSampleRay.direction = -diskNormalWorldSpace;
+    sssSampleRay.tMax = max(subsurfaceMaterial.maxSampleRadius * subsurfaceMaterialData.scale * 2.0f, 0.1f);
+
+    const SssTracingResult sssTracingResult = traceSssRay(sssSampleRay, OBJECT_MASK_OPAQUE, RAY_FLAG_CULL_BACK_FACING_TRIANGLES);
+    if (!sssTracingResult.hasHit || primarySubsurfaceMaterialIndex != sssTracingResult.subsurfaceMaterialIndex)
+    {
+      continue;
+    }
+
+    const MinimalSurfaceInteraction sssMinimalSurfaceInteraction = sssTracingResult.sssMinimalSurfaceInteraction;
+    const vec3 jitteredLightDirection = getJitteredSunDirection(lightDirection, coneAngle, getNextSampleBlueNoise(randomState), getNextSampleBlueNoise(randomState));
+    const vec3 lightTargetPos = sssMinimalSurfaceInteraction.position + jitteredLightDirection * 1000000.0f;
+
+    const VisibilityResult visibility = traceVisibilityRay<visibilityModeEnablePom | visibilityModeAccurateHitDistance | visibilityModeEnableTranslucentMaterials | visibilityModeEnableSubsurfaceMaterials>(
+      sssMinimalSurfaceInteraction,
+      lightTargetPos, rayMask,
+      sampledTransportPortalIndex, geometryFlags.portalSpace, geometryFlags.pomOpaqueSurfaceEncountered,
+      minimalRayInteraction.coneRadius, viewRay.spreadAngle, 1.0, geometryFlags.isViewModel, false,
+      primarySurfaceIndex, SharedTextureCoord[pixelCoordinate],
+      false,
+      opaqueSurfaceMaterialInteraction.shadingNormal);
+
+    if (visibility.hasOpaqueHit)
+    {
+      continue;
+    }
+
+    const vec3 shadingNormal = sssTracingResult.normal;
+    const vec3 inputDirection = visibility.rayDirection;
+    const float normalDotInputDirection = max(dot(inputDirection, shadingNormal), 0.0f);
+    const vec3 commonLightThroughput = inverseSelectionPdf * vec3(visibility.attenuation);
+
+    sssScatteringWeight += RTXCR_EvalBssrdf(subsurfaceSample, float3(lightRadiance), float(normalDotInputDirection)) * commonLightThroughput;
+    ++validSampleCount;
+  }
+
+  SssDiffusionProfileResult sssDiffusionProfileResult;
+  sssDiffusionProfileResult.scatteringWeight = sssScatteringWeight / float(MAX_SSS_SAMPLE_COUNT);
+  sssDiffusionProfileResult.allSamplesHaveHit = validSampleCount == 0;
   return sssDiffusionProfileResult;
 }
 

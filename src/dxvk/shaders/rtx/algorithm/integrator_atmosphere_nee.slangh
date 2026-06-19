@@ -1,0 +1,58 @@
+/*
+* Copyright (c) 2026, NVIDIA CORPORATION. All rights reserved.
+*
+* Integrator-only atmosphere NEE samplers. Thin-opaque subsurface is back-lit
+* (NdotL < 0) but atmosphere_common's shared sun/moon samplers horizon-cull
+* before the integrator can evaluate transmission. These wrappers bypass that
+* cull without mutating atmosphere_common's API (keeps LUT/cloud SPIR-V stable).
+*/
+#pragma once
+
+AtmosphereSunSample sampleAtmosphereSunLightForIntegrator(
+  vec3 surfacePos,
+  vec3 surfaceNormal,
+  AtmosphereArgs args,
+  bool isZUp,
+  bool isThinOpaqueSubsurface)
+{
+  vec3 normalForSample = surfaceNormal;
+
+  if (isThinOpaqueSubsurface) {
+    vec3 sunDir = isZUp
+      ? normalize(vec3(args.sunDirection.x, args.sunDirection.z, args.sunDirection.y))
+      : normalize(args.sunDirection);
+
+    if (dot(surfaceNormal, sunDir) <= 0.0f) {
+      normalForSample = sunDir;
+    }
+  }
+
+  return sampleAtmosphereSunLight(surfacePos, normalForSample, args, isZUp);
+}
+
+AtmosphereMoonSample sampleAtmosphereMoonLightForIntegrator(
+  vec3 surfacePos,
+  vec3 surfaceNormal,
+  AtmosphereArgs args,
+  float u_pick,
+  bool isZUp,
+  bool isThinOpaqueSubsurface)
+{
+  vec3 normalForSample = surfaceNormal;
+
+  if (isThinOpaqueSubsurface) {
+    float pickPdf;
+    uint mIdx = pickMoon(args, u_pick, pickPdf);
+
+    if (mIdx < MAX_MOONS) {
+      vec3 moonDirYUp = normalize(args.moons[mIdx].direction);
+      vec3 moonDir = isZUp ? vec3(moonDirYUp.x, moonDirYUp.z, moonDirYUp.y) : moonDirYUp;
+
+      if (dot(surfaceNormal, moonDir) <= 0.0f) {
+        normalForSample = moonDir;
+      }
+    }
+  }
+
+  return sampleAtmosphereMoonLight(surfacePos, normalForSample, args, u_pick, isZUp);
+}

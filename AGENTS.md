@@ -18,7 +18,7 @@ Step-by-step workflows for common tasks are in `.agents/skills/`:
 
 | Skill | Description |
 |-------|-------------|
-| `build-remix` | Build the project (first-time setup, incremental builds, reconfigure) |
+| `build-remix` | Build the project — **user-requested only**; do not run after every edit |
 | `deploy-and-test-game` | Deploy to a game target, launch, and debug |
 | `run-unit-tests` | Build and run unit tests |
 

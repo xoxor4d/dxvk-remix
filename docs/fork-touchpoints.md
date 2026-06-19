@@ -873,6 +873,15 @@ initializer list and can't be lifted into a separate TU.
 - **Block** at `integrateDirectPath` (atmosphere moon NEE call site) — ~12 LOC, planned target `fork_hooks::directPathAtmosphereMoonCall` in `rtx_fork_atmosphere.slangh`.
   *Calls `evalAtmosphereMoonNEE` immediately after `evalAtmosphereSunNEE` in the direct-path integrator when `cb.skyMode == 1`. Sun and moon NEE are independent samples -- both can be valid at twilight, both invalid during pure daytime / pure-night-with-no-moons; each early-outs cheaply when invalid. Added by 2026-05-07 moon sun-parity workstream.*
 
+- **Block** at `evalAtmosphereSunNEE` / `evalAtmosphereMoonNEE` (diffusion-profile SSS, 2026-06-19) — ~40 LOC.
+  *When `cb.sssArgs.enableDiffusionProfile` and the surface is a diffusion-profile SSS material, routes sun/moon radiance through `evalSssDiffusionProfileDirectional` instead of the diffuse BRDF lobe (specular unchanged). Relaxes the all-occluded early-out when any SSS disk sample hits. Mirrors the `evalNEEPrimary` SSS split.*
+
+- **Block** at `evalAtmosphereSunNEE` / `evalAtmosphereMoonNEE` (thin-opaque support, 2026-06-19) — ~6 LOC.
+  *Thin-opaque subsurface is back-lit (NdotL < 0) and transmits via the diffuse transmission lobe, but the atmosphere NEE was unconditionally culling `NdotL <= 0` (early-out + per-sample). Relaxes both culls when `isThinOpaqueSubsurface` and adds `visibilityModeEnableSubsurfaceMaterials` to the shadow-ray template so intervening thin surfaces attenuate rather than fully block — matching the standard `evalNEEPrimary` path. Uses fork-owned `sampleAtmosphereSunLightForIntegrator` / `sampleAtmosphereMoonLightForIntegrator` from `integrator_atmosphere_nee.slangh` so thin-opaque back-lit sampling works without mutating `atmosphere_common.slangh`.*
+
+- **Block** at `(file scope)` (integrator atmosphere NEE include) — ~1 LOC (2026-06-20).
+  *Adds `#include "integrator_atmosphere_nee.slangh"` after `atmosphere_common.slangh`.*
+
 - **Block** at `integrateDirectPath` (sky radiance miss branch) — ~8 LOC, planned target `fork_hooks::directPathAtmosphereMiss` in `rtx_fork_atmosphere.slangh`.
   *Adds `#ifdef ATMOSPHERE_AVAILABLE` branch in the miss sky-radiance evaluation to call `evalSkyRadiance` in physical atmosphere mode.*
 
@@ -908,6 +917,12 @@ initializer list and can't be lifted into a separate TU.
 - **Block** at `integratePathVertex` (customIndex for view-model lights) — ~4 LOC, planned target `fork_hooks::indirectPathViewModelCustomIndex` in `rtx_fork_light.slangh`.
   *Synthesizes `customIndex` from `rayInteraction.isViewModel` at both RTXDI and advanced-RIS call sites in the indirect path.*
 
+- **Block** at `evalAtmosphereSunNEESecondary` / `evalAtmosphereMoonNEESecondary` (thin-opaque support, 2026-06-19) — ~6 LOC.
+  *Secondary-bounce mirror of the direct-path thin-opaque fix: relaxes the `NdotL <= 0` early-out and per-sample cull when `isThinOpaqueSubsurface`, adds `visibilityModeEnableSubsurfaceMaterials` to the shadow-ray template, and uses `sampleAtmosphereSunLightForIntegrator` / `sampleAtmosphereMoonLightForIntegrator` from `integrator_atmosphere_nee.slangh`.*
+
+- **Block** at `(file scope)` (integrator atmosphere NEE include) — ~1 LOC (2026-06-20).
+  *Adds `#include "integrator_atmosphere_nee.slangh"` after `atmosphere_common.slangh`.*
+
 ---
 
 ## src/dxvk/shaders/rtx/algorithm/lighting.slangh
@@ -941,6 +956,30 @@ initializer list and can't be lifted into a separate TU.
 
 - **Inline tweak** at `evalSingleScatteringTransmission` (second call site, ~line 423) — 3-line addition for view-model customIndex.
   *Same customIndex pattern for the second single-scattering transmission light sample.*
+
+- **Block** at `evalSssDiffusionProfileDirectional` (2026-06-19) — ~90 LOC.
+  *Directional wrapper for diffusion-profile SSS under the Numos atmosphere (sun/moon). All `RTXCR_*` calls stay in this file; integrators call only the wrapper. Includes fork-owned `atmosphere_direction_jitter.slangh` for `getJitteredSunDirection` (not `atmosphere_common.slangh`, which would pull cloud/LUT bindings into the integrate-direct compile unit via rtxcr_material).*
+
+- **Inline tweak** at `evalSssDiffusionProfile` / `evalSssDiffusionProfileDirectional` (2026-06-20) — 2-line change.
+  *Clamps `subsurfaceMaterialData.g` to `[-0.99, 0.99]` at RTXCR consumption to avoid degenerate Henyey-Greenstein phase at `g = ±1` without mutating shared `opaque_surface_material.slangh`.*
+
+---
+
+## src/dxvk/shaders/rtx/algorithm/integrator_atmosphere_nee.slangh
+
+**Category:** fork-owned
+
+- **Block** (full file, 2026-06-20) — ~65 LOC.
+  *Integrator-only thin-opaque atmosphere sun/moon NEE wrappers. Bypasses `atmosphere_common.slangh` horizon cull for back-lit thin-opaque subsurface by adjusting the shading normal passed to the shared samplers, keeping LUT/cloud/debug SPIR-V stable. Included only from `integrator_direct.slangh` and `integrator_indirect.slangh`.*
+
+---
+
+## src/dxvk/shaders/rtx/pass/atmosphere/atmosphere_direction_jitter.slangh
+
+**Category:** fork-owned
+
+- **Block** (full file, 2026-06-20) — ~30 LOC.
+  *Binding-free `getJitteredSunDirection` helper extracted from `atmosphere_common.slangh` so `rtxcr_material.slangh` can jitter directional SSS cone samples without including the full atmosphere module (fixes per-launch integrate-direct pipeline recompilation after the SSS/atmosphere integration). `atmosphere_common.slangh` includes this header instead of defining the function inline (single definition across all passes).*
 
 ---
 

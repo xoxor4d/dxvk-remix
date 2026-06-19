@@ -1,6 +1,6 @@
 ---
 name: bridge-build
-description: Build the Remix Bridge (32-bit client d3d9 + 64-bit server NvRemixBridge) via the fork-side bridge/scripts/build.ps1 wrapper. Use when the user asks to build, compile, compile-check, smoke-test, or force a clean rebuild of the bridge specifically — the bridge is a separate component from the main runtime and has its own build flow. Reports exit code + verifies artifacts. Do NOT invoke for runtime-side edits (src/dxvk/, rtx_fork_*) — those are rtx-build's domain.
+description: Build the Remix Bridge (32-bit client d3d9 + 64-bit server NvRemixBridge) via the fork-side bridge/scripts/build.ps1 wrapper. Use ONLY when the user explicitly asks to build, compile, compile-check, smoke-test, or force a clean rebuild of the bridge. Never invoke proactively after code changes. Do NOT invoke for runtime-side edits (src/dxvk/, rtx_fork_*) — those are rtx-build's domain.
 ---
 
 # bridge-build
@@ -18,16 +18,11 @@ Remix runtime. Client and server live under `bridge/` and build into
 
 ## When to invoke
 
-- User asks to build, compile, compile-check, or smoke-test the bridge
-- After a code change that touches `bridge/src/client/`,
-  `bridge/src/server/`, `bridge/src/util/`, `bridge/src/launcher/`,
-  or any IPC opcode/struct shared between client and server
-- After a `public/include/remix/remix_c.h` change that affects the
-  Remix C API surface (the bridge consumes that header)
-- Before pushing changes that touch the bridge
+- User **explicitly** asks to build, compile, compile-check, or smoke-test the bridge
 
 ## When NOT to invoke
 
+- **After completing a code change** — do not build unless the user asked
 - Edits only under `src/dxvk/` or other runtime-side code — that's
   `rtx-build`'s domain
 - Doc-only changes (`bridge/README.md`, `.md`, etc.)

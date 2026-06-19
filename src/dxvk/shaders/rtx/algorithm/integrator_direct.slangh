@@ -38,6 +38,7 @@
 #include "rtx/algorithm/rtxcr/rtxcr_material.slangh"
 #include "integrator.slangh"
 #include "rtx/pass/atmosphere/atmosphere_common.slangh"
+#include "integrator_atmosphere_nee.slangh"
 
 // Evaluate direct sun lighting from physical atmosphere with soft shadows
 // Returns true if sun contribution was added (not fully occluded)
@@ -55,12 +56,15 @@ bool evalAtmosphereSunNEE(
   bool isZUp,
   inout RNG randomState)
 {
-  // Sample sun lighting
-  AtmosphereSunSample sunSample = sampleAtmosphereSunLight(
+  const bool isThinOpaqueSubsurface = isThinOpaqueSubsurfaceMaterial(opaqueSurfaceMaterialInteraction);
+  const bool isDiffusionProfileSss = (cb.sssArgs.enableDiffusionProfile && isSubsurfaceDiffusionProfileMaterial(opaqueSurfaceMaterialInteraction));
+
+  AtmosphereSunSample sunSample = sampleAtmosphereSunLightForIntegrator(
     minimalSurfaceInteraction.position,
     opaqueSurfaceMaterialInteraction.shadingNormal,
     atmosphereArgs,
-    isZUp);
+    isZUp,
+    isThinOpaqueSubsurface);
 
   // Stash the per-pixel cumulus shadow factor for debug-view consumption
   // (fork — 2026-05-18). sampleAtmosphereSunLight applies the shadow directly
@@ -72,9 +76,10 @@ bool evalAtmosphereSunNEE(
     return false;
   }
 
-  // Check NdotL for surface
+  // Check NdotL for surface. Thin-opaque subsurface is back-lit (NdotL < 0) and
+  // transmits via the diffuse transmission lobe, so it must bypass this cull.
   float NdotL = dot(opaqueSurfaceMaterialInteraction.shadingNormal, sunSample.direction);
-  if (NdotL <= 0.0f) {
+  if (NdotL <= 0.0f && !isThinOpaqueSubsurface) {
     return false;
   }
   
@@ -82,8 +87,8 @@ bool evalAtmosphereSunNEE(
   rayMask |= (cb.enableDirectTranslucentShadows) ? OBJECT_MASK_TRANSLUCENT : 0;
   rayMask |= (cb.enableDirectAlphaBlendShadows) ? OBJECT_MASK_ALPHA_BLEND : 0;
   
-  const bool isThinOpaqueSubsurface = isThinOpaqueSubsurfaceMaterial(opaqueSurfaceMaterialInteraction);
   const bool pomOpaqueSurfaceEncountered = geometryFlags.pomOpaqueSurfaceEncountered && cb.pomEnableDirectLighting;
+  const uint sharedSurfaceIndex = (pomOpaqueSurfaceEncountered || isDiffusionProfileSss) ? uint(SharedSurfaceIndex[pixelCoordinate]) : SURFACE_INDEX_INVALID;
   const uint16_t primarySurfaceIndex = pomOpaqueSurfaceEncountered ? uint16_t(SharedSurfaceIndex[pixelCoordinate]) : BINDING_INDEX_INVALID;
   
   // Soft shadows: trace multiple shadow rays with jittered directions
@@ -100,15 +105,16 @@ bool evalAtmosphereSunNEE(
     float u2 = getNextSampleBlueNoise(randomState);
     vec3 jitteredDir = getJitteredSunDirection(sunSample.direction, sunSample.coneAngle, u1, u2);
     
-    // Ensure jittered direction is still above horizon for this surface
+    // Ensure jittered direction is still above horizon for this surface.
+    // Thin-opaque subsurface transmits back-lit, so keep its below-horizon samples.
     float jitteredNdotL = dot(opaqueSurfaceMaterialInteraction.shadingNormal, jitteredDir);
-    if (jitteredNdotL <= 0.0f) {
+    if (jitteredNdotL <= 0.0f && !isThinOpaqueSubsurface) {
       continue;  // Skip this sample, it's below the surface horizon
     }
     
     vec3 sunTargetPos = minimalSurfaceInteraction.position + jitteredDir * sunRayLength;
     
-    VisibilityResult visibility = traceVisibilityRay<visibilityModeEnablePom | visibilityModeEnableTranslucentMaterials>(
+    VisibilityResult visibility = traceVisibilityRay<visibilityModeEnablePom | visibilityModeEnableTranslucentMaterials | visibilityModeEnableSubsurfaceMaterials>(
       minimalSurfaceInteraction,
       sunTargetPos, rayMask,
       invalidRayPortalIndex, geometryFlags.portalSpace, pomOpaqueSurfaceEncountered,
@@ -123,24 +129,55 @@ bool evalAtmosphereSunNEE(
     }
   }
   
-  // If all samples were occluded, no light contribution
-  if (visibilitySum <= 0.0f) {
+  SssDiffusionProfileResult sssDiffusionProfileResult = createEmptySssDiffusionProfileResult();
+  if (isDiffusionProfileSss)
+  {
+    sssDiffusionProfileResult = evalSssDiffusionProfileDirectional(
+      opaqueSurfaceMaterialInteraction,
+      minimalRayInteraction,
+      minimalSurfaceInteraction,
+      rayMask,
+      invalidRayPortalIndex,
+      geometryFlags,
+      viewRay,
+      sharedSurfaceIndex,
+      pixelCoordinate,
+      sunSample.direction,
+      sunSample.radiance,
+      1.0f,
+      sunSample.coneAngle,
+      randomState);
+  }
+
+  // If all samples were occluded and no SSS disk sample hit, no light contribution
+  if (visibilitySum <= 0.0f && sssDiffusionProfileResult.allSamplesHaveHit) {
     return false;
   }
   
-  // Average the visibility
-  float avgVisibility = visibilitySum / float(numSamples);
-  vec3 avgAttenuation = attenuationSum / float(numSamples);
-  
-  // Evaluate BRDF for main sun direction
-  const SurfaceMaterialInteractionSplitWeight splitWeight =
-    opaqueSurfaceMaterialInteractionCalcProjectedWeight(
-      opaqueSurfaceMaterialInteraction, minimalRayInteraction, f16vec3(sunSample.direction));
-  
-  // Accumulate sun contribution with soft shadow factor
-  const vec3 sunThroughput = avgAttenuation * avgVisibility;
-  diffuseLobeRadiance += throughput * sunSample.radiance * vec3(splitWeight.diffuseReflectionWeight + splitWeight.diffuseTransmissionWeight) * sunThroughput;
-  specularLobeRadiance += throughput * sunSample.radiance * vec3(splitWeight.specularReflectionWeight) * sunThroughput;
+  if (visibilitySum > 0.0f)
+  {
+    // Average the visibility
+    float avgVisibility = visibilitySum / float(numSamples);
+    vec3 avgAttenuation = attenuationSum / float(numSamples);
+    
+    // Evaluate BRDF for main sun direction
+    const SurfaceMaterialInteractionSplitWeight splitWeight =
+      opaqueSurfaceMaterialInteractionCalcProjectedWeight(
+        opaqueSurfaceMaterialInteraction, minimalRayInteraction, f16vec3(sunSample.direction));
+    
+    const vec3 diffuseLobeWeight = !isDiffusionProfileSss ? vec3(splitWeight.diffuseReflectionWeight + splitWeight.diffuseTransmissionWeight) : vec3(0.0f);
+    const vec3 specularLobeWeight = vec3(splitWeight.specularReflectionWeight);
+
+    // Accumulate sun contribution with soft shadow factor
+    const vec3 sunThroughput = avgAttenuation * avgVisibility;
+    diffuseLobeRadiance += throughput * sunSample.radiance * diffuseLobeWeight * sunThroughput;
+    specularLobeRadiance += throughput * sunSample.radiance * specularLobeWeight * sunThroughput;
+  }
+
+  if (isDiffusionProfileSss)
+  {
+    diffuseLobeRadiance += throughput * vec3(sssDiffusionProfileResult.scatteringWeight);
+  }
 
   return true;
 }
@@ -166,22 +203,28 @@ bool evalAtmosphereMoonNEE(
   bool isZUp,
   inout RNG randomState)
 {
+  const bool isThinOpaqueSubsurface = isThinOpaqueSubsurfaceMaterial(opaqueSurfaceMaterialInteraction);
+  const bool isDiffusionProfileSss = (cb.sssArgs.enableDiffusionProfile && isSubsurfaceDiffusionProfileMaterial(opaqueSurfaceMaterialInteraction));
+
   // Pick one moon via importance sampling. u_pick consumes one blue-noise
   // sample so the pick is correlated with the rest of the path's RNG.
   float u_pick = getNextSampleBlueNoise(randomState);
-  AtmosphereMoonSample moonSample = sampleAtmosphereMoonLight(
+  AtmosphereMoonSample moonSample = sampleAtmosphereMoonLightForIntegrator(
     minimalSurfaceInteraction.position,
     opaqueSurfaceMaterialInteraction.shadingNormal,
     atmosphereArgs,
     u_pick,
-    isZUp);
+    isZUp,
+    isThinOpaqueSubsurface);
 
   if (!moonSample.valid) {
     return false;
   }
 
+  // Thin-opaque subsurface is back-lit (NdotL < 0) and transmits via the diffuse
+  // transmission lobe, so it must bypass this cull.
   float NdotL = dot(opaqueSurfaceMaterialInteraction.shadingNormal, moonSample.direction);
-  if (NdotL <= 0.0f) {
+  if (NdotL <= 0.0f && !isThinOpaqueSubsurface) {
     return false;
   }
 
@@ -189,8 +232,8 @@ bool evalAtmosphereMoonNEE(
   rayMask |= (cb.enableDirectTranslucentShadows) ? OBJECT_MASK_TRANSLUCENT : 0;
   rayMask |= (cb.enableDirectAlphaBlendShadows) ? OBJECT_MASK_ALPHA_BLEND : 0;
 
-  const bool isThinOpaqueSubsurface = isThinOpaqueSubsurfaceMaterial(opaqueSurfaceMaterialInteraction);
   const bool pomOpaqueSurfaceEncountered = geometryFlags.pomOpaqueSurfaceEncountered && cb.pomEnableDirectLighting;
+  const uint sharedSurfaceIndex = (pomOpaqueSurfaceEncountered || isDiffusionProfileSss) ? uint(SharedSurfaceIndex[pixelCoordinate]) : SURFACE_INDEX_INVALID;
   const uint16_t primarySurfaceIndex = pomOpaqueSurfaceEncountered ? uint16_t(SharedSurfaceIndex[pixelCoordinate]) : BINDING_INDEX_INVALID;
 
   // Soft shadows: moonSample.numSamples shadow rays with direction jitter
@@ -206,14 +249,15 @@ bool evalAtmosphereMoonNEE(
     float u2 = getNextSampleBlueNoise(randomState);
     vec3 jitteredDir = getJitteredSunDirection(moonSample.direction, moonSample.coneAngle, u1, u2);
 
+    // Thin-opaque subsurface transmits back-lit, so keep its below-horizon samples.
     float jitteredNdotL = dot(opaqueSurfaceMaterialInteraction.shadingNormal, jitteredDir);
-    if (jitteredNdotL <= 0.0f) {
+    if (jitteredNdotL <= 0.0f && !isThinOpaqueSubsurface) {
       continue;
     }
 
     vec3 moonTargetPos = minimalSurfaceInteraction.position + jitteredDir * moonRayLength;
 
-    VisibilityResult visibility = traceVisibilityRay<visibilityModeEnablePom | visibilityModeEnableTranslucentMaterials>(
+    VisibilityResult visibility = traceVisibilityRay<visibilityModeEnablePom | visibilityModeEnableTranslucentMaterials | visibilityModeEnableSubsurfaceMaterials>(
       minimalSurfaceInteraction,
       moonTargetPos, rayMask,
       invalidRayPortalIndex, geometryFlags.portalSpace, pomOpaqueSurfaceEncountered,
@@ -228,25 +272,52 @@ bool evalAtmosphereMoonNEE(
     }
   }
 
-  if (visibilitySum <= 0.0f) {
+  SssDiffusionProfileResult sssDiffusionProfileResult = createEmptySssDiffusionProfileResult();
+  if (isDiffusionProfileSss)
+  {
+    sssDiffusionProfileResult = evalSssDiffusionProfileDirectional(
+      opaqueSurfaceMaterialInteraction,
+      minimalRayInteraction,
+      minimalSurfaceInteraction,
+      rayMask,
+      invalidRayPortalIndex,
+      geometryFlags,
+      viewRay,
+      sharedSurfaceIndex,
+      pixelCoordinate,
+      moonSample.direction,
+      moonSample.radiance,
+      1.0f / max(moonSample.solidAnglePdf, 1e-6f),
+      moonSample.coneAngle,
+      randomState);
+  }
+
+  if (visibilitySum <= 0.0f && sssDiffusionProfileResult.allSamplesHaveHit) {
     return false;
   }
 
-  float avgVisibility = visibilitySum / float(numSamples);
-  vec3 avgAttenuation = attenuationSum / float(numSamples);
+  if (visibilitySum > 0.0f)
+  {
+    float avgVisibility = visibilitySum / float(numSamples);
+    vec3 avgAttenuation = attenuationSum / float(numSamples);
 
-  const SurfaceMaterialInteractionSplitWeight splitWeight =
-    opaqueSurfaceMaterialInteractionCalcProjectedWeight(
-      opaqueSurfaceMaterialInteraction, minimalRayInteraction, f16vec3(moonSample.direction));
+    const SurfaceMaterialInteractionSplitWeight splitWeight =
+      opaqueSurfaceMaterialInteractionCalcProjectedWeight(
+        opaqueSurfaceMaterialInteraction, minimalRayInteraction, f16vec3(moonSample.direction));
 
-  // Accumulate. Divide by the discrete pick PDF so importance sampling
-  // remains unbiased over many frames (with one moon, pickPdf=1.0 -> no
-  // effect; with N equally-bright moons, pickPdf=1/N -> contribution
-  // multiplied by N to compensate for sampling only one).
-  const vec3 moonThroughput = avgAttenuation * avgVisibility;
-  const float invPickPdf = 1.0f / max(moonSample.solidAnglePdf, 1e-6f);
-  diffuseLobeRadiance += throughput * moonSample.radiance * vec3(splitWeight.diffuseReflectionWeight + splitWeight.diffuseTransmissionWeight) * moonThroughput * invPickPdf;
-  specularLobeRadiance += throughput * moonSample.radiance * vec3(splitWeight.specularReflectionWeight) * moonThroughput * invPickPdf;
+    const vec3 diffuseLobeWeight = !isDiffusionProfileSss ? vec3(splitWeight.diffuseReflectionWeight + splitWeight.diffuseTransmissionWeight) : vec3(0.0f);
+    const vec3 specularLobeWeight = vec3(splitWeight.specularReflectionWeight);
+    const vec3 moonThroughput = avgAttenuation * avgVisibility;
+    const float invPickPdf = 1.0f / max(moonSample.solidAnglePdf, 1e-6f);
+
+    diffuseLobeRadiance += throughput * moonSample.radiance * diffuseLobeWeight * moonThroughput * invPickPdf;
+    specularLobeRadiance += throughput * moonSample.radiance * specularLobeWeight * moonThroughput * invPickPdf;
+  }
+
+  if (isDiffusionProfileSss)
+  {
+    diffuseLobeRadiance += throughput * vec3(sssDiffusionProfileResult.scatteringWeight);
+  }
 
   return true;
 }

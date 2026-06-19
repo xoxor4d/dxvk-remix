@@ -62,6 +62,7 @@
 #include "rtx/utility/common.slangh"
 #include "rtx/utility/math.slangh"
 #include "rtx/pass/atmosphere/atmosphere_args.h"
+#include "rtx/pass/atmosphere/atmosphere_direction_jitter.slangh"
 
 // Constants
 static const float kAtmosphereEpsilon = 1e-3f;
@@ -929,28 +930,6 @@ void getSunSoftShadowParams(float mieAnisotropy, out float coneAngle, out int nu
   numSamples = max(1, numSamples);
 }
 
-// Generate a direction jittered within a cone around the main direction
-// Uses a simple but effective disk sampling approach
-vec3 getJitteredSunDirection(vec3 sunDir, float coneAngle, float u1, float u2) {
-  if (coneAngle < 0.005f) {
-    return sunDir;  // No jitter for very small cones
-  }
-  
-  // Create orthonormal basis around sun direction
-  vec3 up = abs(sunDir.y) < 0.999f ? vec3(0.0f, 1.0f, 0.0f) : vec3(1.0f, 0.0f, 0.0f);
-  vec3 tangent = normalize(cross(up, sunDir));
-  vec3 bitangent = cross(sunDir, tangent);
-  
-  // Sample a point on a disk and project to cone
-  float r = sqrt(u1) * tan(coneAngle);  // Radius on disk
-  float phi = u2 * 2.0f * kPi;          // Angle around disk
-  
-  // Offset direction
-  vec3 offset = tangent * (r * cos(phi)) + bitangent * (r * sin(phi));
-  
-  return normalize(sunDir + offset);
-}
-
 // Sample direct sun lighting for NEE at a surface point
 AtmosphereSunSample sampleAtmosphereSunLight(vec3 surfacePos, vec3 surfaceNormal, AtmosphereArgs args, bool isZUp = false) {
   AtmosphereSunSample result;
@@ -1152,7 +1131,7 @@ AtmosphereMoonSample sampleAtmosphereMoonLight(vec3 surfacePos, vec3 surfaceNorm
   // Direction in caller's coordinate space (Y-up or Z-up).
   result.direction = isZUp ? vec3(moonDirYUp.x, moonDirYUp.z, moonDirYUp.y) : moonDirYUp;
 
-  // Surface-facing check.
+  // Surface-facing check
   float NdotL = dot(surfaceNormal, result.direction);
   if (NdotL <= 0.0f) {
     return result;

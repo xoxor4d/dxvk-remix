@@ -136,8 +136,9 @@ via the `Skill` tool by name:
 
 - **`rtx-build`** — wraps the proper meson/ninja build with the
   required `nv-private/` + `tests/rtx/dxvk_rt_testing/` pre-cleanup,
-  runs in the background, reports exit code + error count. Use
-  whenever the user asks to build or compile-check the runtime.
+  runs in the background, reports exit code + error count. Invoke
+  **only** when the user explicitly asks to build or compile-check the
+  runtime — never proactively after edits.
 - **`bridge-build`** — wraps `bridge/build_bridge_release.bat` (x64
   server + x86 client). Verifies all three artifacts (`NvRemixBridge.exe`,
   `d3d9.dll`, `NvRemixLauncher32.exe`) exist and flags mixed-date
@@ -149,6 +150,8 @@ via the `Skill` tool by name:
 - Don't force-push anything, ever.
 - Don't skip hooks (`--no-verify`) unless explicitly asked.
 - Don't add a feature, refactor, or "cleanup" beyond the task scope.
+- Don't build the runtime or bridge unless the user explicitly asks —
+  completing a task does not require a compile-check on its own.
 - Don't edit files under `submodules/` or `external/` — those are
   third-party pins.
 
