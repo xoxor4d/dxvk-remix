@@ -100,7 +100,7 @@ namespace dxvk {
     IdentityHashData data{};
 
     data.geoHash = drawCallState.getGeometryData().getHashForRule(rules::FullGeometryHash);
-    data.matHash = drawCallState.getMaterialData().getHash();
+    data.matHash = drawCallState.getMaterialData().getChangeDetectionHash();
     data.overrideMaterialHash = overrideMaterialData != nullptr
         ? overrideMaterialData->getHash()
         : kEmptyHash;
@@ -272,7 +272,7 @@ namespace dxvk {
     const ReplacementInstance::LookupKey key {
       computeIdentityHash(drawCallState, overrideMaterialData),
       hashes.getHashForRule<rules::TopologicalHash>(),
-      drawCallState.getMaterialData().getHash(),
+      drawCallState.getMaterialData().getChangeDetectionHash(),
       hashes[HashComponents::VertexPosition],
       drawCallState.getGeometryData().boundingBox.getTransformedCentroid(objectToWorld),
       objectToWorld,

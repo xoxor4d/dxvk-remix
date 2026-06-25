@@ -1883,6 +1883,10 @@ struct LegacyMaterialData {
     return m_cachedHash;
   }
 
+  XXH64_hash_t getChangeDetectionHash() const {
+    return m_cachedChangeDetectionHash;
+  }
+
   const TextureRef& getColorTexture() const {
     return colorTextures[0];
   }
@@ -2021,6 +2025,98 @@ private:
     if (remixHashFromD3D) {
       m_cachedHash = remixHashFromD3D;
     }
+
+    // Full material hash for preserve-path change detection (replacement lookup still uses m_cachedHash).
+    static_assert(
+      sizeof(D3DMATERIAL9) == 68,
+      "D3DMATERIAL9 size changed; update LegacyMaterialData change-detection hash struct"
+    );
+    struct ChangeDetectionHashStruct {
+      XXH64_hash_t colorTexture0Hash;
+      XXH64_hash_t colorTexture1Hash;
+      uint32_t alphaTestEnabled;
+      uint32_t alphaTestReferenceValue;
+      uint32_t alphaTestCompareOp;
+      uint32_t enableBlending;
+      uint32_t colorSrcFactor;
+      uint32_t colorDstFactor;
+      uint32_t colorBlendOp;
+      uint32_t alphaSrcFactor;
+      uint32_t alphaDstFactor;
+      uint32_t alphaBlendOp;
+      uint32_t writeMask;
+      uint32_t diffuseColorSource;
+      uint32_t specularColorSource;
+      uint32_t textureColorArg1Source;
+      uint32_t textureColorArg2Source;
+      uint32_t textureColorOperation;
+      uint32_t textureAlphaArg1Source;
+      uint32_t textureAlphaArg2Source;
+      uint32_t textureAlphaOperation;
+      uint32_t tFactor;
+      uint32_t isTextureFactorBlend;
+      uint32_t isVertexColorBakedLighting;
+      uint32_t remixTextureCategoryFlagsFromD3D;
+      uint32_t remixModifierFromD3D;
+      XXH64_hash_t remixHashFromD3D;
+      float remixTempFloat01FromD3D;
+      float remixTempFloat02FromD3D;
+      uint32_t remixPackedFloat4_RS210FromD3D;
+      float remixFloatRS211FromD3D;
+      float remixFloatRS212FromD3D;
+      float remixFloatRS213FromD3D;
+      float remixFloatRS214FromD3D;
+      float remixFloatRS215FromD3D;
+      float remixFloatRS216FromD3D;
+      float remixFloatRS217FromD3D;
+      float remixFloatRS218FromD3D;
+      float remixFloatRS219FromD3D;
+      float remixFloatRS220FromD3D;
+    };
+    static_assert(alignof(ChangeDetectionHashStruct) == 8 && sizeof(ChangeDetectionHashStruct) == 176);
+    ChangeDetectionHashStruct hashData = ChangeDetectionHashStruct{
+      colorTextures[0].getImageHash(),
+      colorTextures[1].getImageHash(),
+      alphaTestEnabled ? 1u : 0u,
+      alphaTestReferenceValue,
+      static_cast<uint32_t>(alphaTestCompareOp),
+      blendMode.enableBlending,
+      static_cast<uint32_t>(blendMode.colorSrcFactor),
+      static_cast<uint32_t>(blendMode.colorDstFactor),
+      static_cast<uint32_t>(blendMode.colorBlendOp),
+      static_cast<uint32_t>(blendMode.alphaSrcFactor),
+      static_cast<uint32_t>(blendMode.alphaDstFactor),
+      static_cast<uint32_t>(blendMode.alphaBlendOp),
+      blendMode.writeMask,
+      static_cast<uint32_t>(diffuseColorSource),
+      static_cast<uint32_t>(specularColorSource),
+      static_cast<uint32_t>(textureColorArg1Source),
+      static_cast<uint32_t>(textureColorArg2Source),
+      static_cast<uint32_t>(textureColorOperation),
+      static_cast<uint32_t>(textureAlphaArg1Source),
+      static_cast<uint32_t>(textureAlphaArg2Source),
+      static_cast<uint32_t>(textureAlphaOperation),
+      tFactor,
+      isTextureFactorBlend ? 1u : 0u,
+      isVertexColorBakedLighting ? 1u : 0u,
+      remixTextureCategoryFlagsFromD3D,
+      remixModifierFromD3D,
+      remixHashFromD3D,
+      remixTempFloat01FromD3D,
+      remixTempFloat02FromD3D,
+      remixPackedFloat4_RS210FromD3D,
+      remixFloatRS211FromD3D,
+      remixFloatRS212FromD3D,
+      remixFloatRS213FromD3D,
+      remixFloatRS214FromD3D,
+      remixFloatRS215FromD3D,
+      remixFloatRS216FromD3D,
+      remixFloatRS217FromD3D,
+      remixFloatRS218FromD3D,
+      remixFloatRS219FromD3D,
+      remixFloatRS220FromD3D,
+    };
+    m_cachedChangeDetectionHash = XXH3_64bits(&hashData, sizeof(hashData));
   }
 
   const static uint32_t kMaxSupportedTextures = 2;
@@ -2030,6 +2126,7 @@ private:
   uint32_t colorTextureSlot[kMaxSupportedTextures] = { kInvalidResourceSlot };
 
   XXH64_hash_t m_cachedHash = kEmptyHash;
+  XXH64_hash_t m_cachedChangeDetectionHash = kEmptyHash;
 };
 
 struct MaterialData {
