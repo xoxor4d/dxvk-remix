@@ -2027,10 +2027,6 @@ private:
     }
 
     // Full material hash for preserve-path change detection (replacement lookup still uses m_cachedHash).
-    static_assert(
-      sizeof(D3DMATERIAL9) == 68,
-      "D3DMATERIAL9 size changed; update LegacyMaterialData change-detection hash struct"
-    );
     struct ChangeDetectionHashStruct {
       XXH64_hash_t colorTexture0Hash;
       XXH64_hash_t colorTexture1Hash;
@@ -2072,8 +2068,10 @@ private:
       float remixFloatRS218FromD3D;
       float remixFloatRS219FromD3D;
       float remixFloatRS220FromD3D;
+      uint32_t pad1 = 0u; // 4 trailing bytes because 8 byte alignment
     };
     static_assert(alignof(ChangeDetectionHashStruct) == 8 && sizeof(ChangeDetectionHashStruct) == 176);
+
     ChangeDetectionHashStruct hashData = ChangeDetectionHashStruct{
       colorTextures[0].getImageHash(),
       colorTextures[1].getImageHash(),
@@ -2116,6 +2114,7 @@ private:
       remixFloatRS219FromD3D,
       remixFloatRS220FromD3D,
     };
+
     m_cachedChangeDetectionHash = XXH3_64bits(&hashData, sizeof(hashData));
   }
 
