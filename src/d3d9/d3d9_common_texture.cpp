@@ -95,10 +95,10 @@ namespace dxvk {
 
     // Release this texture from ImGUI 
     if (m_image != nullptr) {
-      if (m_image->getHash() != 0) {
+      if (m_image->getHash() != kEmptyHash) {
         ImGUI::ReleaseTexture(m_image->getHash());
       }
-      if (m_image->getDescriptorHash() != 0) {
+      if (m_image->getDescriptorHash() != kEmptyHash) {
         ImGUI::ReleaseTexture(m_image->getDescriptorHash());
       }
     }
@@ -660,7 +660,7 @@ namespace dxvk {
 
     const bool alwaysRecalculateHash = RtxOptions::alwaysRecalculateTextureHashes();
 
-    if (m_image->getHash() != 0) {
+    if (m_image->getHash() != kEmptyHash) {
       if (!alwaysRecalculateHash) {
         // Already setup.
         return;
@@ -710,6 +710,22 @@ namespace dxvk {
 
   void D3D9CommonTexture::SetupForRtx() {
     SetupForRtxFrom(this);
+  }
+
+  void D3D9CommonTexture::ClearHash() {
+    if (m_image == nullptr) {
+      return;
+    }
+
+    if (m_image->getHash() != kEmptyHash) {
+      ImGUI::ReleaseTexture(m_image->getHash());
+      m_image->setHash(kEmptyHash);
+    }
+
+    if (m_image->getDescriptorHash() != kEmptyHash) {
+      ImGUI::ReleaseTexture(m_image->getDescriptorHash());
+      m_image->setDescriptorHash(kEmptyHash);
+    }
   }
 
 }
