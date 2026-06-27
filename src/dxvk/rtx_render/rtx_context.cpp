@@ -756,7 +756,7 @@ namespace dxvk {
         dispatchSRGBDither(rtOutput, performSRGBConversion);
 
         // Composite screen overlay (from external C API) after tone mapping, before screenshot capture.
-        dispatchScreenOverlay(rtOutput);
+        //dispatchScreenOverlay(rtOutput);
 
         if (captureScreenImage) {
           if (m_common->metaDebugView().debugViewIdx() == DEBUG_VIEW_DISABLED) {
@@ -1877,7 +1877,7 @@ namespace dxvk {
   }
 
   void RtxContext::dispatchScreenOverlay(Resources::RaytracingOutput& rtOutput) {
-    fork_hooks::dispatchScreenOverlay(*this, rtOutput);
+    //fork_hooks::dispatchScreenOverlay(*this, rtOutput);
   }
 
   void RtxContext::dispatchDebugView(Rc<DxvkImage>& srcImage, const Resources::RaytracingOutput& rtOutput, bool captureScreenImage)  {
