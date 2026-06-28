@@ -1263,10 +1263,10 @@ namespace dxvk {
     RTX_OPTION("rtx.atmosphere", float, sunsetSaturation, 1.0f, "Artistic saturation adjustment applied to sky radiance, ramped in as the sun approaches the horizon (midday sky is untouched). 1.0 = no change (default — the physical multiscatter path now produces correct horizon color at the source, so the former 0.5 desaturation band-aid is retired); <1 desaturates the near-horizon sky toward neutral; >1 amplifies the warm horizon hues. Feeds the sky-view LUT, so clouds inherit it.");
 
     RTX_OPTION_ARGS("rtx.atmosphere", float, skyIndirectRadianceScale, 8.0f,
-               "Artistic multiplier for sky radiance returned to non-primary rays only "
-               "(indirect bounces, reflections, and PSR sky misses). 1.0 preserves the "
-               "physical sky-view result; >1 brightens sky influence without changing the "
-               "visible primary sky or direct sun lighting.",
+               "Artistic multiplier for sky radiance on diffuse indirect GI sky misses only. "
+               "1.0 preserves the physical sky-view result; >1 brightens sky bounce lighting "
+               "without changing the visible primary sky, direct sun lighting, PSR reflections, "
+               "or specular-indirect sky misses.",
       args.minValue = 0.0f);
 
     // ----- Night-sky shading (fork) -----

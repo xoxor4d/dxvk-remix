@@ -2327,3 +2327,21 @@ Graduates the "sun/moon as real distant lights" work from an experiment-with-fal
 - **`RtxOptions.md`** — REGEN PENDING (drops `useDirectionalLights` + `debugEnableAtmosphereNee`).
 
 ---
+
+## Workstream — Exclude skyIndirectRadianceScale from reflections (fork — 2026-06-28)
+
+The `skyIndirectRadianceScale` knob (default 8.0) was gated on `!isPrimaryRay` inside `evalSkyRadiance`, which conflated cloud-source selection with artistic scaling and boosted PSR / specular-indirect sky misses along with diffuse GI. Decoupled: `evalSkyRadiance` now takes an explicit trailing `applySkyIndirectRadianceScale` (default false); only `integrate_indirect` opt-in passes true, and only when the current ray's sampled lobe is not specular reflection. PSR sky misses keep the default (physical sky brightness).
+
+- **`src/dxvk/shaders/rtx/pass/atmosphere/atmosphere_sky.slangh`** — fork-owned change.
+  *Adds `applySkyIndirectRadianceScale` trailing parameter; replaces `!isPrimaryRay` scale gate.*
+- **`src/dxvk/shaders/rtx/algorithm/path_state.slangh`** — fork-owned change.
+  *Adds `currentSampledLobe` to `PathState` so indirect integrator knows which lobe produced the ray that missed to the sky.*
+- **`src/dxvk/shaders/rtx/algorithm/integrator_indirect.slangh`** — fork-owned change.
+  *Initializes/updates `currentSampledLobe`; passes `applySkyIndirectRadianceScale` only for non-specular-reflection sky misses.*
+- **`src/dxvk/rtx_render/rtx_options.h`** — fork-owned change.
+  *Rewords `skyIndirectRadianceScale` description (diffuse indirect GI only; excludes PSR + specular-indirect).*
+- **`src/dxvk/rtx_render/rtx_fork_atmosphere.cpp`** — fork-owned change.
+  *Updates ImGui tooltip to match.*
+- **`tests/rtx/unit/test_atmosphere_sky_indirect_scale.cpp`** — source-text regression tests for the new gating.
+
+---

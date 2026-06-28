@@ -1166,9 +1166,10 @@ namespace fork_hooks {
 
           RemixGui::DragFloat("Sky Indirect Scale", &RtxOptions::skyIndirectRadianceScaleObject(), 0.01f, 0.0f, 20.0f, "%.2f", sliderFlags);
           RemixGui::SetTooltipToLastWidgetOnHover(
-              "Scales sky radiance for non-primary rays only: indirect bounces, reflections, and PSR sky misses. "
-              "1.0 preserves the physical sky-view result. Higher values brighten sky influence without changing "
-              "the visible primary sky or direct sun lighting.");
+              "Scales sky radiance for diffuse indirect GI sky misses only. "
+              "1.0 preserves the physical sky-view result. Higher values brighten sky bounce "
+              "lighting without changing the visible primary sky, direct sun lighting, PSR "
+              "reflections, or specular-indirect sky misses.");
 
           // Sky perf workstream knobs (fork — 2026-06-11) are conf-only by
           // design: skyLutCacheKeySplitEnable, skyViewRebakeGranularityDeg and

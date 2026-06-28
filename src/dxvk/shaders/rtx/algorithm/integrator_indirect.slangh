@@ -383,7 +383,12 @@ void integratePathVertex(
       // Physical atmosphere mode
       skyRadiance = evalSkyRadiance(pathState.direction, cb.atmosphereArgs,
                                      pathState.pixelCoordinate, cb.frameIdx,
-                                     cb.isZUp != 0);
+                                     cb.isZUp != 0,
+                                     /*enableCloudTemporalSmoothing=*/ false,
+                                     vec2(0.0f, 0.0f),
+                                     uint2(0u, 0u),
+                                     /*isPrimaryRay=*/ false,
+                                     /*applySkyIndirectRadianceScale=*/ pathState.currentSampledLobe != opaqueLobeTypeSpecularReflection);
     }
 #endif
     else
@@ -585,6 +590,7 @@ void integratePathVertex(
       pathState.coneRadius = sampledRay.coneRadius;
       pathState.direction = sampledRay.direction;
       pathState.solidAnglePdf = solidAnglePdf;
+      pathState.currentSampledLobe = continuationLobe;
     }
     
     // Set the material medium index if a medium was entered or exited
@@ -1313,7 +1319,10 @@ void integrateIndirectPath(
   pathState.enableNeeCacheAfterFirstBounce =
     (geometryFlags.performPSRR || NEECache.shouldUseHigherBounceNeeCache(geometryFlags.firstSampledLobeIsSpecular, calcRoughness(firstHitPerceptualRoughness)));
   pathState.gbufferPerceptualRoughness = firstHitPerceptualRoughness;
-  
+  pathState.currentSampledLobe = geometryFlags.firstSampledLobeIsSpecular
+    ? opaqueLobeTypeSpecularReflection
+    : opaqueLobeTypeDiffuseReflection;
+
   initNrc(pathState, gbufferPixelCoordinate, isNrcUpdate, geometryFlags, firstSampledSolidAnglePdf);
 
   initReSTIRGI(pathState, geometryFlags, firstHitPerceptualRoughness, firstSampledLobePdf, firstSampledSolidAnglePdf);

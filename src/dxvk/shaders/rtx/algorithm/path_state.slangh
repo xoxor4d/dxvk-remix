@@ -82,6 +82,7 @@ struct PathState : IBasePayloadState
                  // indirectLightPortalID(uint:2b), 
                  // bounceIteration(uint:4b)
   uint8_t _roughness;
+  uint8_t _currentSampledLobe;
 
   // Need to track pixel coordinate for sparse rendering where threads can remap to different pixels
   u16vec2 _pixelCoordinate;
@@ -419,6 +420,12 @@ struct PathState : IBasePayloadState
   {
       get { return unorm8ToF32(_roughness); }
       set { _roughness = f32ToUnorm8(newValue); }
+  }
+
+  property uint8_t currentSampledLobe
+  {
+      get { return _currentSampledLobe; }
+      set { _currentSampledLobe = newValue; }
   }
 
   // Methods

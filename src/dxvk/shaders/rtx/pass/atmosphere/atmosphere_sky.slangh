@@ -722,7 +722,8 @@ vec3 evalSkyRadiance(
   bool enableCloudTemporalSmoothing = false,
   vec2 motionVectorPixels = vec2(0.0f, 0.0f),
   uint2 historyResolution = uint2(0u, 0u),
-  bool isPrimaryRay = false
+  bool isPrimaryRay = false,
+  bool applySkyIndirectRadianceScale = false
 ) {
   // Perf bisect (fork — 2026-06-11, diagnostic): flat sky miss. Returns a
   // constant mid-grey immediately so a live session can read the full
@@ -1069,7 +1070,7 @@ vec3 evalSkyRadiance(
   }
 
   radiance = max(radiance, vec3(0.0f));
-  if (!isPrimaryRay) {
+  if (applySkyIndirectRadianceScale) {
     radiance *= max(args.skyIndirectRadianceScale, 0.0f);
   }
 
