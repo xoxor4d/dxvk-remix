@@ -1564,10 +1564,11 @@ namespace {
     if (!remixDevice) {
       return REMIXAPI_ERROR_CODE_REMIX_DEVICE_WAS_NOT_REGISTERED;
     }
-   /* {
-      std::lock_guard lock { s_mutex };
-      s_pendingLightDestroys.push_back(handle);
-    }*/
+    std::lock_guard lock { s_mutex };
+    remixDevice->EmitCs([cHandle = handle](dxvk::DxvkContext* ctx) {
+      auto& lightMgr = ctx->getCommonObjects()->getSceneManager().getLightManager();
+      lightMgr.removeExternalLight(cHandle);
+    });
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 
