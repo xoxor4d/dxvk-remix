@@ -1882,6 +1882,16 @@ namespace dxvk {
                "pixels (~4x cheaper cloud march); 1.0 = native (legacy, "
                "bit-exact). Applies on the next frame; live-tunable.");
 
+    RTX_OPTION("rtx.atmosphere", float, cloudNearFieldMarginKm, 0.5f,
+               "Distance (km) from the cloud slab at which primary sky-miss "
+               "switches from the screen-space cloud RT to a live per-ray "
+               "volumetric march. 0 = only when inside the slab. Applies live.");
+
+    RTX_OPTION("rtx.atmosphere", float, cloudProximityDensityBoost, 1.0f,
+               "Max extinction multiplier when the camera is at the cloud shell "
+               "(1 = disabled). Fades to 1.0 with distance from the slab. "
+               "Thickens near-field fog on geometry hits. Applies live.");
+
     // Secondary-ray cloud LUT (fork — 2026-06-10, perf). Every indirect /
     // PSR / reflection ray that reaches sky-miss would otherwise run a full
     // per-ray cloud march — a hidden per-ray cost rivaling the visible cloud

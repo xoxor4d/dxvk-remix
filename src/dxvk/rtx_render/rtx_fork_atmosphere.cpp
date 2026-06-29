@@ -293,9 +293,9 @@ namespace fork_hooks {
       // a weighted sum to reconstruct viewDir per pixel.
       {
         const RtCamera& camera = ctx.getSceneManager().getCamera();
-        const Vector3 forward = camera.getDirection(/*freecam=*/true);
-        const Vector3 right   = camera.getRight(/*freecam=*/true);
-        const Vector3 up      = camera.getUp(/*freecam=*/true);
+        const Vector3 forward = camera.getDirection(/*freecam=*/false);
+        const Vector3 right   = camera.getRight(/*freecam=*/false);
+        const Vector3 up      = camera.getUp(/*freecam=*/false);
 
         const bool isZUp = RtxOptions::zUp();
         // Swap (x, y, z) -> (x, z, y) when the game is Z-up. Mirrors the
@@ -339,7 +339,11 @@ namespace fork_hooks {
           const float sceneScaleSafe = std::max(RtxOptions::sceneScale(), 1e-5f);
           const float worldUnitsPerKm = 100000.0f * sceneScaleSafe;
           const float kmPerWorldUnit = 1.0f / worldUnitsPerKm;
-          const Vector3 cameraPosYUpKm = cameraPosWorldUnitsYUp * kmPerWorldUnit;
+          const float altitudeOffsetKm = RtxOptions::altitude() * 0.001f;
+          const Vector3 cameraPosYUpKm(
+            cameraPosWorldUnitsYUp.x * kmPerWorldUnit,
+            cameraPosWorldUnitsYUp.y * kmPerWorldUnit + altitudeOffsetKm,
+            cameraPosWorldUnitsYUp.z * kmPerWorldUnit);
           ctx.m_atmosphere->setCloudShadowCameraPosition(cameraPosYUpKm);
         }
 
@@ -1107,7 +1111,7 @@ namespace fork_hooks {
         RemixGui::SetTooltipToLastWidgetOnHover("Density of ozone layer");
 
         if (ImGui::TreeNode("Advanced")) {
-          RemixGui::DragFloat("Planet Radius", &RtxOptions::planetRadiusObject(), 10.0f, 1000.0f, 10000.0f, "%.0f km", sliderFlags);
+          RemixGui::DragFloat("Planet Radius", &RtxOptions::planetRadiusObject(), 1.0f, 100.0f, 10000.0f, "%.0f km", sliderFlags);
           RemixGui::DragFloat("Atmosphere Thickness", &RtxOptions::atmosphereThicknessObject(), 0.1f, 10.0f, 500.0f, "%.0f km", sliderFlags);
           RemixGui::DragFloat("Mie Anisotropy", &RtxOptions::mieAnisotropyObject(), 0.01f, -1.0f, 1.0f, "%.2f", sliderFlags);
 
@@ -1249,6 +1253,11 @@ namespace fork_hooks {
                               0.005f, 0.0f, 4.0f, "%.2f", sliderFlags);
           RemixGui::SetTooltipToLastWidgetOnHover(
               "Cloud opacity. Higher = thicker / darker clouds.");
+          RemixGui::DragFloat("Proximity Density Boost", &RtxOptions::cloudProximityDensityBoostObject(),
+                              0.1f, 1.0f, 8.0f, "%.1f", sliderFlags);
+          RemixGui::SetTooltipToLastWidgetOnHover(
+              "Thickens clouds when the camera is near or inside the slab. "
+              "1.0 = off; higher = denser near-field fog (including on geometry).");
           RemixGui::DragFloat("Altitude", &RtxOptions::cloudAltitudeObject(),
                               0.1f, 0.5f, 12.0f, "%.1f km", sliderFlags);
           RemixGui::SetTooltipToLastWidgetOnHover(
