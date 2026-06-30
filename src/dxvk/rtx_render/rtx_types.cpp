@@ -378,6 +378,8 @@ namespace dxvk {
     //                   than doing N lookups per texture hash for each category.
     const XXH64_hash_t& textureHash = materialData.getColorTexture().getImageHash();
 
+    categories = CategoryFlags(materialData.remixTextureCategoryFlagsFromD3D);
+
     setCategory(InstanceCategories::WorldUI, lookupHash(RtxOptions::worldSpaceUiTextures(), textureHash));
     setCategory(InstanceCategories::WorldMatte, lookupHash(RtxOptions::worldSpaceUiBackgroundTextures(), textureHash));
 
@@ -409,6 +411,8 @@ namespace dxvk {
     setCategory(InstanceCategories::Sky, lookupHash(RtxOptions::skyBoxTextures(), textureHash));
 
     setCategory(InstanceCategories::ParticleEmitter, lookupHash(RtxOptions::particleEmitterTextures(), textureHash));
+
+    setCategory(InstanceCategories::DisableBackfaceCulling, lookupHash(RtxOptions::disableBackfacecullingTextures(), textureHash));
   }
 
   void DrawCallState::setupCategoriesForGeometry() {
@@ -551,9 +555,12 @@ namespace dxvk {
       return SkyDetectionSource::Explicit;
     }
 
-    // NOTE: we use color texture hash for sky detection, however the replacement is hashed with
-    // the whole legacy material hash (which, as of 12/9/2022, equals to color texture hash). Adding a check just in case.
-    assert(drawCallState.getMaterialData().getColorTexture().getImageHash() == drawCallState.getMaterialData().getHash() && "Texture or material hash method changed!");
+    // NOTE: disable assert if material is using a custom hash that was set via an unused D3D RenderState
+    if (!drawCallState.getMaterialData().remixHashFromD3D) {
+      // NOTE: we use color texture hash for sky detection, however the replacement is hashed with
+      // the whole legacy material hash (which, as of 12/9/2022, equals to color texture hash). Adding a check just in case.
+      assert(drawCallState.getMaterialData().getColorTexture().getImageHash() == drawCallState.getMaterialData().getHash() && "Texture or material hash method changed!");
+    }
 
     if (drawCallState.getMaterialData().usesTexture()) {
       if (lookupHash(RtxOptions::skyBoxTextures(), drawCallState.getMaterialData().getHash())) {
