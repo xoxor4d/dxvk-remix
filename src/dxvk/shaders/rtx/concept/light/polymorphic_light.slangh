@@ -66,6 +66,7 @@ DecodedPolymorphicLight decodePolymorphicLight(MemoryPolymorphicLight memoryPoly
   decodedPolymorphicLight.radiance = logLuv32ToRadiance(data10);
 
   decodedPolymorphicLight.data0 = memoryPolymorphicLight.data0;
+  decodedPolymorphicLight.data1 = memoryPolymorphicLight.data1;
   decodedPolymorphicLight.data2 = memoryPolymorphicLight.data2;
   decodedPolymorphicLight.data3 = memoryPolymorphicLight.data3;
 

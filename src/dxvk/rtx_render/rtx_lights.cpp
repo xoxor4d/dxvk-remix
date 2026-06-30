@@ -855,25 +855,45 @@ void RtDistantLight::applyTransform(const Matrix4& lightToWorld) {
 void RtDistantLight::writeGPUData(unsigned char* data, std::size_t& offset, bool ignoreViewModel, bool atmosphereCloudShadowed) const {
   [[maybe_unused]] const std::size_t oldOffset = offset;
 
-  assert(m_direction < Vector3(FLOAT16_MAX));
-  writeGPUHelper(data, offset, glm::packHalf1x16(m_direction.x));
-  writeGPUHelper(data, offset, glm::packHalf1x16(m_direction.y));
-  writeGPUHelper(data, offset, glm::packHalf1x16(m_direction.z));
+  const bool fp32GpuAxes = LightManager::distantLightFp32GpuEncoding();
 
-  // Note: Ensure the orientation quaternion is normalized as this is a requirement for the GPU encoding.
-  assert(isApproxNormalized(m_orientation, kNormalizationThreshold));
-  assert(m_orientation < Vector4(FLOAT16_MAX));
-  // Note: Orientation could be more heavily packed (down to snorms, or even other quaternion memory encodings), but
-  // there is enough space that no fancy encoding which would just waste performance on the GPU side is needed.
-  writeGPUHelper(data, offset, glm::packHalf1x16(m_orientation.x));
-  writeGPUHelper(data, offset, glm::packHalf1x16(m_orientation.y));
-  writeGPUHelper(data, offset, glm::packHalf1x16(m_orientation.z));
-  writeGPUHelper(data, offset, glm::packHalf1x16(m_orientation.w));
+  if (fp32GpuAxes) {
+    // NV-DXVK start: float32 distant-light axes (fork — animated sun stepping)
+    // data0: direction.xyz + orientation.x; data1.x: radiance logLuv; data1.yzw: orientation.yzw
+    assert(isApproxNormalized(m_direction, kNormalizationThreshold));
+    assert(isApproxNormalized(m_orientation, kNormalizationThreshold));
+    writeGPUHelper(data, offset, m_direction.x);
+    writeGPUHelper(data, offset, m_direction.y);
+    writeGPUHelper(data, offset, m_direction.z);
+    writeGPUHelper(data, offset, m_orientation.x);
+    writeGPUHelper(data, offset, packLogLuv32(m_radiance));
+    writeGPUHelper(data, offset, m_orientation.y);
+    writeGPUHelper(data, offset, m_orientation.z);
+    writeGPUHelper(data, offset, m_orientation.w);
+    // NV-DXVK end
+  } else {
+    assert(m_direction < Vector3(FLOAT16_MAX));
+    writeGPUHelper(data, offset, glm::packHalf1x16(m_direction.x));
+    writeGPUHelper(data, offset, glm::packHalf1x16(m_direction.y));
+    writeGPUHelper(data, offset, glm::packHalf1x16(m_direction.z));
 
-  writeGPUPadding<2>(data, offset);
+    // Note: Ensure the orientation quaternion is normalized as this is a requirement for the GPU encoding.
+    assert(isApproxNormalized(m_orientation, kNormalizationThreshold));
+    assert(m_orientation < Vector4(FLOAT16_MAX));
+    // Note: Orientation could be more heavily packed (down to snorms, or even other quaternion memory encodings), but
+    // there is enough space that no fancy encoding which would just waste performance on the GPU side is needed.
+    writeGPUHelper(data, offset, glm::packHalf1x16(m_orientation.x));
+    writeGPUHelper(data, offset, glm::packHalf1x16(m_orientation.y));
+    writeGPUHelper(data, offset, glm::packHalf1x16(m_orientation.z));
+    writeGPUHelper(data, offset, glm::packHalf1x16(m_orientation.w));
 
-  writeGPUHelper(data, offset, packLogLuv32(m_radiance));
-  writeGPUPadding<12>(data, offset); // no shaping
+    writeGPUPadding<2>(data, offset);
+  }
+
+  if (!fp32GpuAxes) {
+    writeGPUHelper(data, offset, packLogLuv32(m_radiance));
+    writeGPUPadding<12>(data, offset); // no shaping
+  }
 
   writeGPUHelper(data, offset, m_cosHalfAngle);
   writeGPUHelper(data, offset, m_sinHalfAngle);
@@ -888,6 +908,7 @@ void RtDistantLight::writeGPUData(unsigned char* data, std::size_t& offset, bool
   uint32_t flags = lightTypeDistant << 29;
   if (ignoreViewModel) flags |= 1 << 1; // ignoreViewModel flag at bit 1
   if (atmosphereCloudShadowed) flags |= 1 << 2; // atmosphere cloud-shadow flag at bit 2 (fork)
+  if (fp32GpuAxes) flags |= 1 << 3; // float32 direction/orientation encoding at bit 3 (fork)
   writeGPUHelper(data, offset, flags);
 
   assert(offset - oldOffset == kLightGPUSize);

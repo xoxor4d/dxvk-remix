@@ -262,6 +262,10 @@ private:
              "If true, scales the RectLight cone half-angle by the light's aspect ratio in tangent space, "
              "producing a cone that matches the rect's proportions. When false (default), the cone is uniform "
              "and independent of the light's width/height. Ignored when enableLegacyRectLightConeShaping is true.");
+  RTX_OPTION("rtx", bool, distantLightFp32GpuEncoding, true,
+             "When true, distant-light direction and orientation are written as float32 on the GPU (distant-light "
+             "flags bit 3) instead of float16. Reduces plateau-then-snap shadow stepping on smoothly animated sun "
+             "directions. Set false to restore legacy float16 packing for A/B comparison.");
 };
 
 }  // namespace dxvk

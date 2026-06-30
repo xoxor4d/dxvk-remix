@@ -74,6 +74,7 @@
 #include "rtx_render/rtx_point_instancer_system.h"
 #include "rtx_render/rtx_overlay_window.h"
 #include "rtx_render/rtx_fork_hooks.h"
+#include "rtx_render/rtx_light_manager.h"
 
 
 namespace dxvk {
@@ -3779,6 +3780,13 @@ namespace dxvk {
       ImGui::Indent();
 
       common->getSceneManager().getLightManager().showImguiLightOverview();
+
+      RemixGui::Checkbox("Distant Light FP32 GPU Encoding",
+                         &LightManager::distantLightFp32GpuEncodingObject());
+      RemixGui::SetTooltipToLastWidgetOnHover(
+        "Upload distant-light direction/orientation as float32 instead of float16. "
+        "Fixes stepped shadow motion on smoothly animated sun directions.");
+      RemixGui::Separator();
 
       if (RemixGui::CollapsingHeader("Effect Light", collapsingHeaderClosedFlags)) {
         ImGui::Indent();

@@ -59,6 +59,7 @@ struct DecodedPolymorphicLight
   bool ignoreViewModel;
   bool atmosphereCloudShadowed; // fork — 2026-06-21: distant-light flags bit 2
   uvec4 data0;
+  uvec4 data1;
   uvec4 data2;
   uvec4 data3;
 };
