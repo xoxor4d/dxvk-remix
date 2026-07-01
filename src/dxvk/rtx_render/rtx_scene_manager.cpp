@@ -1611,59 +1611,61 @@ namespace dxvk {
 
       ignoreAlphaChannel = opaqueMaterialData.getIgnoreAlphaChannel();
 
-      const bool forceVertexColorModulate = drawCallState.testCategoryFlags(InstanceCategories::Beam) || CategoryFlags(drawCallState.materialData.remixTextureCategoryFlagsFromD3D).test(InstanceCategories::Beam);
+      const auto& materialData = drawCallState.getMaterialData();
+
+      const bool forceVertexColorModulate = drawCallState.testCategoryFlags(InstanceCategories::Beam) || CategoryFlags(materialData.remixTextureCategoryFlagsFromD3D).test(InstanceCategories::Beam);
 
       // rtx_materials.cpp is doing a hashlookup (ignoreAlphaChannel = lookupHash(RtxOptions::ignoreAlphaOnTextures(), getHash());)
       // so we need to check d3d flag here
-      if (!ignoreAlphaChannel && CategoryFlags(drawCallState.materialData.remixTextureCategoryFlagsFromD3D).test(InstanceCategories::IgnoreAlphaChannel)) {
+      if (!ignoreAlphaChannel && CategoryFlags(materialData.remixTextureCategoryFlagsFromD3D).test(InstanceCategories::IgnoreAlphaChannel)) {
         ignoreAlphaChannel = true;
       }
 
-      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR) {
-        emissiveIntensity *= drawCallState.materialData.remixTempFloat01FromD3D;
+      if (materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR) {
+        emissiveIntensity *= materialData.remixTempFloat01FromD3D;
       }
 
-      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR) {
+      if (materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR) {
         // read packed DWORD from RS_210_WETNESS_PARAMS_PACKED - lower 16 bits = wetnessParams1, upper 16 bits = wetnessParams2
         // lower 16 bits: comp mod packs 3 parameters using bit packing: scalar(6 bits) + max_z(5 bits) + blend_width(5 bits) = 16 bits
         // upper 16 bits: 8 bits for raindrop_scale and 8 bits for bitflag modifiers
 
-        const uint32_t packedDword = drawCallState.materialData.remixPackedFloat4_RS210FromD3D;
+        const uint32_t packedDword = materialData.remixPackedFloat4_RS210FromD3D;
         wetnessParams1 = uint16_t(packedDword & 0xFFFF);        // lower 16 bits
         wetnessParams2 = uint16_t((packedDword >> 16) & 0xFFFF); // upper 16 bits
 
         d3dModifierFlags |= REMIX_MODIFIER_TO_OPAQUE_SHADER_ROUGHNESS_SCALAR; // ff01
       }
 
-      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ENABLE_VERTEX_COLOR) {
+      if (materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ENABLE_VERTEX_COLOR) {
         d3dModifierFlags |= REMIX_MODIFIER_TO_OPAQUE_SHADER_ENABLE_VERTEX_COLOR; // ff02
       }
 
-      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_DECAL_DIRT) {
-        emissiveColorConstant.r = drawCallState.materialData.remixTempFloat01FromD3D; // mask intensity scalar
-        emissiveColorConstant.g = drawCallState.materialData.remixTempFloat02FromD3D; // mask contrast
+      if (materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_DECAL_DIRT) {
+        emissiveColorConstant.r = materialData.remixTempFloat01FromD3D; // mask intensity scalar
+        emissiveColorConstant.g = materialData.remixTempFloat02FromD3D; // mask contrast
         d3dModifierFlags |= REMIX_MODIFIER_TO_OPAQUE_SHADER_DECAL_DIRT; // ff03
       }
 
       // sets vertex color to white but keep alpha via d3d or when tagged as terrain
       // ignore d3d state when tagged as beam and keep vertex color and alpha intact
-      if ((drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA || drawCallState.testCategoryFlags(InstanceCategories::Terrain))
+      if ((materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA || drawCallState.testCategoryFlags(InstanceCategories::Terrain))
            && !forceVertexColorModulate) {
         d3dModifierFlags |= REMIX_MODIFIER_TO_OPAQUE_SHADER_REM_VERTEX_COLOR_KEEP_ALPHA; // ff04
       }
 
-      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_VEHICLE_DECAL_DIRT) {
+      if (materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_VEHICLE_DECAL_DIRT) {
         d3dModifierFlags |= REMIX_MODIFIER_TO_OPAQUE_SHADER_VEHICLE_DECAL_DIRT; // ff05
       }
 
-      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_GLOBAL_UV_MODIFIER) {
+      if (materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_GLOBAL_UV_MODIFIER) {
         d3dModifierFlags |= REMIX_MODIFIER_TO_OPAQUE_SHADER_GLOBAL_UV_MODIFIER;
-        freeFloat03 = drawCallState.materialData.remixFloatRS211FromD3D;
-        freeFloat04 = drawCallState.materialData.remixFloatRS212FromD3D;
-        albedoOpacityConstant.x = drawCallState.materialData.remixFloatRS213FromD3D; // overwriting these should be fine
-        albedoOpacityConstant.y = drawCallState.materialData.remixFloatRS214FromD3D; // because, why would anyone use a static color on animated surfaces?
-        albedoOpacityConstant.z = drawCallState.materialData.remixFloatRS215FromD3D;
-        albedoOpacityConstant.w = drawCallState.materialData.remixFloatRS216FromD3D;
+        freeFloat03 = materialData.remixFloatRS211FromD3D;
+        freeFloat04 = materialData.remixFloatRS212FromD3D;
+        albedoOpacityConstant.x = materialData.remixFloatRS213FromD3D; // overwriting these should be fine
+        albedoOpacityConstant.y = materialData.remixFloatRS214FromD3D; // because, why would anyone use a static color on animated surfaces?
+        albedoOpacityConstant.z = materialData.remixFloatRS215FromD3D;
+        albedoOpacityConstant.w = materialData.remixFloatRS216FromD3D;
       }
 
       subsurfaceMeasurementDistance = opaqueMaterialData.getSubsurfaceMeasurementDistance() * RtxOptions::SubsurfaceScattering::surfaceThicknessScale();
@@ -1824,28 +1826,29 @@ namespace dxvk {
     float emissiveIntensity = translucentMaterialData.getEmissiveIntensity() * RtxOptions::emissiveIntensity();
 
     if (drawCallState) {
-      if (drawCallState->materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR) {
-        emissiveIntensity *= drawCallState->materialData.remixTempFloat01FromD3D;
+      const auto& materialData = drawCallState->getMaterialData();
+      if (materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR) {
+        emissiveIntensity *= materialData.remixTempFloat01FromD3D;
       }
 
-      if (drawCallState->materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR) {
+      if (materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR) {
         // read packed DWORD from RS_210_WETNESS_PARAMS_PACKED - lower 16 bits = wetnessParams1, upper 16 bits = wetnessParams2
         // lower 16 bits: comp mod packs 3 parameters using bit packing: scalar(6 bits) + max_z(5 bits) + blend_width(5 bits) = 16 bits
         // upper 16 bits: 8 bits for raindrop_scale and 8 bits for bitflag modifiers
 
-        const uint32_t packedDword = drawCallState->materialData.remixPackedFloat4_RS210FromD3D;
+        const uint32_t packedDword = materialData.remixPackedFloat4_RS210FromD3D;
         wetnessParams1 = uint16_t(packedDword & 0xFFFF);        // lower 16 bits
         wetnessParams2 = uint16_t((packedDword >> 16) & 0xFFFF); // upper 16 bits
         d3dModifierFlags |= REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_ROUGHNESS_SCALAR;
       }
 
-      if (drawCallState->materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_TRANSLUCENT_WORLDPOS_AS_TEXUV) {
+      if (materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_TRANSLUCENT_WORLDPOS_AS_TEXUV) {
         d3dModifierFlags |= REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_WORLDPOS_AS_TEXUV;
-        freeFloat01 = drawCallState->materialData.remixFloatRS211FromD3D;
+        freeFloat01 = materialData.remixFloatRS211FromD3D;
       }
 
-      if (drawCallState->materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_TRANSLUCENT_FADE_NORMAL_UNTIL_DIST) {
-        freeFloat02 = drawCallState->materialData.remixFloatRS212FromD3D;
+      if (materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_TRANSLUCENT_FADE_NORMAL_UNTIL_DIST) {
+        freeFloat02 = materialData.remixFloatRS212FromD3D;
       }
     }
 
