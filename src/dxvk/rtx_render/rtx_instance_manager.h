@@ -233,6 +233,8 @@ private:
   uint32_t m_remixTextureCategoryFlagsFromD3D = 0u; // RS 42
   uint32_t m_remixModifierFromD3D = 0u; // RS 149
   XXH64_hash_t m_remixHashFromD3D = 0; // RS 150
+  float m_remixFloatRS169 = 0.0f;
+
   VkAccelerationStructureInstanceKHR m_vkInstance;
   VkGeometryFlagsKHR m_geometryFlags = 0;
   uint32_t m_firstBillboard = 0;

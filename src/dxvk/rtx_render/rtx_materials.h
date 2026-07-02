@@ -2035,7 +2035,7 @@ struct LegacyMaterialData {
   float remixFloatRS217FromD3D = 0.0f; // RS 217
   float remixFloatRS218FromD3D = 0.0f; // RS 218
   float remixFloatRS219FromD3D = 0.0f; // RS 219
-  float remixFloatRS220FromD3D = 0.0f; // RS 220
+  uint32_t remixHashModifierFromD3D = 0u; // RS 220
 
   void setHashOverride(XXH64_hash_t hash) {
     m_cachedHash = hash;
@@ -2055,8 +2055,13 @@ private:
     // one used to identify a material and compare to user-provided hashes.
     m_cachedHash = colorTextures[0].getImageHash();
 
+    // Re-hash existing hash with seed via unused D3D RenderState
+    if (remixHashModifierFromD3D) {
+        m_cachedHash = XXH64(&m_cachedHash, sizeof(m_cachedHash), remixHashModifierFromD3D);
+    }
+
     // Custom hash set via unused D3D RenderState
-    if (remixHashFromD3D) {
+    else if (remixHashFromD3D) {
       m_cachedHash = remixHashFromD3D;
     }
   }

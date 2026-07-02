@@ -63,7 +63,7 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
     float remixFloatRS217FromD3D; // RS 217
     float remixFloatRS218FromD3D; // RS 218
     float remixFloatRS219FromD3D; // RS 219
-    float remixFloatRS220FromD3D; // RS 220
+    uint32_t remixHashModifierFromD3D; // RS 220
 
     uint8_t alphaTestReferenceValue;
     uint8_t textureColorArg1Source;
@@ -109,7 +109,7 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
       &LegacyMaterialIdentityHashData::remixFloatRS217FromD3D, // RS 217
       &LegacyMaterialIdentityHashData::remixFloatRS218FromD3D, // RS 218
       &LegacyMaterialIdentityHashData::remixFloatRS219FromD3D, // RS 219
-      &LegacyMaterialIdentityHashData::remixFloatRS220FromD3D, // RS 220
+      &LegacyMaterialIdentityHashData::remixHashModifierFromD3D, // RS 220
 
       &LegacyMaterialIdentityHashData::alphaTestReferenceValue,
       &LegacyMaterialIdentityHashData::textureColorArg1Source,
@@ -155,7 +155,7 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
   data.remixFloatRS217FromD3D = remixFloatRS217FromD3D, // RS 217
   data.remixFloatRS218FromD3D = remixFloatRS218FromD3D, // RS 218
   data.remixFloatRS219FromD3D = remixFloatRS219FromD3D, // RS 219
-  data.remixFloatRS220FromD3D = remixFloatRS220FromD3D, // RS 220
+  data.remixHashModifierFromD3D = remixHashModifierFromD3D, // RS 220
 
   data.alphaTestReferenceValue = alphaTestReferenceValue;
   data.textureColorArg1Source = static_cast<uint8_t>(textureColorArg1Source);
@@ -200,7 +200,7 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
       &LegacyMaterialIdentityHashData::remixFloatRS217FromD3D, // RS 217
       &LegacyMaterialIdentityHashData::remixFloatRS218FromD3D, // RS 218
       &LegacyMaterialIdentityHashData::remixFloatRS219FromD3D, // RS 219
-      &LegacyMaterialIdentityHashData::remixFloatRS220FromD3D, // RS 220
+      &LegacyMaterialIdentityHashData::remixHashModifierFromD3D, // RS 220
       
       &LegacyMaterialIdentityHashData::alphaTestReferenceValue,
       &LegacyMaterialIdentityHashData::textureColorArg1Source,

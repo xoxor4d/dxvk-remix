@@ -239,7 +239,7 @@ namespace dxvk {
     materialData.remixFloatRS217FromD3D = d3d9State.renderStates[217] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[217]) : 0.0f;
     materialData.remixFloatRS218FromD3D = d3d9State.renderStates[218] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[218]) : 0.0f;
     materialData.remixFloatRS219FromD3D = d3d9State.renderStates[219] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[219]) : 0.0f;
-    materialData.remixFloatRS220FromD3D = d3d9State.renderStates[220] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[220]) : 0.0f;
+    materialData.remixHashModifierFromD3D = d3d9State.renderStates[220] != 0xfefefefe ? d3d9State.renderStates[220] : 0u;
 
   }
 

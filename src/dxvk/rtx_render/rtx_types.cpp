@@ -556,7 +556,7 @@ namespace dxvk {
     }
 
     // NOTE: disable assert if material is using a custom hash that was set via an unused D3D RenderState
-    if (!drawCallState.getMaterialData().remixHashFromD3D) {
+    if (!drawCallState.getMaterialData().remixHashFromD3D && !drawCallState.getMaterialData().remixModifierFromD3D) {
       // NOTE: we use color texture hash for sky detection, however the replacement is hashed with
       // the whole legacy material hash (which, as of 12/9/2022, equals to color texture hash). Adding a check just in case.
       assert(drawCallState.getMaterialData().getColorTexture().getImageHash() == drawCallState.getMaterialData().getHash() && "Texture or material hash method changed!");
