@@ -5,12 +5,14 @@
 // volumetric fog) between named presets over a plugin-specified duration.
 //
 // Reads:
-//   __weather.target       — name of the active target preset (string)
-//   __weather.blend_seconds — blend duration override (float string, default 1.0)
+//   __weather.target          — name of the active target preset (string)
+//   __weather.previous_target — optional blend-from preset (string); consumed when set
+//   __weather.blend_seconds   — blend duration override (float string, default 1.0)
+//   __weather.blend_absolute  — optional direct blend parameter t in [0, 1]
 //
 // Writes:
 //   Derived layer of each underlying RTX_OPTION via setImmediately()
-//   __weather.current, __weather.previous, __weather.blend_progress (GameStateStore)
+//   __weather.current, __weather.previous, __weather.target, __weather.blend_progress
 //
 // Dormant when __weather.target is absent or unknown — zero upstream
 // behavioural change.
@@ -712,14 +714,11 @@ namespace dxvk { namespace fork_weather {
   //  1. Advance clock.
   //  2. If paused: return (manual ImGui edits persist).
   //  3. Read __weather.target. If absent/empty/unknown: clear state, return.
-  //  4. If target changed (new or retarget):
-  //     a. First activation: snapshot current renderer state.
-  //     b. Mid-blend retarget: compute current t, lerp from prev toward old
-  //        target, store result as new previous snapshot.
-  //     c. Update m_targetPresetName, read m_blendDurationSec, reset start.
-  //  5. Compute t = clamp((now - start) / dur, 0, 1).
-  //  6. applyBlendedValues(t).
-  //  7. publishStateToGameStateStore(t).
+  //  4. Compute t from __weather.blend_absolute or time-based blend_seconds.
+  //  5. If __weather.previous_target set: reload blend-from preset (resync).
+  //  6. If target changed: update target; legacy mid-blend capture when no override.
+  //  7. applyBlendedValues(t).
+  //  8. publishStateToGameStateStore(t).
   // ---------------------------------------------------------------------------
   void WeatherBlender::update(float deltaTimeSeconds) {
     m_currentTimeSec += deltaTimeSeconds;
@@ -749,7 +748,6 @@ namespace dxvk { namespace fork_weather {
       m_driftPhaseSeconds += deltaTimeSeconds * m_driftSpeedSmoothed;
     }
 
-    // Step 3: read and validate target preset.
     std::string newTarget = readStringFromGameStateStore("__weather.target");
     if (newTarget.empty()) {
       m_targetPresetName.clear();
@@ -757,10 +755,6 @@ namespace dxvk { namespace fork_weather {
       return;
     }
     if (!isKnownPresetName(newTarget)) {
-      // Warn once per distinct unknown name so plugin authors who typo a
-      // preset string ("rainstOrm") get a diagnostic instead of silent
-      // dormancy. Subsequent SetGameValue writes with the same bad name
-      // stay quiet to avoid log spam.
       static std::unordered_set<std::string> s_warned;
       if (s_warned.insert(newTarget).second) {
         Logger::warn(str::format(
@@ -774,35 +768,58 @@ namespace dxvk { namespace fork_weather {
       return;
     }
 
-    // Step 4: handle retarget or first activation.
+    const std::string prevOverride = readStringFromGameStateStore("__weather.previous_target");
+
+    float t = 0.0f;
+    const float blendAbsolute = readFloatFromGameStateStore("__weather.blend_absolute", -1.0f);
+    const bool useAbsoluteBlend = (blendAbsolute != -1.0f);
+    if (useAbsoluteBlend) {
+      t = saturate(blendAbsolute);
+    } else {
+      t = saturate((m_currentTimeSec - m_blendStartTimeSec) / m_blendDurationSec);
+    }
+
+    bool appliedPrevOverride = false;
+    if (!prevOverride.empty()) {
+      if (isKnownPresetName(prevOverride)) {
+        readPresetValues(prevOverride, m_previousSnapshot);
+        m_previousPresetName = prevOverride;
+        appliedPrevOverride = true;
+        writeToGameStateStore("__weather.previous_target", "");
+      } else {
+        static std::unordered_set<std::string> s_warnedPrev;
+        if (s_warnedPrev.insert(prevOverride).second) {
+          Logger::warn(str::format(
+            "WeatherBlender: unknown preset name '", prevOverride,
+            "' in __weather.previous_target -- ignoring."));
+        }
+      }
+    }
+
     if (newTarget != m_targetPresetName) {
       if (m_targetPresetName.empty()) {
-        // First activation: snapshot current live renderer state.
-        m_previousSnapshot    = snapshotCurrentValues();
-        m_previousPresetName  = "(initial)";
-      } else {
-        // Mid-blend retarget: capture the partially-blended state.
-        // Lerp logic lives in lerpSnapshot (anonymous namespace).
-        float currentT = saturate(
-          (m_currentTimeSec - m_blendStartTimeSec) / std::max(0.001f, m_blendDurationSec));
-
+        if (m_previousPresetName.empty()) {
+          m_previousSnapshot   = snapshotCurrentValues();
+          m_previousPresetName = "(initial)";
+        }
+      } else if (!appliedPrevOverride) {
         WeatherSnapshot oldTargetValues;
         readPresetValues(m_targetPresetName, oldTargetValues);
-
-        // Build retarget snapshot by lerping prev toward the old target at currentT.
+        const float currentT = useAbsoluteBlend ? t
+          : saturate((m_currentTimeSec - m_blendStartTimeSec)
+            / std::max(0.001f, m_blendDurationSec));
         m_previousSnapshot   = lerpSnapshot(m_previousSnapshot, oldTargetValues, currentT);
         m_previousPresetName = m_targetPresetName;
       }
 
-      m_targetPresetName   = newTarget;
-      m_blendDurationSec   = std::max(0.001f, readFloatFromGameStateStore("__weather.blend_seconds", 1.0f));
-      m_blendStartTimeSec  = m_currentTimeSec;
+      m_targetPresetName = newTarget;
+      if (!useAbsoluteBlend) {
+        m_blendDurationSec  = std::max(0.001f,
+          readFloatFromGameStateStore("__weather.blend_seconds", 1.0f));
+        m_blendStartTimeSec = m_currentTimeSec;
+      }
     }
 
-    // Step 5: compute interpolation parameter.
-    float t = saturate((m_currentTimeSec - m_blendStartTimeSec) / m_blendDurationSec);
-
-    // Step 6 + 7.
     applyBlendedValues(t);
     publishStateToGameStateStore(t);
   }
@@ -1037,9 +1054,9 @@ namespace dxvk { namespace fork_weather {
   // publishStateToGameStateStore — writes blend progress state.
   // ---------------------------------------------------------------------------
   void WeatherBlender::publishStateToGameStateStore(float t) const {
-    writeToGameStateStore("__weather.current",
-      (t > 0.5f) ? m_targetPresetName : m_previousPresetName);
+    writeToGameStateStore("__weather.current", m_targetPresetName);
     writeToGameStateStore("__weather.previous", m_previousPresetName);
+    writeToGameStateStore("__weather.target", m_targetPresetName);
 
     char buf[32];
     std::snprintf(buf, sizeof(buf), "%.4f", t);
