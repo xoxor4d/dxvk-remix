@@ -1892,11 +1892,9 @@ void geometryResolverVertex(
   // Output a miss
   if (!rayInteractionHasHit(rayInteraction))
   {
-    // Fork: sky-radiance accumulation on miss. Three paths:
-    //   1. dome-light texture if dome light is active
-    //   2. Hillaire atmosphere (ATMOSPHERE_AVAILABLE-gated) if skyMode == 1
-    //   3. legacy skybox rasterization probe otherwise
-    vec3 skyRadiance;
+    // Fork: sky-radiance accumulation on miss (dome light or Numos only).
+    // skyMode==0 primary view sky is applied in composite via SkyMatte; cubemap is indirect/PSR only.
+    vec3 skyRadiance = vec3(0);
     if (cb.domeLightArgs.active)
     {
       skyRadiance = cb.domeLightArgs.radiance * sampleDomeLightTexture(LinearWrapSampler, ray.direction, cb.domeLightArgs.textureIndex, cb.domeLightArgs.worldToLightTransform);
@@ -1919,10 +1917,6 @@ void geometryResolverVertex(
                                      /*isPrimaryRay=*/ true);
     }
 #endif
-    else
-    {
-      skyRadiance = cb.skyBrightness * SkyProbe.SampleLevel(ray.direction, 0);
-    }
 
     geometryResolverState.radiance += skyRadiance * vec3(geometryResolverState.attenuation);
 
