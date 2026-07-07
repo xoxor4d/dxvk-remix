@@ -235,6 +235,14 @@ private:
   XXH64_hash_t m_remixHashFromD3D = 0; // RS 150
   float m_remixFloatRS169 = 0.0f;
 
+  uint32_t m_remixPackedFloat4_RS210 = 0u;
+  float m_remixFloatRS211 = 0.0f;
+  float m_remixFloatRS212 = 0.0f;
+  float m_remixFloatRS213 = 0.0f;
+  float m_remixFloatRS214 = 0.0f;
+  float m_remixFloatRS215 = 0.0f;
+  float m_remixFloatRS216 = 0.0f;
+
   VkAccelerationStructureInstanceKHR m_vkInstance;
   VkGeometryFlagsKHR m_geometryFlags = 0;
   uint32_t m_firstBillboard = 0;

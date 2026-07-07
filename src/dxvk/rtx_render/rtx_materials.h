@@ -1225,6 +1225,11 @@ private:
       m_thinWallThickness,
       m_useDiffuseLayer,
       m_samplerIndex,
+      m_d3dModifierFlags,
+      m_wetnessParams1,
+      m_wetnessParams2,
+      m_freeFloat01,
+      m_freeFloat02
     };
     m_cachedHash = XXH3_64bits(&hashData, sizeof(hashData));
   }

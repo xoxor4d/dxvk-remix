@@ -152,7 +152,7 @@ namespace dxvk {
   namespace {
     template<int RtInstanceSize> struct CheckRtInstanceSize {
       // The second line of the build error should contain the new size of RtInstance in the template argument, i.e. `dxvk::CheckRtInstanceSize<newSize>`
-      static_assert(RtInstanceSize == 792, "RtInstance size has changed.  Fix the copy constructor above this message, then update the expected size.");
+      static_assert(RtInstanceSize == 816, "RtInstance size has changed.  Fix the copy constructor above this message, then update the expected size.");
     };
     CheckRtInstanceSize<sizeof(RtInstance)> _rtInstanceSizeTest;
   }
@@ -1065,6 +1065,15 @@ namespace dxvk {
 
         // emissive scalar - does not seem to make a difference having that here - might need to trigger currentInstance.surface.hasMaterialChanged ?
         currentInstance.m_remixFloatRS169 = drawCall.getMaterialData().remixTempFloat01FromD3D;
+
+        // wetness / globalUVs / translucent worldpos + normal dist
+        currentInstance.m_remixPackedFloat4_RS210 = drawCall.getMaterialData().remixPackedFloat4_RS210FromD3D;
+        currentInstance.m_remixFloatRS211 = drawCall.getMaterialData().remixFloatRS211FromD3D;
+        currentInstance.m_remixFloatRS212 = drawCall.getMaterialData().remixFloatRS212FromD3D;
+        currentInstance.m_remixFloatRS213 = drawCall.getMaterialData().remixFloatRS213FromD3D;
+        currentInstance.m_remixFloatRS214 = drawCall.getMaterialData().remixFloatRS214FromD3D;
+        currentInstance.m_remixFloatRS215 = drawCall.getMaterialData().remixFloatRS215FromD3D;
+        currentInstance.m_remixFloatRS216 = drawCall.getMaterialData().remixFloatRS216FromD3D;
 
         // Surface meta data
         currentInstance.surface.isEmissive = false;
