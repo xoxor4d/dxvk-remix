@@ -1654,7 +1654,9 @@ namespace dxvk {
           --i;
         }
       } else {
-        const Vector3 instancePosition = instance->getTransform()[3].xyz();
+        const Vector3 instancePosition = RtxOptions::enableAlwaysCalculateAABB()
+          ? instance->getBlas()->input.getGeometryData().boundingBox.getCentroid() // useful if the world transform is baked into the vertices
+          : instance->getTransform()[3].xyz();
 
         if (!isInsidePlayerModel(playerModelPosition, instancePosition)) {
           // Note: just use the OPAQUE flag here, which works for Portal with current assets.
@@ -1792,7 +1794,9 @@ namespace dxvk {
     }
 
     // Get the position from the transform matrix - works for Portal
-    Vector3 playerModelPosition = bodyInstance->getTransform()[3].xyz();
+    const Vector3 playerModelPosition = RtxOptions::enableAlwaysCalculateAABB()
+      ? bodyInstance->getBlas()->input.getGeometryData().boundingBox.getCentroid() // useful if the world transform is baked into the vertices
+      : bodyInstance->getTransform()[3].xyz();
 
     // Detect instances that are too far away from the body, make them regular objects.
     // This fixes the guns placed on pedestals to be picked up.
