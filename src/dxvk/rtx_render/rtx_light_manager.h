@@ -78,6 +78,10 @@ public:
   const uint32_t getActiveCount() const { return m_currentActiveLightCount; }
   const DomeLightArgs& getDomeLightArgs();
 
+  const std::unordered_map<remixapi_LightHandle, RtLight>& getExternalLightTable() const {
+    return m_externalLights;
+  }
+
   void clear();
   void clearFromUIThread();
 
