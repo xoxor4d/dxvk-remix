@@ -1950,9 +1950,11 @@ struct LegacyMaterialData {
   uint32_t remixModifierFromD3D = 0u; // RS 149
   XXH64_hash_t remixHashFromD3D = 0; // RS 150
   float remixTempFloat01FromD3D = 0.0f; // RS 169
-  float remixTempFloat02FromD3D = 0.0f; // RS 177
+  uint32_t l4d2SheetUVFromD3D = 0u; // RS 177
+  uint32_t l4d2SkinTintGradientFromD3D = 0u; // RS 196
+  uint32_t l4d2GradSelectFromD3D = 0u; // RS 197
   uint32_t remixPackedFloat4_RS210FromD3D = 0u; // RS 210 - Packed DWORD containing 2x uint16_t (lower 16 bits = packedParams1, upper 16 bits = packedParams2)
-  float remixFloatRS211FromD3D = 0.0f; // RS 211
+  uint32_t l4d2NormalRoughnessBoostFromD3D = 0u; // RS 211
   float remixFloatRS212FromD3D = 0.0f; // RS 212
   float remixFloatRS213FromD3D = 0.0f; // RS 213
   float remixFloatRS214FromD3D = 0.0f; // RS 214

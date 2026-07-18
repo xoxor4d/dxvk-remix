@@ -227,10 +227,11 @@ namespace dxvk {
     materialData.remixModifierFromD3D = d3d9State.renderStates[149] != 0xfefefefe ? d3d9State.renderStates[149] : 0u;
     materialData.remixHashFromD3D = d3d9State.renderStates[150] != 0xfefefefe ? d3d9State.renderStates[150] : 0u;
     materialData.remixTempFloat01FromD3D = d3d9State.renderStates[169] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[169]) : 0.0f;
-    materialData.remixTempFloat02FromD3D = d3d9State.renderStates[177] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[177]) : 0.0f;
-
+    materialData.l4d2SheetUVFromD3D = d3d9State.renderStates[177] != 0xfefefefe ? d3d9State.renderStates[177] : 0u;
+    materialData.l4d2SkinTintGradientFromD3D = d3d9State.renderStates[196] != 0xfefefefe ? d3d9State.renderStates[196] : 0u;
+    materialData.l4d2GradSelectFromD3D = d3d9State.renderStates[197] != 0xfefefefe ? d3d9State.renderStates[197] : 0u;
     materialData.remixPackedFloat4_RS210FromD3D = d3d9State.renderStates[210] != 0xfefefefe ? d3d9State.renderStates[210] : 0u;
-    materialData.remixFloatRS211FromD3D = d3d9State.renderStates[211] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[211]) : 0.0f;
+    materialData.l4d2NormalRoughnessBoostFromD3D = d3d9State.renderStates[211] != 0xfefefefe ? d3d9State.renderStates[211] : 0u;
     materialData.remixFloatRS212FromD3D = d3d9State.renderStates[212] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[212]) : 0.0f;
     materialData.remixFloatRS213FromD3D = d3d9State.renderStates[213] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[213]) : 0.0f;
     materialData.remixFloatRS214FromD3D = d3d9State.renderStates[214] != 0xfefefefe ? bit::cast<float>(d3d9State.renderStates[214]) : 0.0f;

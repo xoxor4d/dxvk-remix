@@ -152,7 +152,7 @@ namespace dxvk {
   namespace {
     template<int RtInstanceSize> struct CheckRtInstanceSize {
       // The second line of the build error should contain the new size of RtInstance in the template argument, i.e. `dxvk::CheckRtInstanceSize<newSize>`
-      static_assert(RtInstanceSize == 800, "RtInstance size has changed.  Fix the copy constructor above this message, then update the expected size.");
+      static_assert(RtInstanceSize == 816, "RtInstance size has changed.  Fix the copy constructor above this message, then update the expected size.");
     };
     CheckRtInstanceSize<sizeof(RtInstance)> _rtInstanceSizeTest;
   }
@@ -1066,6 +1066,12 @@ namespace dxvk {
         // emissive scalar - does not seem to make a difference having that here - might need to trigger currentInstance.surface.hasMaterialChanged ?
         currentInstance.m_remixFloatRS169 = drawCall.getMaterialData().remixTempFloat01FromD3D;
 
+        // infected
+        currentInstance.l4d2SheetUVFromD3D = drawCall.getMaterialData().l4d2SheetUVFromD3D;
+        currentInstance.l4d2SkinTintGradientFromD3D = drawCall.getMaterialData().l4d2SkinTintGradientFromD3D;
+        currentInstance.l4d2SkinTintGradientFromD3D = drawCall.getMaterialData().l4d2SkinTintGradientFromD3D;
+        currentInstance.l4d2GradSelectFromD3D = drawCall.getMaterialData().l4d2GradSelectFromD3D;
+        currentInstance.l4d2NormalRoughnessBoostFromD3D = drawCall.getMaterialData().l4d2NormalRoughnessBoostFromD3D;
 
         // Surface meta data
         currentInstance.surface.isEmissive = false;
