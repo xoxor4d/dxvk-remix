@@ -1737,6 +1737,12 @@ namespace dxvk {
 
       bool ignoreAlphaChannel = false;
 
+      uint8_t d3dModifierFlags = REMIX_MODIFIER_TO_OPAQUE_SHADER_NONE;
+      uint16_t packedParams1 = 0u;
+      uint16_t packedParams2 = 0u;
+      float freeFloat01 = 0.0f;
+      float freeFloat02 = 0.0f;
+
       constexpr Vector4 kWhiteModeAlbedo = Vector4(0.7f, 0.7f, 0.7f, 1.0f);
 
       const auto& opaqueMaterialData = renderMaterialData.getOpaqueMaterialData();
@@ -1774,6 +1780,21 @@ namespace dxvk {
       displaceOut = opaqueMaterialData.getDisplaceOut();
 
       ignoreAlphaChannel = opaqueMaterialData.getIgnoreAlphaChannel();
+
+      // rtx_materials.cpp is doing a hashlookup (ignoreAlphaChannel = lookupHash(RtxOptions::ignoreAlphaOnTextures(), getHash());)
+      // so we need to check d3d flag here
+      if (!ignoreAlphaChannel && CategoryFlags(drawCallState.getMaterialData().remixTextureCategoryFlagsFromD3D).test(InstanceCategories::IgnoreAlphaChannel)) {
+        ignoreAlphaChannel = true;
+      }
+
+      if (drawCallState.getMaterialData().remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_EMISSIVE_TWEAK) {
+        emissiveIntensity *= drawCallState.getMaterialData().remixTempFloat01FromD3D;
+      }
+
+      // EG:
+      /*if (drawCallState.getMaterialData().remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_FREE00) {
+        emissiveIntensity *= drawCallState.getMaterialData().remixTempFloat01FromD3D;
+      }*/
 
       subsurfaceMeasurementDistance = opaqueMaterialData.getSubsurfaceMeasurementDistance() * RtxOptions::SubsurfaceScattering::surfaceThicknessScale();
 
@@ -1844,6 +1865,7 @@ namespace dxvk {
         opaqueMaterialData.getDLSSControlMaskStructuralStrength(),
         subsurfaceMaterialIndex, isUsingRaytracedRenderTarget, isHairCard,
         samplerFeedbackStamp,
+        d3dModifierFlags, packedParams1, packedParams2, freeFloat01, freeFloat02,
         secondaryTextureIndex
       };
 
