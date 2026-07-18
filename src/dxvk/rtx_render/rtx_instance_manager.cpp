@@ -156,7 +156,7 @@ namespace dxvk {
   namespace {
     template<int RtInstanceSize> struct CheckRtInstanceSize {
       // The second line of the build error should contain the new size of RtInstance in the template argument, i.e. `dxvk::CheckRtInstanceSize<newSize>`
-      static_assert(RtInstanceSize == 776, "RtInstance size has changed.  Fix the copy constructor above this message, then update the expected size.");
+      static_assert(RtInstanceSize == 800, "RtInstance size has changed.  Fix the copy constructor above this message, then update the expected size.");
     };
     CheckRtInstanceSize<sizeof(RtInstance)> _rtInstanceSizeTest;
   }
@@ -197,6 +197,10 @@ namespace dxvk {
     m_billboardCount = src.m_billboardCount;
     m_categoryFlags = src.m_categoryFlags;
 
+    m_remixTextureCategoryFlagsFromD3D = src.m_remixTextureCategoryFlagsFromD3D;
+    //m_remixModifierFromD3D = src.m_remixModifierFromD3D;
+    //m_remixHashFromD3D = src.m_remixHashFromD3D;
+    
     // Intentionally NOT synced (identity / lifecycle / per-build state):
     //   m_id, m_instanceVectorId, m_cacheIdentity, m_isMarkedForGC, m_isUnlinkedForGC,
     //   m_isInsideFrustum, m_frameLastUpdated, m_frameCreated,
@@ -1064,6 +1068,23 @@ namespace dxvk {
         currentInstance.m_texcoordHash = drawCall.getGeometryData().hashes[HashComponents::VertexTexcoord];
         currentInstance.m_indexHash = drawCall.getGeometryData().hashes[HashComponents::Indices];
 
+        // Store per-drawcall renderstate tweaks that affect material properties
+        // These must match for instances to be considered similar (e.g., different emissive strengths)
+        currentInstance.m_remixTextureCategoryFlagsFromD3D = drawCall.getMaterialData().remixTextureCategoryFlagsFromD3D;
+        currentInstance.m_remixModifierFromD3D = drawCall.getMaterialData().remixModifierFromD3D;
+
+        currentInstance.m_remixHashFromD3D = drawCall.getMaterialData().remixHashFromD3D;
+
+        // modifier with seed - useful if we can identify a certain state of multiple drawcalls on the game side 
+        // but have no unique texture identifier to create a proper hash with
+        if (drawCall.getMaterialData().remixHashModifierFromD3D) {
+          currentInstance.m_remixHashFromD3D = XXH64(&currentInstance.m_materialDataHash, sizeof(currentInstance.m_materialDataHash), drawCall.getMaterialData().remixHashModifierFromD3D);
+        }
+
+        // emissive scalar - does not seem to make a difference having that here - might need to trigger currentInstance.surface.hasMaterialChanged ?
+        currentInstance.m_remixFloatRS169 = drawCall.getMaterialData().remixTempFloat01FromD3D;
+
+
         // Surface meta data
         currentInstance.surface.isEmissive = false;
         currentInstance.surface.isMatte = false;
@@ -1150,7 +1171,23 @@ namespace dxvk {
         // So instead of offsetting the digits or making them live in unordered TLAS (either of which would solve the problem), we offset the screen background backwards.
         const float worldSpaceUiBackgroundOffset = RtxOptions::worldSpaceUiBackgroundOffset();
         if (worldSpaceUiBackgroundOffset != 0.f && currentInstance.testCategoryFlags(InstanceCategories::WorldMatte)) {
-          objectToWorld[3] += objectToWorld[2] * worldSpaceUiBackgroundOffset;
+          // Determine offset direction based on AABB: offset along the axis with smallest extent (surface normal for flat planes)
+          const AxisAlignedBoundingBox& boundingBox = drawCall.getGeometryData().boundingBox;
+          if (boundingBox.isValid()) {
+            const Vector3 aabbSize = boundingBox.maxPos - boundingBox.minPos;
+            // Find the axis with the smallest extent (thickness direction)
+            uint32_t smallestAxis = 0;
+            if (aabbSize.y < aabbSize[smallestAxis]) {
+              smallestAxis = 1; // Y-axis
+            }
+            if (aabbSize.z < aabbSize[smallestAxis]) {
+              smallestAxis = 2; // Z-axis
+            }
+            // Get the world-space direction of the smallest axis from the transform matrix
+            const Vector3 surfaceNormal = safeNormalize(Vector3(objectToWorld[smallestAxis].data), Vector3(0.0f, 0.0f, 1.0f));
+            // Offset along the surface normal
+            objectToWorld[3] += Vector4(surfaceNormal * worldSpaceUiBackgroundOffset, 0.0f);
+          }
         }
 
         // Update the transform based on what state we're in
