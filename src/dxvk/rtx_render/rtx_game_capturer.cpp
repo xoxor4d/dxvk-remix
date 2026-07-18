@@ -343,10 +343,41 @@ namespace dxvk {
     for (auto&& pair : m_sceneManager.getLightManager().getExternallyTrackedLightTable()) {
       captureLight(pair.second);
     }
+
+    if (captureApiLights()
+        && !m_pCap->bApiLightsCaptured
+        && m_pCap->numFramesCaptured + 1 >= m_options.numFrames) 
+    {
+      const auto& lightMgr = m_sceneManager.getLightManager();
+      const auto& externalLights = lightMgr.getExternalLightTable();
+      for (remixapi_LightHandle handle : lightMgr.getExternalActiveLightListForCapture()) 
+      {
+        if (!handle) {
+          continue;
+        }
+        const auto found = externalLights.find(handle);
+        if (found == externalLights.end()) {
+          continue;
+        }
+        const RtLight& rtLight = found->second;
+        assert(rtLight.getInitialHash() != 0);
+        const XXH64_hash_t captureKey = reinterpret_cast<XXH64_hash_t>(handle);
+        switch (rtLight.getType()) {
+        default:
+        case RtLightType::Sphere:
+          captureSphereLight(rtLight.getSphereLight(), captureKey);
+          break;
+        case RtLightType::Distant:
+          captureDistantLight(rtLight.getDistantLight(), captureKey);
+          break;
+        }
+      }
+      m_pCap->bApiLightsCaptured = true;
+    }
   }
 
-  void GameCapturer::captureSphereLight(const dxvk::RtSphereLight& rtLight) {
-    const auto hash = rtLight.getHash();
+  void GameCapturer::captureSphereLight(const dxvk::RtSphereLight& rtLight, const XXH64_hash_t captureKeyOverride) {
+    const auto hash = captureKeyOverride != 0 ? captureKeyOverride : rtLight.getHash();
     pxr::GfRotation  rotation;
     rotation.SetIdentity();
     if (m_pCap->sphereLights.count(hash) == 0) {
@@ -379,9 +410,9 @@ namespace dxvk {
     sphereLight.finalTime = m_pCap->currentFrameNum;
   }
 
-  void GameCapturer::captureDistantLight(const RtDistantLight& rtLight) {
-    const auto hash = rtLight.getHash();
-    if (m_pCap->sphereLights.count(hash) == 0) {
+  void GameCapturer::captureDistantLight(const RtDistantLight& rtLight, const XXH64_hash_t captureKeyOverride) {
+    const auto hash = captureKeyOverride != 0 ? captureKeyOverride : rtLight.getHash();
+    if (m_pCap->distantLights.count(hash) == 0) {
       const std::string name = dxvk::hashToString(hash);
       lss::DistantLight& distantLight = m_pCap->distantLights[hash];
       distantLight.lightName = name;

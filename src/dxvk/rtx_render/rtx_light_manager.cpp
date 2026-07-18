@@ -499,6 +499,9 @@ namespace dxvk {
       }
     }
 
+    // Snapshot active external lights for USD capture (GameCapturer::step runs after this).
+    m_externalActiveLightsForCapture = m_externalActiveLightList;
+
     // Reset external active light list.
     m_externalActiveDomeLight = nullptr;
     m_externalActiveLightList.clear();
