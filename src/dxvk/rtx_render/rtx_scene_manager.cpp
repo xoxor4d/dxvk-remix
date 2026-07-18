@@ -1613,6 +1613,10 @@ namespace dxvk {
         ignoreAlphaChannel = true;
       }
 
+      if (drawCallState.getMaterialData().remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_EMISSIVE_TWEAK) {
+        emissiveIntensity *= drawCallState.getMaterialData().remixTempFloat01FromD3D;
+      }
+
       // EG:
       /*if (drawCallState.getMaterialData().remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_FREE00) {
         emissiveIntensity *= drawCallState.getMaterialData().remixTempFloat01FromD3D;

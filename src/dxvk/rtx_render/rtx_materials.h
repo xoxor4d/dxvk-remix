@@ -81,8 +81,8 @@ static_assert((int)AlphaTestType::kAlways == (int)VkCompareOp::VK_COMPARE_OP_ALW
 
 enum REMIX_MODIFIER_FROM_D3D : std::uint16_t {
   REMIX_MODIFIER_FROM_D3D_NONE = 0,
-  REMIX_MODIFIER_FROM_D3D_FREE00 = 1 << 0,
-  REMIX_MODIFIER_FROM_D3D_FREE01 = 1 << 1,
+  REMIX_MODIFIER_FROM_D3D_INFECTED = 1 << 0,
+  REMIX_MODIFIER_FROM_D3D_EMISSIVE_TWEAK = 1 << 1,
   REMIX_MODIFIER_FROM_D3D_FREE02 = 1 << 2,
   REMIX_MODIFIER_FROM_D3D_FREE03 = 1 << 3,
   REMIX_MODIFIER_FROM_D3D_FREE04 = 1 << 4,
@@ -1961,7 +1961,7 @@ struct LegacyMaterialData {
   float remixFloatRS217FromD3D = 0.0f; // RS 217
   float remixFloatRS218FromD3D = 0.0f; // RS 218
   float remixFloatRS219FromD3D = 0.0f; // RS 219
-  float remixFloatRS220FromD3D = 0.0f; // RS 220
+  uint32_t remixHashModifierFromD3D = 0u; // RS 220
 
   void setHashOverride(XXH64_hash_t hash) {
     m_cachedHash = hash;
@@ -1981,8 +1981,13 @@ private:
     // one used to identify a material and compare to user-provided hashes.
     m_cachedHash = colorTextures[0].getImageHash();
 
+    // Re-hash existing hash with seed via unused D3D RenderState
+    if (remixHashModifierFromD3D) {
+      m_cachedHash = XXH64(&m_cachedHash, sizeof(m_cachedHash), remixHashModifierFromD3D);
+    }
+
     // Custom hash set via unused D3D RenderState
-    if (remixHashFromD3D) {
+    else if (remixHashFromD3D) {
       m_cachedHash = remixHashFromD3D;
     }
   }
