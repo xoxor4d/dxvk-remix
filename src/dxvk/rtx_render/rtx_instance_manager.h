@@ -257,6 +257,11 @@ private:
   XXH64_hash_t m_remixHashFromD3D = 0; // RS 150
   float m_remixFloatRS169 = 0.0f;
 
+  uint32_t l4d2SheetUVFromD3D = 0u; // RS 177
+  uint32_t l4d2SkinTintGradientFromD3D = 0u; // RS 196
+  uint32_t l4d2GradSelectFromD3D = 0u; // RS 197
+  uint32_t l4d2NormalRoughnessBoostFromD3D = 0u; // RS 211
+
   VkAccelerationStructureInstanceKHR m_vkInstance;
   VkGeometryFlagsKHR m_geometryFlags = 0;
   uint32_t m_firstBillboard = 0;

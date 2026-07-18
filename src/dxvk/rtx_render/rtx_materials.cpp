@@ -52,9 +52,11 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
     uint32_t remixModifierFromD3D; // RS 149
     XXH64_hash_t remixHashFromD3D; // RS 150
     float remixTempFloat01FromD3D; // RS 169
-    float remixTempFloat02FromD3D; // RS 177
+    uint32_t l4d2SheetUVFromD3D = 0u; // RS 177
+    uint32_t l4d2SkinTintGradientFromD3D = 0u; // RS 196
+    uint32_t l4d2GradSelectFromD3D = 0u; // RS 197
     uint32_t remixPackedFloat4_RS210FromD3D; // RS 210 - Packed DWORD containing 2x uint16_t (lower 16 bits = packedParams1, upper 16 bits = packedParams2)
-    float remixFloatRS211FromD3D; // RS 211
+    uint32_t l4d2NormalRoughnessBoostFromD3D = 0u; // RS 211
     float remixFloatRS212FromD3D; // RS 212
     float remixFloatRS213FromD3D; // RS 213
     float remixFloatRS214FromD3D; // RS 214
@@ -98,9 +100,11 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
   data.remixModifierFromD3D = remixModifierFromD3D, // RS 149
   data.remixHashFromD3D = remixHashFromD3D, // RS 150
   data.remixTempFloat01FromD3D = remixTempFloat01FromD3D, // RS 169
-  data.remixTempFloat02FromD3D = remixTempFloat02FromD3D, // RS 177
+  data.l4d2SheetUVFromD3D = l4d2SheetUVFromD3D, // RS 177
+  data.l4d2SkinTintGradientFromD3D = l4d2SkinTintGradientFromD3D, // RS 196
+  data.l4d2GradSelectFromD3D = l4d2GradSelectFromD3D, // RS 197
   data.remixPackedFloat4_RS210FromD3D = remixPackedFloat4_RS210FromD3D, // RS 210 - Packed DWORD containing 2x uint16_t (lower 16 bits = packedParams1, upper 16 bits = packedParams2)
-  data.remixFloatRS211FromD3D = remixFloatRS211FromD3D, // RS 211
+  data.l4d2NormalRoughnessBoostFromD3D = l4d2NormalRoughnessBoostFromD3D, // RS 211
   data.remixFloatRS212FromD3D = remixFloatRS212FromD3D, // RS 212
   data.remixFloatRS213FromD3D = remixFloatRS213FromD3D, // RS 213
   data.remixFloatRS214FromD3D = remixFloatRS214FromD3D, // RS 214
@@ -142,9 +146,11 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
       &LegacyMaterialIdentityHashData::remixModifierFromD3D, // RS 149
       &LegacyMaterialIdentityHashData::remixHashFromD3D, // RS 150
       &LegacyMaterialIdentityHashData::remixTempFloat01FromD3D, // RS 169
-      &LegacyMaterialIdentityHashData::remixTempFloat02FromD3D, // RS 177
+      &LegacyMaterialIdentityHashData::l4d2SheetUVFromD3D, // RS 177
+      &LegacyMaterialIdentityHashData::l4d2SkinTintGradientFromD3D, // RS 196
+      &LegacyMaterialIdentityHashData::l4d2GradSelectFromD3D, // RS 197
       &LegacyMaterialIdentityHashData::remixPackedFloat4_RS210FromD3D, // RS 210 - Packed DWORD containing 2x uint16_t (lower 16 bits = packedParams1, upper 16 bits = packedParams2)
-      &LegacyMaterialIdentityHashData::remixFloatRS211FromD3D, // RS 211
+      &LegacyMaterialIdentityHashData::l4d2NormalRoughnessBoostFromD3D, // RS 211
       &LegacyMaterialIdentityHashData::remixFloatRS212FromD3D, // RS 212
       &LegacyMaterialIdentityHashData::remixFloatRS213FromD3D, // RS 213
       &LegacyMaterialIdentityHashData::remixFloatRS214FromD3D, // RS 214

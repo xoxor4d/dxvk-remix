@@ -613,6 +613,51 @@ namespace dxvk {
       }
     }
 
+    // Get Material and Mesh replacements
+    // NOTE: Next refactor we move this into a material manager
+    std::optional<MaterialData> replacementMaterial {};
+    if (overrideMaterialData == nullptr) {
+      MaterialData* pReplacementMaterial = m_pReplacer->getReplacementMaterial(input.getMaterialData().getHash());
+      if (pReplacementMaterial != nullptr) {
+        // Make a copy
+        replacementMaterial.emplace(MaterialData(*pReplacementMaterial));
+        // merge in the input material from game
+        replacementMaterial->mergeLegacyMaterial(input.getMaterialData());
+
+        // #l4d2 infected shader -- same needs to be done in SceneManager::createSurfaceMaterial
+        if (input.getMaterialData().remixHashModifierFromD3D & REMIX_MODIFIER_FROM_D3D_INFECTED) {
+          const auto& legacy = input.getMaterialData();
+          auto& op = replacementMaterial.value().getOpaqueMaterialData();
+          op.getTangentTexture() = legacy.getColorTexture2(); // gradient map
+          op.getMetallicTexture() = legacy.getColorTexture3(); // detail map
+
+          // unpack the two f16 floats - sprite texcoords
+          uint u16_1 = (legacy.l4d2SheetUVFromD3D >> 16) & 0xFFFF;  // upper 16 bits
+          uint u16_2 = legacy.l4d2SheetUVFromD3D & 0xFFFF;          // lower 16 bits
+          op.getRoughnessConstant() = (float) u16_1 / 65535.0f; // x
+          op.getMetallicConstant() = (float) u16_2 / 65535.0f;  // y
+
+          // ^ - gradient select (blood)
+          u16_1 = (legacy.l4d2GradSelectFromD3D >> 16) & 0xFFFF;  // upper 16 bits
+          u16_2 = legacy.l4d2GradSelectFromD3D & 0xFFFF;          // lower 16 bits
+          op.getEmissiveColorConstant().x = (float) u16_1 / 65535.0f; // x
+          op.getEmissiveColorConstant().y = (float) u16_2 / 65535.0f; // y
+
+          // ^ normal and roughness boost l4d2NormalRoughnessBoostFromD3D
+          u16_1 = (legacy.l4d2NormalRoughnessBoostFromD3D >> 16) & 0xFFFF;  // upper 16 bits
+          u16_2 = legacy.l4d2NormalRoughnessBoostFromD3D & 0xFFFF;          // lower 16 bits
+          op.getEmissiveColorConstant().z = (float) u16_1 / 65535.0f; // normal boost
+          op.getAnisotropyConstant() = (float) u16_2 / 65535.0f; // roughness boost
+
+          op.getEmissiveIntensity() = (float) legacy.l4d2SkinTintGradientFromD3D;
+          op.getEnableEmission() = true; // needed to transmit ^
+          //op.getEnableThinFilm() = true; // shader trigger
+        }
+
+        // bind as a material override for this draw
+        overrideMaterialData = &replacementMaterial.value();
+      }
+    }
 
     const XXH64_hash_t activeReplacementHash = input.getHash(RtxOptions::geometryAssetHashRule());
     
@@ -1487,7 +1532,7 @@ namespace dxvk {
       );
     }
     uint32_t samplerIndex = trackSampler(sampler);
-    uint32_t samplerIndex2 = UINT32_MAX;
+/*    uint32_t samplerIndex2 = UINT32_MAX;
     if (renderMaterialDataType == MaterialDataType::RayPortal) {
       samplerIndex2 = trackSampler(drawCallState.getMaterialData().getSampler2());
     }
@@ -1530,7 +1575,7 @@ namespace dxvk {
         *out_indexInCache = iter->second;
       }
       return m_surfaceMaterialCache.at(iter->second);
-    }
+    }*/
 
     std::optional<RtSurfaceMaterial> surfaceMaterial;
 
@@ -1636,6 +1681,44 @@ namespace dxvk {
         emissiveIntensity *= drawCallState.getMaterialData().remixTempFloat01FromD3D;
       }*/
 
+      if (drawCallState.getMaterialData().remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_INFECTED) {
+        //thinFilmEnable = true;
+
+        // gradient map
+        if (&drawCallState.getMaterialData().getColorTexture2()) {
+          trackTexture(drawCallState.getMaterialData().getColorTexture2(), tangentTextureIndex, hasTexcoords);
+        }
+
+        // detail map
+        if (&drawCallState.getMaterialData().getColorTexture3()) {
+          trackTexture(drawCallState.getMaterialData().getColorTexture3(), metallicTextureIndex, hasTexcoords);
+        }
+
+        d3dModifierFlags |= REMIX_MODIFIER_TO_OPAQUE_SHADER_FREE1;
+
+        // unpack the two f16 floats - sprite texcoords
+        uint u16_1 = (drawCallState.getMaterialData().l4d2SheetUVFromD3D >> 16) & 0xFFFF;  // upper 16 bits
+        uint u16_2 = drawCallState.getMaterialData().l4d2SheetUVFromD3D & 0xFFFF;          // lower 16 bits
+        roughnessConstant = (float) u16_1 / 65535.0f; // x
+        metallicConstant = (float) u16_2 / 65535.0f;  // y
+
+        // ^ - gradient select (blood)
+        u16_1 = (drawCallState.getMaterialData().l4d2GradSelectFromD3D >> 16) & 0xFFFF;  // upper 16 bits
+        u16_2 = drawCallState.getMaterialData().l4d2GradSelectFromD3D & 0xFFFF;          // lower 16 bits
+        emissiveColorConstant.x = (float) u16_1 / 65535.0f; // x
+        emissiveColorConstant.y = (float) u16_2 / 65535.0f; // y
+
+        // ^ normal and roughness boost l4d2NormalRoughnessBoostFromD3D
+        u16_1 = (drawCallState.getMaterialData().l4d2NormalRoughnessBoostFromD3D >> 16) & 0xFFFF;  // upper 16 bits
+        u16_2 = drawCallState.getMaterialData().l4d2NormalRoughnessBoostFromD3D & 0xFFFF;          // lower 16 bits
+        emissiveColorConstant.z = (float) u16_1 / 65535.0f; // normal boost
+        anisotropy = (float) u16_2 / 65535.0f; // roughness boost
+
+        emissiveIntensity = (float) drawCallState.getMaterialData().l4d2SkinTintGradientFromD3D;
+        // needed or the above does not work
+        enableEmissive = true;
+      }
+
       subsurfaceMeasurementDistance = opaqueMaterialData.getSubsurfaceMeasurementDistance() * RtxOptions::SubsurfaceScattering::surfaceThicknessScale();
 
       const bool isSubsurfaceScatteringDiffusionProfile = opaqueMaterialData.getSubsurfaceDiffusionProfile();
@@ -1717,6 +1800,7 @@ namespace dxvk {
       trackTexture(rayPortalMaterialData.getMaskTexture(), maskTextureIndex, hasTexcoords, false);
       uint32_t maskTextureIndex2 = kSurfaceMaterialInvalidTextureIndex;
       trackTexture(rayPortalMaterialData.getMaskTexture2(), maskTextureIndex2, hasTexcoords, false);
+      uint32_t samplerIndex2 = trackSampler(drawCallState.getMaterialData().getSampler2());
 
       uint8_t rayPortalIndex = rayPortalMaterialData.getRayPortalIndex();
       float rotationSpeed = rayPortalMaterialData.getRotationSpeed();
@@ -1736,10 +1820,10 @@ namespace dxvk {
 
     // Cache this
     const uint32_t index = m_surfaceMaterialCache.track(*surfaceMaterial);
-    m_preCreationSurfaceMaterialMap[preCreationHash] = index;
+    /*m_preCreationSurfaceMaterialMap[preCreationHash] = index;
     if (out_indexInCache) {
       *out_indexInCache = index;
-    }
+    }*/
     return m_surfaceMaterialCache.at(index);
   }
 
