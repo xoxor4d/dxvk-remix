@@ -78,6 +78,13 @@ public:
   const uint32_t getActiveCount() const { return m_currentActiveLightCount; }
   const DomeLightArgs& getDomeLightArgs();
 
+  const std::unordered_map<remixapi_LightHandle, RtLight>& getExternalLightTable() const {
+    return m_externalLights;
+  }
+  const std::unordered_set<remixapi_LightHandle>& getExternalActiveLightListForCapture() const {
+    return m_externalActiveLightsForCapture;
+  }
+
   void clear();
   void clearFromUIThread();
 
@@ -121,6 +128,7 @@ private:
   std::unordered_map<remixapi_LightHandle, RtLight> m_externalLights;
   std::unordered_map<remixapi_LightHandle, DomeLight> m_externalDomeLights;
   std::unordered_set<remixapi_LightHandle> m_externalActiveLightList;
+  std::unordered_set<remixapi_LightHandle> m_externalActiveLightsForCapture;
   remixapi_LightHandle m_externalActiveDomeLight = nullptr;
   DomeLightArgs m_gpuDomeLightArgs;
 
