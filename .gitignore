@@ -39,6 +39,11 @@
 *.log
 .build-venv/
 .venv/
+
+# ignore build artifacts
+nv-private
+tests
+
 metrics.txt
 nrc_session_log.txt
 python.dxvk-cache
