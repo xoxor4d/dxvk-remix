@@ -1107,6 +1107,7 @@ namespace dxvk {
         currentInstance.surface.associatedGeometryHash = drawCall.getHash(RtxOptions::geometryAssetHashRule());
         currentInstance.surface.isTextureFactorBlend = drawCall.getMaterialData().isTextureFactorBlend;
         currentInstance.surface.isVertexColorBakedLighting = drawCall.getMaterialData().isVertexColorBakedLighting;
+        currentInstance.surface.isReprojectedSky = drawCall.isReprojectedSky;
         currentInstance.surface.isMotionBlurMaskOut = currentInstance.testCategoryFlags(InstanceCategories::IgnoreMotionBlur);
         currentInstance.surface.ignoreTransparencyLayer = currentInstance.testCategoryFlags(InstanceCategories::IgnoreTransparencyLayer);
 
@@ -1280,6 +1281,13 @@ namespace dxvk {
       // Use non-opaque hits to process clip planes on visibility rays.
       // To handle cases when the same *static* object is used both with and without clip planes,
       // use the force bit to avoid BLAS confusion (because the geometry flags are baked into BLAS).
+      currentInstance.m_geometryFlags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+      currentInstance.m_vkInstance.flags |= VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR;
+    } else if (currentInstance.surface.isReprojectedSky &&
+               (!SkyNearDistanceOptions::enableShadows() ||
+                SkyNearDistanceOptions::distanceMode() != ViewDistanceMode::None)) {
+      // Use non-opaque hits so visibility rays can ignore reprojected sky when shadows are
+      // disabled or when the hit falls inside the sky near-distance hard cutoff.
       currentInstance.m_geometryFlags = VK_GEOMETRY_OPAQUE_BIT_KHR;
       currentInstance.m_vkInstance.flags |= VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR;
     } else {

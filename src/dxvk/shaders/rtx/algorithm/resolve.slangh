@@ -34,6 +34,7 @@
 #include "rtx/concept/volume_material/volume_material.slangh"
 #include "rtx/concept/ray_portal/ray_portal.slangh"
 #include "rtx/algorithm/view_distance.slangh"
+#include "rtx/algorithm/sky_near_distance.slangh"
 #include "rtx/algorithm/volume_lighting.slangh"
 
 #ifndef GBUFFER_FEATURE_OBJECT_PICKING
@@ -264,6 +265,72 @@ void resolveVertexFinalContinue<T : IBasePayloadState>(
   }
 }
 
+// Continue past reprojected sky along the ray so grazing angles cannot re-hit the same
+// triangle (normal offsets shrink to ~0 when |N·D| is small).
+void resolveVertexFinalContinueReprojectedSky<T : IBasePayloadState>(
+  Ray ray,
+  float hitT,
+  float positionError,
+  vec3 geometryNormal,
+  bool teleport,
+  mat4 teleportMatrix,
+  inout T resolveVertexState)
+{
+  if (teleport)
+  {
+    resolveVertexState.origin = (mul(teleportMatrix, vec4(ray.origin + ray.direction * hitT, 1.0f))).xyz;
+    resolveVertexState.direction = normalize(mul(mat3(teleportMatrix), vec3(resolveVertexState.direction)));
+    return;
+  }
+
+  const float eps = max(length(calculateRayOffset(positionError, geometryNormal)), 1e-3f);
+  resolveVertexState.origin = ray.origin + ray.direction * (hitT + eps);
+}
+
+// True if a non-sky surface exists just behind a kept reprojected-sky hit along the ray.
+bool peekPreferWorldBehindReprojectedSky(
+  Ray ray,
+  float hitT,
+  float positionError,
+  vec3 geometryNormal,
+  uint8_t rayMask)
+{
+  const float eps = max(length(calculateRayOffset(positionError, geometryNormal)), 1e-3f);
+  const float kPreferWorldDelta = 5.0f;
+
+  RayDesc peekDesc;
+  peekDesc.Origin = ray.origin;
+  peekDesc.Direction = ray.direction;
+  peekDesc.TMin = hitT + eps;
+  peekDesc.TMax = hitT + max(kPreferWorldDelta, eps * 2.0f);
+
+  if (peekDesc.TMax <= peekDesc.TMin)
+  {
+    return false;
+  }
+
+  RayQuery<0> rayQuery = RayQuery<0>();
+  rayQuery.TraceRayInline(
+    topLevelAS,
+    RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES,
+    uint(rayMask),
+    peekDesc);
+
+  while (rayQuery.Proceed())
+  {
+  }
+
+  RAY_HIT_INFO_CREATE_RAY_QUERY_COMMITTED(peekHitInfo, rayQuery)
+
+  if (!peekHitInfo.hasHit)
+  {
+    return false;
+  }
+
+  const RayInteraction peekInteraction = rayInteractionCreate(ray, peekHitInfo);
+  return !surfaces[uint(peekInteraction.surfaceIndex)].isReprojectedSky;
+}
+
 // Handles updating of the resolve state after an iteration when resolving is intended to stop on a hit.
 void resolveVertexFinalHit<T : IBasePayloadState>(inout T resolveVertexState)
 {
@@ -393,6 +460,46 @@ void resolveVertex<T: IBasePayloadState>(
     // (since these operations essentially clip out everything beyond them in a specific direction).
     resolveVertexFinalMiss<true>(resolveVertexState, rayInteraction, radianceAttenuation);
     return;
+  }
+
+  if (surface.isReprojectedSky)
+  {
+    const float skyHitT = rayInteraction.hitDistance;
+    const bool skyNearCulled = !evalSkyNearDistance(
+      cb.skyNearDistanceArgs, cb.isZUp, camera, surfaceInteraction.position);
+
+    if (skyNearCulled)
+    {
+      // Always continue along the ray; never FinalMiss (that composites sky as a bright silhouette).
+      resolveVertexFinalContinueReprojectedSky(
+        ray,
+        skyHitT,
+        surfaceInteraction.positionError,
+        surfaceInteraction.geometryNormal,
+        teleport,
+        teleportMatrix,
+        resolveVertexState);
+      return;
+    }
+
+    if (resolveVertexState.continueResolving &&
+        peekPreferWorldBehindReprojectedSky(
+          ray,
+          skyHitT,
+          surfaceInteraction.positionError,
+          surfaceInteraction.geometryNormal,
+          resolveVertexState.rayMask))
+    {
+      resolveVertexFinalContinueReprojectedSky(
+        ray,
+        skyHitT,
+        surfaceInteraction.positionError,
+        surfaceInteraction.geometryNormal,
+        teleport,
+        teleportMatrix,
+        resolveVertexState);
+      return;
+    }
   }
 
   // Create a Surface Material and Surface Material Interaction from the Surface
@@ -998,6 +1105,12 @@ void resolveVertexUnorderedParticles<
       continue;
     }
 
+    if (surface.isReprojectedSky &&
+        !evalSkyNearDistance(cb.skyNearDistanceArgs, cb.isZUp, cb.camera, surfaceInteraction.position))
+    {
+      continue;
+    }
+
     const MemoryPolymorphicSurfaceMaterial memoryPolymorphicSurfaceMaterial = surfaceMaterials[uint(rayInteraction.surfaceIndex)];
     const uint8_t polymorphicType = rayInteraction.materialType;
 
@@ -1360,6 +1473,12 @@ void resolveVertexUnordered<
       // Note: Iteration skipped, we unfortunately cannot break the loop here as the hits are processed
       // in an undefined order rather than from closest to furthest like they are in the usual resovle loop,
       // so there may still be more unordered hits to resolve.
+      continue;
+    }
+
+    if (surface.isReprojectedSky &&
+        !evalSkyNearDistance(cb.skyNearDistanceArgs, cb.isZUp, cb.camera, surfaceInteraction.position))
+    {
       continue;
     }
 

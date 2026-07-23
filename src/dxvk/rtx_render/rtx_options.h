@@ -1339,6 +1339,7 @@ namespace dxvk {
     OpaqueMaterialOptions opaqueMaterialOptions;
     TranslucentMaterialOptions translucentMaterialOptions;
     ViewDistanceOptions viewDistanceOptions;
+    SkyNearDistanceOptions skyNearDistanceOptions;
 
     static const HashRule& geometryHashGenerationRule() {
       return s_geometryHashGenerationRule;

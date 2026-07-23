@@ -94,6 +94,19 @@ vec3 handleVisibilityVertex<let VisibilityMode : uint>(Ray ray, RayHitInfo rayHi
     return vec3(1.0f);
   }
 
+  if (surface.isReprojectedSky)
+  {
+    if (!cb.skyNearDistanceArgs.enableShadows)
+    {
+      return vec3(1.0f);
+    }
+
+    if (!evalSkyNearDistanceHardCutoff(cb.skyNearDistanceArgs, cb.isZUp, cb.camera, surfaceInteraction.position))
+    {
+      return vec3(1.0f);
+    }
+  }
+
   const MemoryPolymorphicSurfaceMaterial memoryPolymorphicSurfaceMaterial = surfaceMaterials[rayInteraction.surfaceIndex];
   
   const uint8_t polymorphicType = rayInteraction.materialType;

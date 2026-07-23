@@ -263,6 +263,23 @@ namespace dxvk {
     } }
   };
 
+  RemixGui::ComboWithKey<ViewDistanceMode> skyNearDistanceModeCombo {
+    "Sky Near Distance Mode",
+    RemixGui::ComboWithKey<ViewDistanceMode>::ComboEntries { {
+        {ViewDistanceMode::None, "None"},
+        {ViewDistanceMode::HardCutoff, "Hard Cutoff"},
+        {ViewDistanceMode::CoherentNoise, "Coherent Noise"},
+    } }
+  };
+
+  RemixGui::ComboWithKey<ViewDistanceFunction> skyNearDistanceFunctionCombo {
+    "Sky Near Distance Function",
+    RemixGui::ComboWithKey<ViewDistanceFunction>::ComboEntries { {
+        {ViewDistanceFunction::Euclidean, "Euclidean"},
+        {ViewDistanceFunction::PlanarEuclidean, "Planar Euclidean"},
+    } }
+  };
+
   static auto fusedWorldViewModeCombo = RemixGui::ComboWithKey<FusedWorldViewMode>(
   "Fused World-View Mode",
   RemixGui::ComboWithKey<FusedWorldViewMode>::ComboEntries { {
@@ -2854,6 +2871,20 @@ namespace dxvk {
             ImGui::BeginDisabled(!RtxOptions::skyReprojectToMainCameraSpace());
             RemixGui::DragFloat("Reprojected Sky Scale", &RtxOptions::skyReprojectScaleObject(), 1.0f, 0.1f, 1000.0f);
             RemixGui::Checkbox("Force Auto-Detected Sky to Reproject", &RtxOptions::skyForceAutoDetectedToReprojectObject());
+
+            skyNearDistanceModeCombo.getKey(&SkyNearDistanceOptions::distanceModeObject());
+            if (SkyNearDistanceOptions::distanceMode() != ViewDistanceMode::None) {
+              skyNearDistanceFunctionCombo.getKey(&SkyNearDistanceOptions::distanceFunctionObject());
+
+              if (SkyNearDistanceOptions::distanceMode() == ViewDistanceMode::HardCutoff) {
+                RemixGui::DragFloat("Sky Near Distance Threshold", &SkyNearDistanceOptions::distanceThresholdObject(), 0.1f, 0.0f, 0.0f, "%.2f", sliderFlags);
+              } else if (SkyNearDistanceOptions::distanceMode() == ViewDistanceMode::CoherentNoise) {
+                RemixGui::DragFloat("Sky Near Distance Fade Min", &SkyNearDistanceOptions::distanceFadeMinObject(), 0.1f, 0.0f, SkyNearDistanceOptions::distanceFadeMax(), "%.2f", sliderFlags);
+                RemixGui::DragFloat("Sky Near Distance Fade Max", &SkyNearDistanceOptions::distanceFadeMaxObject(), 0.1f, SkyNearDistanceOptions::distanceFadeMin(), 0.0f, "%.2f", sliderFlags);
+                RemixGui::DragFloat("Sky Near Noise Scale", &SkyNearDistanceOptions::noiseScaleObject(), 0.1f, 0.0f, 0.0f, "%.2f", sliderFlags);
+              }
+            }
+            RemixGui::Checkbox("Reprojected Sky Casts Shadows", &SkyNearDistanceOptions::enableShadowsObject());
             ImGui::EndDisabled();
           }
           RemixGui::DragFloat("Sky Auto-Detect Unique Camera Search Distance", &RtxOptions::skyAutoDetectUniqueCameraDistanceObject(), 1.0f, 0.1f, 1000.0f);

@@ -716,4 +716,12 @@ namespace dxvk {
     // Adjust valid range on distanceFadeMin to prevent value above distanceFadeMax
     distanceFadeMinObject().setMaxValue(distanceFadeMax());
   }
+
+  void SkyNearDistanceOptions::distanceFadeMinOnChange(DxvkDevice* device) {
+    distanceFadeMaxObject().setMinValue(distanceFadeMin());
+  }
+
+  void SkyNearDistanceOptions::distanceFadeMaxOnChange(DxvkDevice* device) {
+    distanceFadeMinObject().setMaxValue(distanceFadeMax());
+  }
 }

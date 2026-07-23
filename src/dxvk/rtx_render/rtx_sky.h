@@ -223,6 +223,7 @@ dxvk::RtxContext::TryHandleSkyResult dxvk::RtxContext::tryHandleSky(const DrawPa
     // Swap camera
     skyGeometry.cameraType = CameraType::Main;
     skyGeometry.modifyCategoryFlags().clr(InstanceCategories::Sky);
+    skyGeometry.isReprojectedSky = true;
 
     // And reproject
     DrawCallTransforms& skyTransform = skyGeometry.modifyTransformData();
