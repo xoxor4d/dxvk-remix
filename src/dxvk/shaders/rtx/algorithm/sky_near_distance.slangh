@@ -1,0 +1,117 @@
+/*
+* Copyright (c) 2023-2026, NVIDIA CORPORATION. All rights reserved.
+*
+* Permission is hereby granted, free of charge, to any person obtaining a
+* copy of this software and associated documentation files (the "Software"),
+* to deal in the Software without restriction, including without limitation
+* the rights to use, copy, modify, merge, publish, distribute, sublicense,
+* and/or sell copies of the Software, and to permit persons to whom the
+* Software is furnished to do so, subject to the following conditions:
+*
+* The above copyright notice and this permission notice shall be included in
+* all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+* THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+* DEALINGS IN THE SOFTWARE.
+*/
+#pragma once
+
+#include "rtx/utility/noise.slangh"
+#include "rtx/concept/camera/camera.slangh"
+#include "rtx/pass/sky_near_distance_args.h"
+#include "rtx/pass/view_distance_args.h"
+
+#include "rtx/external/simplex_noise.slangh"
+
+// Inverse of evalViewDistance for reprojected 3D skybox geometry: rejects near hits and keeps far ones.
+// Returns true if the sky hit should be kept, false if it should be skipped.
+bool evalSkyNearDistance(SkyNearDistanceArgs skyNearDistanceArgs, bool isZUp, Camera camera, vec3 worldPosition)
+{
+  if (skyNearDistanceArgs.distanceMode == viewDistanceModeNone)
+  {
+    return true;
+  }
+
+  const vec3 cameraWorldPosition = cameraGetWorldPosition(camera);
+  float viewDistance;
+
+  if (skyNearDistanceArgs.distanceFunction == viewDistanceFunctionEuclidean)
+  {
+    viewDistance = length(cameraWorldPosition - worldPosition);
+  }
+  else
+  {
+    if (isZUp)
+    {
+      viewDistance = length(cameraWorldPosition.xy - worldPosition.xy);
+    }
+    else
+    {
+      viewDistance = length(cameraWorldPosition.xz - worldPosition.xz);
+    }
+  }
+
+  if (skyNearDistanceArgs.distanceMode == viewDistanceModeHardCutoff)
+  {
+    return viewDistance >= skyNearDistanceArgs.distanceThresholdOrFadeMin;
+  }
+  else
+  {
+    const float t = saturate((viewDistance - skyNearDistanceArgs.distanceThresholdOrFadeMin) / skyNearDistanceArgs.distanceFadeSpan);
+
+    if (t == 0.0f)
+    {
+      return false;
+    }
+
+    if (t == 1.0f)
+    {
+      return true;
+    }
+
+    const float coherentNoise = simplexNoise3D(worldPosition * skyNearDistanceArgs.noiseScale) * 0.5f + 0.5f;
+
+    return coherentNoise < t;
+  }
+}
+
+// Hard cutoff for shadow/visibility rays: keep only if at or beyond threshold / fade min.
+bool evalSkyNearDistanceHardCutoff(SkyNearDistanceArgs skyNearDistanceArgs, bool isZUp, Camera camera, vec3 worldPosition)
+{
+  if (skyNearDistanceArgs.distanceMode == viewDistanceModeNone)
+  {
+    return true;
+  }
+
+  const vec3 cameraWorldPosition = cameraGetWorldPosition(camera);
+  float viewDistance;
+
+  if (skyNearDistanceArgs.distanceFunction == viewDistanceFunctionEuclidean)
+  {
+    viewDistance = length(cameraWorldPosition - worldPosition);
+  }
+  else
+  {
+    if (isZUp)
+    {
+      viewDistance = length(cameraWorldPosition.xy - worldPosition.xy);
+    }
+    else
+    {
+      viewDistance = length(cameraWorldPosition.xz - worldPosition.xz);
+    }
+  }
+
+  float cutoff = skyNearDistanceArgs.distanceThresholdOrFadeMin;
+  if (skyNearDistanceArgs.distanceMode == viewDistanceModeCoherentNoise)
+  {
+    cutoff += skyNearDistanceArgs.distanceFadeSpan;
+  }
+
+  return viewDistance >= cutoff;
+}

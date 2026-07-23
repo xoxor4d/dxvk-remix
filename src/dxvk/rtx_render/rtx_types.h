@@ -752,6 +752,9 @@ struct DrawCallState {
   // since it may be world geometry that should go through reprojection instead.
   bool skyAutoDetected = false;
 
+  // Set when a delayed 3D sky draw is reprojected into main-camera space for ray tracing.
+  bool isReprojectedSky = false;
+
   void setupCategoriesForTexture();
   void setupCategoriesForGeometry();
   void setupCategoriesForHeuristics(uint32_t prevFrameSeenCamerasCount,
