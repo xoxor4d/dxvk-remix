@@ -275,7 +275,7 @@ private:
                                    RtInstance* existingInstance = nullptr,
                                    const RtxParticleSystemDesc* pParticleSystemDesc = nullptr);
 
-  RtSurfaceMaterial& createSurfaceMaterial(const MaterialData& renderMaterialData,
+  const RtSurfaceMaterial& createSurfaceMaterial(const MaterialData& renderMaterialData,
                                                  const DrawCallState& drawCallState,
                                                  uint32_t* out_indexInCache = nullptr);
 
