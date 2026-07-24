@@ -108,7 +108,8 @@ enum REMIX_MODIFIER_TO_OPAQUE_SHADER : std::uint8_t {
   REMIX_MODIFIER_TO_OPAQUE_SHADER_FREE5 = 1 << 4,
   REMIX_MODIFIER_TO_OPAQUE_SHADER_FREE6 = 1 << 5,
   REMIX_MODIFIER_TO_OPAQUE_SHADER_FREE7 = 1 << 6,
-  REMIX_MODIFIER_TO_OPAQUE_SHADER_FREE8 = 1 << 7,
+  REMIX_MODIFIER_TO_OPAQUE_SHADER_COUNT 
+  // no 7th bit since OPAQUE_SURFACE_MATERIAL_FLAG_IS_HAIR_CARD now takes up one of the prev. free ones
 };
 
 // Note: "Temporary" hacks to get RtxOptions data from this header file as we cannot include rtx_options directly
@@ -693,10 +694,6 @@ struct RtOpaqueSurfaceMaterial {
       flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_07;
     }
 
-    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_OPAQUE_SHADER_FREE8) {
-      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_08;
-    }
-
     if (m_isHairCard) {
       flags |= OPAQUE_SURFACE_MATERIAL_FLAG_IS_HAIR_CARD;
     }
@@ -901,7 +898,7 @@ struct RtOpaqueSurfaceMaterial {
 private:
   void updateCachedHash() {
     static_assert(
-      sizeof(*this) == 140,
+      sizeof(*this) == 136,
       "add new member for hashing if needed: add a MEMBER into the struct + add a VALUE into the list-init"
     );
     struct HashStruct {
