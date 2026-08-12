@@ -694,7 +694,6 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   const bool d3dModVehicleDecalDirt = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_VEHICLE_DECAL_DIRT;
   const bool d3dModGlobalUvModifier = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_GLOBAL_UV_MODIFIER;
   const bool d3dFlag07 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_07;
-  const bool d3dFlag08 = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_08;
 
   if (d3dModRemVertexColorKeepAlpha)
   {
