@@ -41,6 +41,8 @@
 
 #include "../util/util_bit.h"
 #include "../util/util_math.h"
+#include "../util/util_sentry.h"
+#include "../util/util_string.h"
 
 #include "../dxvk/rtx_render/rtx_context.h"
 #include "../dxvk/rtx_render/rtx_options.h"
@@ -4624,11 +4626,21 @@ namespace dxvk {
     const bool readOnly = Flags & D3DLOCK_READONLY;
     pResource->SetReadOnlyLocked(Subresource, readOnly);
 
-    // On a write lock of mip 0, clear the existing hash so SetupForRtxFrom recomputes it.
-    if (MipLevel == 0 && !readOnly) {
+    // These hashes are configured as stable identities for RTX draw-call setup.
+    // Some games update them after setup, but Remix still needs the original
+    // hash to classify terrain and omit auxiliary textures like lightmaps.
+    if (MipLevel == 0 && !readOnly && RtxOptions::recomputeTextureHashOnWrite()) {
       Rc<DxvkImage> image = pResource->GetImage();
-      if (image != nullptr && image->getHash() != kEmptyHash) {
-        pResource->ClearHash();
+      if (image != nullptr) {
+        const XXH64_hash_t imageHash = image->getHash();
+        const bool keepConfiguredHash =
+          lookupHash(RtxOptions::terrainTextures(), imageHash) ||
+          lookupHash(RtxOptions::lightmapTextures(), imageHash) ||
+          lookupHash(RtxOptions::ignoreTextures(), imageHash) ||
+          lookupHash(RtxOptions::ignoreBakedLightingTextures(), imageHash);
+        if (imageHash != kEmptyHash && !keepConfiguredHash) {
+          pResource->ClearHash();
+        }
       }
     }
 
@@ -7878,15 +7890,17 @@ namespace dxvk {
   HRESULT D3D9DeviceEx::ResetSwapChain(D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode) {
     ScopedCpuProfileZone();
     D3D9Format backBufferFmt = EnumerateFormat(pPresentationParameters->BackBufferFormat);
-    Logger::info(str::format(
+    const std::string requestedParams = str::format(
       "D3D9DeviceEx::ResetSwapChain:\n",
       "  Requested Presentation Parameters\n",
       "    - Width:              ", pPresentationParameters->BackBufferWidth, "\n",
       "    - Height:             ", pPresentationParameters->BackBufferHeight, "\n",
-      "    - Format:             ", backBufferFmt, "\n"
+      "    - Format:             ", backBufferFmt, "\n",
       "    - Auto Depth Stencil: ", pPresentationParameters->EnableAutoDepthStencil ? "true" : "false", "\n",
       "                ^ Format: ", EnumerateFormat(pPresentationParameters->AutoDepthStencilFormat), "\n",
-      "    - Windowed:           ", pPresentationParameters->Windowed ? "true" : "false", "\n"));
+      "    - Windowed:           ", pPresentationParameters->Windowed ? "true" : "false", "\n");
+    Logger::info(requestedParams);
+    sentry::setContext("requested_swap_chain", requestedParams);
 
     if (backBufferFmt != D3D9Format::Unknown) {
       if (!IsSupportedBackBufferFormat(backBufferFmt)) {

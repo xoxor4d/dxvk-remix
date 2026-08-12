@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2021-2023, NVIDIA CORPORATION. All rights reserved.
+* Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 *
 * Permission is hereby granted, free of charge, to any person obtaining a
 * copy of this software and associated documentation files (the "Software"),
@@ -83,6 +83,10 @@ namespace dxvk {
     if (!RtxOptions::enableCulling() || drawCall.testCategoryFlags(InstanceCategories::DisableBackfaceCulling))
       flags |= VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
 
+    if (drawCall.testCategoryFlags(InstanceCategories::HairCards)) {
+      flags |= VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+    }
+
     // This check can be overridden by replacement assets.
     if (drawCall.getMaterialData().blendMode.enableBlending && !surface.alphaState.isDecal && !drawCall.getGeometryData().forceCullBit)
       flags |= VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
@@ -160,6 +164,30 @@ namespace dxvk {
 
   void RtInstance::setBlas(BlasEntry& blas) {
     m_linkedBlas = &blas;
+    syncBufferIndicesFromBlas();
+  }
+
+  void RtInstance::syncBufferIndicesFromBlas() {
+    if (m_linkedBlas == nullptr) {
+      return;
+    }
+    const RaytraceGeometry& geo = m_linkedBlas->modifiedGeometryData;
+    surface.positionBufferIndex = geo.positionBufferIndex;
+    surface.positionOffset      = geo.positionBuffer.offsetFromSlice();
+    surface.positionStride      = geo.positionBuffer.stride();
+    surface.normalBufferIndex   = geo.normalBufferIndex;
+    surface.normalOffset        = geo.normalBuffer.offsetFromSlice();
+    surface.normalStride        = geo.normalBuffer.stride();
+    surface.normalFormat        = geo.normalBuffer.vertexFormat();
+    surface.color0BufferIndex   = geo.color0BufferIndex;
+    surface.color0Offset        = geo.color0Buffer.offsetFromSlice();
+    surface.color0Stride        = geo.color0Buffer.stride();
+    surface.texcoordBufferIndex = geo.texcoordBufferIndex;
+    surface.texcoordOffset      = geo.texcoordBuffer.offsetFromSlice();
+    surface.texcoordStride      = geo.texcoordBuffer.stride();
+    surface.previousPositionBufferIndex = geo.previousPositionBufferIndex;
+    surface.indexBufferIndex    = geo.indexBufferIndex;
+    surface.indexStride         = geo.indexBuffer.stride();
   }
 
   void RtInstance::copyInstanceDataFrom(const RtInstance& src) {
@@ -204,7 +232,7 @@ namespace dxvk {
     //   OMM request registration state,
     //   m_primInstanceOwner, buildGeometries, buildRanges,
     //   billboardIndices, indexOffsets, m_blasDirty,
-    //   m_billboardGeometryDirty
+    //   m_billboardGeometryDirty, m_emitterMotionState
   }
 
   void RtInstance::updateFromReference(const RtInstance& src, const bool preserveTransforms) {
@@ -228,10 +256,14 @@ namespace dxvk {
       m_vkInstance.transform = savedVkTransform;
     }
 
+    // Clones are not linked into BlasEntry::m_linkedInstances (see createInstanceCopy), so
+    // updateBufferCache's push never reaches them. Re-derive from the BLAS rather than relying on
+    // the reference instance having been refreshed first.
+    syncBufferIndicesFromBlas();
+
     // Mark dirty so the incremental BLAS cache treats this instance as changed.
     m_blasDirty = true;
     m_billboardGeometryDirty = true;
-
   }
 
   void RtInstance::onTransformChanged() {
@@ -680,18 +712,32 @@ namespace dxvk {
     // Handle Alpha Test State
 
     // Note: Even if the Alpha Test enable flag is set, we consider it disabled if the actual test type is set to always.
-    const bool forceAlphaTest = drawCall.getCategoryFlags().test(InstanceCategories::AlphaBlendToCutout);
-    const bool alphaTestEnabled = forceAlphaTest || (AlphaTestType)drawCall.getMaterialData().alphaTestCompareOp != AlphaTestType::kAlways;
+    const bool forceCutoutAlphaTest = drawCall.testCategoryFlags(InstanceCategories::AlphaBlendToCutout);
+    const bool forceHairCardAlphaTest = drawCall.testCategoryFlags(InstanceCategories::HairCards);
+    const bool forceAlphaTest = forceCutoutAlphaTest || forceHairCardAlphaTest;
+    const bool legacyAlphaTestEnabled = (AlphaTestType)drawCall.getMaterialData().alphaTestCompareOp != AlphaTestType::kAlways;
+    const bool materialAlphaTestEnabled = opaqueMaterialData.getAlphaTestType() != AlphaTestType::kAlways;
 
     // Note: Use the Opaque Material Data's alpha test state information directly if requested,
     // otherwise derive the alpha test state from the drawcall (via its legacy material data).
-    if (forceAlphaTest) {
+    if (forceCutoutAlphaTest) {
       out.alphaTestType = AlphaTestType::kGreater;
       out.alphaTestReferenceValue = static_cast<uint8_t>(RtxOptions::forceCutoutAlpha() * 255.0);
+    } else if (forceHairCardAlphaTest) {
+      if (!useLegacyAlphaState && materialAlphaTestEnabled) {
+        out.alphaTestType = opaqueMaterialData.getAlphaTestType();
+        out.alphaTestReferenceValue = opaqueMaterialData.getAlphaTestReferenceValue();
+      } else if (legacyAlphaTestEnabled) {
+        out.alphaTestType = (AlphaTestType)drawCall.getMaterialData().alphaTestCompareOp;
+        out.alphaTestReferenceValue = drawCall.getMaterialData().alphaTestReferenceValue;
+      } else {
+        out.alphaTestType = AlphaTestType::kGreater;
+        out.alphaTestReferenceValue = static_cast<uint8_t>(RtxOptions::forceCutoutAlpha() * 255.0);
+      }
     } else if (!useLegacyAlphaState) {
       out.alphaTestType = opaqueMaterialData.getAlphaTestType();
       out.alphaTestReferenceValue = opaqueMaterialData.getAlphaTestReferenceValue();
-    } else if (alphaTestEnabled) {
+    } else if (legacyAlphaTestEnabled) {
       out.alphaTestType = (AlphaTestType)drawCall.getMaterialData().alphaTestCompareOp;
       out.alphaTestReferenceValue = drawCall.getMaterialData().alphaTestReferenceValue;
     }
@@ -908,26 +954,13 @@ namespace dxvk {
     m_instances.push_back(newInstance);
     notifySceneChanged();
 
-    return newInstance;
-  }
+    // Renderer-created clones (view model, player model, ray-portal virtual instances) deliberately
+    // skip onInstanceAdded, so BlasEntry::linkInstance is never called for them and
+    // updateBufferCache's propagation will not reach them. Derive the indices straight from the BLAS
+    // instead of trusting the indices copied from the reference instance.
+    newInstance->syncBufferIndicesFromBlas();
 
-  void InstanceManager::processInstanceBuffers(const BlasEntry& blas, RtInstance& currentInstance) const {
-    currentInstance.surface.positionBufferIndex = blas.modifiedGeometryData.positionBufferIndex;
-    currentInstance.surface.positionOffset = blas.modifiedGeometryData.positionBuffer.offsetFromSlice();
-    currentInstance.surface.positionStride = blas.modifiedGeometryData.positionBuffer.stride();
-    currentInstance.surface.normalBufferIndex = blas.modifiedGeometryData.normalBufferIndex;
-    currentInstance.surface.normalOffset = blas.modifiedGeometryData.normalBuffer.offsetFromSlice();
-    currentInstance.surface.normalStride = blas.modifiedGeometryData.normalBuffer.stride();
-    currentInstance.surface.normalFormat = blas.modifiedGeometryData.normalBuffer.vertexFormat();
-    currentInstance.surface.color0BufferIndex = blas.modifiedGeometryData.color0BufferIndex;
-    currentInstance.surface.color0Offset = blas.modifiedGeometryData.color0Buffer.offsetFromSlice();
-    currentInstance.surface.color0Stride = blas.modifiedGeometryData.color0Buffer.stride();
-    currentInstance.surface.texcoordBufferIndex = blas.modifiedGeometryData.texcoordBufferIndex;
-    currentInstance.surface.texcoordOffset = blas.modifiedGeometryData.texcoordBuffer.offsetFromSlice();
-    currentInstance.surface.texcoordStride = blas.modifiedGeometryData.texcoordBuffer.stride();
-    currentInstance.surface.previousPositionBufferIndex = blas.modifiedGeometryData.previousPositionBufferIndex;
-    currentInstance.surface.indexBufferIndex = blas.modifiedGeometryData.indexBufferIndex;
-    currentInstance.surface.indexStride = blas.modifiedGeometryData.indexBuffer.stride();
+    return newInstance;
   }
 
   // Returns true if the instance was modified
@@ -1034,8 +1067,6 @@ namespace dxvk {
     if (isFirstUpdateThisFrame || overridePreviousCameraUpdate) {
 
       if (isFirstUpdateThisFrame) {
-        processInstanceBuffers(blas, currentInstance);
-
         currentInstance.m_materialType = materialData->getType();
 
         const XXH64_hash_t materialInstanceHash = materialData->getHash();
@@ -1153,7 +1184,14 @@ namespace dxvk {
                                    || currentInstance.testCategoryFlags(InstanceCategories::Particle)
                                    || currentInstance.testCategoryFlags(InstanceCategories::WorldUI);
 
-        hasPreviousPositions = blas.modifiedGeometryData.previousPositionBuffer.defined() && !isMotionUnstable;
+        // previousPositionBuffer is only re-pointed at historyBuffer[1] by processGeometryInfo on a
+        // kUpdateBVH frame. On any later frame it still holds that older slice - e.g. a preserved
+        // BLAS, or the kUpdateInstance early-out in onSceneObjectUpdated when a sibling draw already
+        // touched this BlasEntry. Gate on frameLastUpdated so stale vertices never feed motion vectors.
+        const bool previousPositionsValidThisFrame = blas.frameLastUpdated == m_device->getCurrentFrameId();
+        hasPreviousPositions = previousPositionsValidThisFrame
+                            && blas.modifiedGeometryData.previousPositionBuffer.defined()
+                            && !isMotionUnstable;
         const bool isFirstUpdateAfterCreation = currentInstance.isCreatedThisFrame(m_device->getCurrentFrameId()) && isFirstUpdateThisFrame;
 
         // Note: objectToView is aliased on updates, since findSimilarInstance() doesn't discern it
@@ -1390,14 +1428,14 @@ namespace dxvk {
       bool hasPreviousPositions,
       bool isFirstUpdateThisFrame,
       bool fireEvents) {
-    // Camera registration. Idempotent (RtInstance::m_seenCameraTypes is cumulative and never
-    // cleared), so calling it from updateInstance and again here is harmless. We need it on
-    // the preserve path because that path bypasses updateInstance entirely.
-    instance.registerCamera(drawCall.cameraType, m_device->getCurrentFrameId());
+    // Camera registration. This is per-instance, so this detects the first time an instance
+    // is drawn with a given camera each frame.
+    const bool isNewCameraTypeThisFrame =
+        instance.registerCamera(drawCall.cameraType, m_device->getCurrentFrameId());
 
     // Re-register view-model candidates every frame; m_viewModelCandidates is cleared in
     // onFrameEnd, and createViewModelInstances() iterates the list later in the frame.
-    if (drawCall.cameraType == CameraType::ViewModel && !instance.isHidden() && isFirstUpdateThisFrame) {
+    if (drawCall.cameraType == CameraType::ViewModel && !instance.isHidden() && isNewCameraTypeThisFrame) {
       registerViewModelCandidate(instance);
     }
 
@@ -1579,11 +1617,11 @@ namespace dxvk {
     std::unordered_set<RtInstance*> activeViewModelReferences;
     for (auto* candidateInstance : m_viewModelCandidates) {
 
-      // Valid view model instances must be associated only with the view model camera
-      // Check: exactly one bit set (power-of-two check via raw bitmask)
-      const auto seenMask = candidateInstance->m_seenCameraTypes.raw();
-      if (seenMask == 0 || (seenMask & (seenMask - 1)) != 0)
+      // A valid view-model reference must have been drawn with the view-model camera this
+      // frame.
+      if (!candidateInstance->isCameraRegistered(CameraType::ViewModel)) {
         continue;
+      }
 
       // Hide the reference instance since we'll create a separate instance for the view model 
       candidateInstance->m_vkInstance.mask = 0;

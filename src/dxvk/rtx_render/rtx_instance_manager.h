@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2021-2023, NVIDIA CORPORATION. All rights reserved.
+* Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 *
 * Permission is hereby granted, free of charge, to any person obtaining a
 * copy of this software and associated documentation files (the "Software"),
@@ -23,6 +23,7 @@
 
 #include <cstddef>
 #include <deque>
+#include <memory>
 #include <mutex>
 #include <vector>
 #include <unordered_set>
@@ -76,14 +77,36 @@ public:
 
   bool isCreatedThisFrame(uint32_t frameIndex) const { return frameIndex == m_frameCreated; }
 
+  // Particle-emitter spawn-discontinuity guard state (rtx.particles.enableDiscontinuityGuard).
+  // velocityMovingAverage tracks the emitter's per-frame world translation. A one-frame motion that
+  // deviates from it is flagged a discontinuity. Lives on the instance so it persists across frames
+  // and is freed with the instance, no separate map or pruning needed.
+  struct EmitterMotionState {
+    Vector3 velocityMovingAverage = Vector3(0.f);
+    uint32_t lastFrame = kInvalidFrameIndex;
+    bool discontinuity = false;
+  };
+  // Lazily allocated on first use so only actual emitters fill the pointer, non-emitters keep it null.
+  EmitterMotionState& getEmitterMotionState() const {
+    if (!m_emitterMotionState) {
+      m_emitterMotionState = std::make_unique<EmitterMotionState>();
+    }
+    return *m_emitterMotionState;
+  }
+
   // Syncs surface and material data from a reference instance.
   // Preserves the persistent instance's identity (id, vector index) and lifecycle state.
   // Set preserveTransforms when the caller applies an absolute corrected transform afterward.
   // Leave it false before relative transforms, such as portal teleports.
   void updateFromReference(const RtInstance& src, bool preserveTransforms = true);
 
-  // Bind a BLAS object to this instance
+  // Bind a BLAS object to this instance and sync buffer indices/strides from its geometry data.
   void setBlas(BlasEntry& blas);
+
+  // Syncs surface buffer indices and strides from the currently bound BLAS.
+  // Called by setBlas() on initial bind or re-link, and by updateBufferCache()
+  // when geometry buffer slots change mid-scene.
+  void syncBufferIndicesFromBlas();
 
   // Sets current and previous transforms explicitly
   bool teleport(const Matrix4& objectToWorld);
@@ -190,6 +213,10 @@ private:
 
   mutable uint32_t m_frameLastUpdated = kInvalidFrameIndex;
   mutable uint32_t m_frameCreated = kInvalidFrameIndex;
+
+  // Particle-emitter spawn-discontinuity guard state, lazily allocated (null for non-emitter instances).
+  // Persistent lifecycle state, intentionally not synced in copyInstanceDataFrom.
+  mutable std::unique_ptr<EmitterMotionState> m_emitterMotionState;
 
   Flags<CameraType::Enum> m_seenCameraTypes;  // Camera types with which the instance has been originally rendered with
 
@@ -350,9 +377,6 @@ public:
 
   // Binds a raytracing material to the specified instance.
   void bindMaterial(RtInstance& instance, const RtSurfaceMaterial& material);
-
-  // Copies buffer indices from the BlasEntry's geometry data to the instance's surface.
-  void processInstanceBuffers(const BlasEntry& blas, RtInstance& currentInstance) const;
 
   // Per-frame finalization shared by the dynamic and preserve paths:
   // re-registers the player-model / view-model candidate lists (cleared every onFrameEnd) and

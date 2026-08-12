@@ -281,7 +281,9 @@ void geometryResolverOutputSurface<
       GBUFFER_FEATURE_DLSSRR && cb.enableDLSSRR
       ? kDLSSRRDisocclusionThresholdValue
       : 1.f;
-    const bool discardRRHistory = surface.hasMaterialChanged || surface.isAnimatedWater;
+    const bool discardRRHistory =
+      surface.hasMaterialChanged ||
+      (surface.isAnimatedWater && cb.invalidateHistoryForAnimatedWater);
 
     // Note: Fully use an alternate disocclusion threshold when specified, done by setting the mix value to 1.0 (this mixes
     // between the standard and alternate disocclusion threshold specified in the denoiser's settings).
@@ -721,6 +723,12 @@ void geometryResolverVertexOutputDebugView(
   case DEBUG_VIEW_TEXCOORD_GENERATION_MODE:
     storeInDebugView(pixelCoordinate, uint(surface.texcoordGenerationMode));
     break;
+  case DEBUG_VIEW_TRIANGLE_NORMAL:
+    storeInDebugView(pixelCoordinate, surfaceInteraction.debugTriangleNormal);
+    break;
+  case DEBUG_VIEW_INTERPOLATED_VERTEX_NORMAL:
+    storeInDebugView(pixelCoordinate, surfaceInteraction.debugInterpolatedVertexNormal);
+    break;
   case DEBUG_VIEW_GEOMETRY_NORMAL:
     storeInDebugView(pixelCoordinate, surfaceInteraction.geometryNormal);
     break;
@@ -1061,6 +1069,12 @@ void geometryResolverVertexOutputDebugView(
 
       // DEBUG_VIEW_TEXCOORD_GENERATION_MODE
       isValid &= isValidValue(surface.texcoordGenerationMode);
+
+      // DEBUG_VIEW_TRIANGLE_NORMAL
+      isValid &= isValidValue(surfaceInteraction.debugTriangleNormal);
+
+      // DEBUG_VIEW_INTERPOLATED_VERTEX_NORMAL
+      isValid &= isValidValue(surfaceInteraction.debugInterpolatedVertexNormal);
 
       // DEBUG_VIEW_GEOMETRY_NORMAL
       isValid &= isValidValue(surfaceInteraction.geometryNormal);

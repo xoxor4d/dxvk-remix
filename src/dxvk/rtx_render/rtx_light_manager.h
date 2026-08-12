@@ -112,7 +112,7 @@ public:
   const Rc<DxvkBuffer> getPreviousLightBuffer() const { return m_previousLightBuffer.ptr() ? m_previousLightBuffer : m_lightBuffer; }
   const Rc<DxvkBuffer> getLightMappingBuffer() const { return m_lightMappingBuffer; }
   const uint32_t getActiveCount() const { return m_currentActiveLightCount; }
-  const DomeLightArgs& getDomeLightArgs() const { return m_gpuDomeLightArgs; }
+  const DomeLightArgs& getDomeLightArgs();
 
   const std::unordered_map<remixapi_LightHandle, RtLight>& getExternalLightTable() const { return m_externalLights; }
   const std::unordered_set<remixapi_LightHandle>& getExternalActiveLightListForCapture() const {

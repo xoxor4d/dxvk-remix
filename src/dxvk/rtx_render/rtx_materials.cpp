@@ -77,52 +77,6 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
     uint8_t padding[3];
   };
 
-  static_assert(hasNoImplicitPadding<LegacyMaterialIdentityHashData>(
-      &LegacyMaterialIdentityHashData::colorTextureHash0,
-      &LegacyMaterialIdentityHashData::colorTextureHash1,
-      &LegacyMaterialIdentityHashData::samplerHash0,
-      &LegacyMaterialIdentityHashData::samplerHash1,
-      &LegacyMaterialIdentityHashData::alphaTestCompareOp,
-      &LegacyMaterialIdentityHashData::tFactor,
-      &LegacyMaterialIdentityHashData::blendEnableBlending,
-      &LegacyMaterialIdentityHashData::blendColorSrcFactor,
-      &LegacyMaterialIdentityHashData::blendColorDstFactor,
-      &LegacyMaterialIdentityHashData::blendColorBlendOp,
-      &LegacyMaterialIdentityHashData::blendAlphaSrcFactor,
-      &LegacyMaterialIdentityHashData::blendAlphaDstFactor,
-      &LegacyMaterialIdentityHashData::blendAlphaBlendOp,
-      &LegacyMaterialIdentityHashData::blendWriteMask,
-
-      // gta4
-      &LegacyMaterialIdentityHashData::remixTextureCategoryFlagsFromD3D, // RS 42
-      &LegacyMaterialIdentityHashData::remixModifierFromD3D, // RS 149
-      &LegacyMaterialIdentityHashData::remixHashFromD3D, // RS 150
-      &LegacyMaterialIdentityHashData::remixTempFloat01FromD3D, // RS 169
-      &LegacyMaterialIdentityHashData::remixTempFloat02FromD3D, // RS 177
-      &LegacyMaterialIdentityHashData::remixPackedFloat4_RS210FromD3D, // RS 210 - Packed DWORD containing 2x uint16_t (lower 16 bits = wetnessParams1, upper 16 bits = wetnessParams2)
-      &LegacyMaterialIdentityHashData::remixFloatRS211FromD3D, // RS 211
-      &LegacyMaterialIdentityHashData::remixFloatRS212FromD3D, // RS 212
-      &LegacyMaterialIdentityHashData::remixFloatRS213FromD3D, // RS 213
-      &LegacyMaterialIdentityHashData::remixFloatRS214FromD3D, // RS 214
-      &LegacyMaterialIdentityHashData::remixFloatRS215FromD3D, // RS 215
-      &LegacyMaterialIdentityHashData::remixFloatRS216FromD3D, // RS 216
-      &LegacyMaterialIdentityHashData::remixFloatRS217FromD3D, // RS 217
-      &LegacyMaterialIdentityHashData::remixFloatRS218FromD3D, // RS 218
-      &LegacyMaterialIdentityHashData::remixFloatRS219FromD3D, // RS 219
-      &LegacyMaterialIdentityHashData::remixHashModifierFromD3D, // RS 220
-
-      &LegacyMaterialIdentityHashData::alphaTestReferenceValue,
-      &LegacyMaterialIdentityHashData::textureColorArg1Source,
-      &LegacyMaterialIdentityHashData::textureColorArg2Source,
-      &LegacyMaterialIdentityHashData::textureColorOperation,
-      &LegacyMaterialIdentityHashData::textureAlphaArg1Source,
-      &LegacyMaterialIdentityHashData::textureAlphaArg2Source,
-      &LegacyMaterialIdentityHashData::textureAlphaOperation,
-      &LegacyMaterialIdentityHashData::isTextureFactorBlend,
-      &LegacyMaterialIdentityHashData::isVertexColorBakedLighting,
-      &LegacyMaterialIdentityHashData::padding),
-      "LegacyMaterialIdentityHashData has padding bytes");
-
   LegacyMaterialIdentityHashData data{};
   data.colorTextureHash0 = colorTextures[0].getImageHash();
   data.colorTextureHash1 = colorTextures[1].getImageHash();
@@ -167,8 +121,7 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
   data.isTextureFactorBlend = isTextureFactorBlend ? 1u : 0u;
   data.isVertexColorBakedLighting = isVertexColorBakedLighting ? 1u : 0u;
 
-  return hashStructByMemory(
-      data,
+  return hashStructByMemory<LegacyMaterialIdentityHashData,
       &LegacyMaterialIdentityHashData::colorTextureHash0,
       &LegacyMaterialIdentityHashData::colorTextureHash1,
       &LegacyMaterialIdentityHashData::samplerHash0,
@@ -211,7 +164,7 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
       &LegacyMaterialIdentityHashData::textureAlphaOperation,
       &LegacyMaterialIdentityHashData::isTextureFactorBlend,
       &LegacyMaterialIdentityHashData::isVertexColorBakedLighting,
-      &LegacyMaterialIdentityHashData::padding);
+      &LegacyMaterialIdentityHashData::padding>(data);
 }
 
 bool getEnableDiffuseLayerOverrideHack() {

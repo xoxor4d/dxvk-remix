@@ -632,7 +632,7 @@ struct RtOpaqueSurfaceMaterial {
     const Vector3& emissiveColorConstant, bool enableEmission,
     bool ignoreAlphaChannel, bool enableThinFilm, bool alphaIsThinFilmThickness, float thinFilmThicknessConstant,
     uint32_t samplerIndex, float displaceIn, float displaceOut,
-    uint32_t subsurfaceMaterialIndex, bool isRaytracedRenderTarget,
+    uint32_t subsurfaceMaterialIndex, bool isRaytracedRenderTarget, bool isHairCard,
     uint16_t samplerFeedbackStamp,
     uint8_t d3dModifierFlags, uint16_t wetnessParams1, uint16_t wetnessParams2, float freeFloat03, float freeFloat04,
     uint32_t secondaryTextureIndex = 0
@@ -647,7 +647,7 @@ struct RtOpaqueSurfaceMaterial {
     m_ignoreAlphaChannel { ignoreAlphaChannel }, m_enableThinFilm { enableThinFilm }, m_alphaIsThinFilmThickness { alphaIsThinFilmThickness },
     m_thinFilmThicknessConstant { thinFilmThicknessConstant }, m_samplerIndex{ samplerIndex }, m_displaceIn{ displaceIn },
     m_displaceOut{ displaceOut }, m_subsurfaceMaterialIndex(subsurfaceMaterialIndex), m_isRaytracedRenderTarget(isRaytracedRenderTarget),
-    m_samplerFeedbackStamp{ samplerFeedbackStamp },
+      m_isHairCard(isHairCard), m_samplerFeedbackStamp{ samplerFeedbackStamp },
     m_d3dModifierFlags { d3dModifierFlags }, m_wetnessParams1 { wetnessParams1 }, m_wetnessParams2 { wetnessParams2 }, m_freeFloat03 { freeFloat03 }, m_freeFloat04 { freeFloat04 }
   {
     updateCachedData();
@@ -709,8 +709,8 @@ struct RtOpaqueSurfaceMaterial {
       flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_07;
     }
 
-    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_OPAQUE_SHADER_FREE8) {
-      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_D3D_08;
+    if (m_isHairCard) {
+        flags |= OPAQUE_SURFACE_MATERIAL_FLAG_IS_HAIR_CARD;
     }
 
     float displaceIn = m_displaceIn * getDisplacementFactor();
@@ -913,7 +913,7 @@ struct RtOpaqueSurfaceMaterial {
 private:
   void updateCachedHash() {
     static_assert(
-      sizeof(*this) == 136,
+      sizeof(*this) == 140,
       "add new member for hashing if needed: add a MEMBER into the struct + add a VALUE into the list-init"
     );
     struct HashStruct {
@@ -940,6 +940,7 @@ private:
       float displaceOut;
       uint32_t subsurfaceMaterialIndex;
       uint32_t isRaytracedRenderTarget;   // NOTE: uint32_t to avoid padding
+      uint32_t isHairCard;                // NOTE: uint32_t to avoid padding
       uint32_t samplerFeedbackStamp;      // NOTE: uint32_t to avoid padding
       uint32_t secondaryTextureIndex;
       uint32_t m_d3dModifierFlags;
@@ -974,6 +975,7 @@ private:
       m_displaceOut,
       m_subsurfaceMaterialIndex,
       m_isRaytracedRenderTarget,
+      m_isHairCard,
       m_samplerFeedbackStamp,
       m_secondaryTextureIndex,
       m_d3dModifierFlags,
@@ -1029,6 +1031,7 @@ private:
   uint32_t m_subsurfaceMaterialIndex;
 
   bool m_isRaytracedRenderTarget;
+  bool m_isHairCard;
 
   uint16_t m_samplerFeedbackStamp;
 
@@ -1055,7 +1058,8 @@ struct RtTranslucentSurfaceMaterial {
     bool enableEmission, float emissiveIntensity, const Vector3& emissiveColorConstant,
     bool isThinWalled, float thinWallThickness, bool useDiffuseLayer, uint32_t samplerIndex,
     uint8_t d3dModifierFlags, uint16_t wetnessParams1, uint16_t wetnessParams2, 
-    float freeFloat01, float freeFloat02) :
+    float freeFloat01, float freeFloat02,
+    uint16_t samplerFeedbackStamp = SAMPLER_FEEDBACK_INVALID) :
     m_normalTextureIndex(normalTextureIndex),
     m_transmittanceTextureIndex(transmittanceTextureIndex),
     m_emissiveColorTextureIndex(emissiveColorTextureIndex),
@@ -1064,7 +1068,8 @@ struct RtTranslucentSurfaceMaterial {
     m_enableEmission(enableEmission), m_emissiveIntensity(emissiveIntensity), m_emissiveColorConstant(emissiveColorConstant),
     m_isThinWalled(isThinWalled), m_thinWallThickness(thinWallThickness), m_useDiffuseLayer(useDiffuseLayer), m_samplerIndex(samplerIndex),
     m_d3dModifierFlags(d3dModifierFlags), m_wetnessParams1(wetnessParams1), m_wetnessParams2(wetnessParams2), 
-    m_freeFloat01(freeFloat01), m_freeFloat02(freeFloat02)
+    m_freeFloat01(freeFloat01), m_freeFloat02(freeFloat02),
+    m_samplerFeedbackStamp(samplerFeedbackStamp)
   {
     updateCachedData();
     updateCachedHash();
@@ -1154,8 +1159,11 @@ struct RtTranslucentSurfaceMaterial {
     writeGPUHelper(data, offset, glm::packHalf1x16(m_freeFloat01));
     writeGPUHelper(data, offset, glm::packHalf1x16(m_freeFloat02));
 
-    // data[20 - 31]
-    writeGPUPadding<22>(data, offset);
+    // data[20]: samplerFeedbackStamp
+    writeGPUHelperExplicit<2>(data, offset, m_samplerFeedbackStamp);
+
+    // data[21 - 31]
+    writeGPUPadding<20>(data, offset);
 
     assert(offset - oldOffset == kSurfaceMaterialGPUSize);
   }
@@ -1186,7 +1194,7 @@ struct RtTranslucentSurfaceMaterial {
 private:
   void updateCachedHash() {
     static_assert(
-      sizeof(*this) == 104,
+      sizeof(*this) == 108,
       "add new member for hashing if needed: add a MEMBER into the struct + add a VALUE into the list-init"
     );
     struct HashStruct {
@@ -1203,6 +1211,7 @@ private:
       float thinWallThickness;
       uint32_t useDiffuseLayer; // NOTE: uint32_t to avoid padding
       uint32_t samplerIndex;
+      uint32_t samplerFeedbackStamp; // NOTE: uint32_t to avoid padding
       uint32_t m_d3dModifierFlags;
       uint32_t m_wetnessParams1;
       uint32_t m_wetnessParams2;
@@ -1225,6 +1234,7 @@ private:
       m_thinWallThickness,
       m_useDiffuseLayer,
       m_samplerIndex,
+      m_samplerFeedbackStamp,
       m_d3dModifierFlags,
       m_wetnessParams1,
       m_wetnessParams2,
@@ -1269,6 +1279,7 @@ private:
   bool m_isThinWalled;
   float m_thinWallThickness;
   bool m_useDiffuseLayer;
+  uint16_t m_samplerFeedbackStamp;
 
   uint8_t m_d3dModifierFlags;
   uint16_t m_wetnessParams1; // Packed wetness parameters (scalar 6 bits + max_z 5 bits + blend_width 5 bits)
@@ -1992,17 +2003,6 @@ struct LegacyMaterialData {
   uint32_t getColorTextureSlot(uint32_t slot) const {
     return colorTextureSlot[slot];
   }
-
-  /*enum REMIX_MODIFIER_FROM_D3D : std::uint32_t {
-    REMIX_MODIFIER_FROM_D3D_NONE = 0,
-    REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR = 1 << 0,
-    REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR = 1 << 1,
-    REMIX_MODIFIER_FROM_D3D_ENABLE_VERTEX_COLOR = 1 << 2,
-    REMIX_MODIFIER_FROM_D3D_DECAL_DIRT = 1 << 3,
-    REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA = 1 << 4,
-    REMIX_MODIFIER_FROM_D3D_FREE_05 = 1 << 5,
-    REMIX_MODIFIER_FROM_D3D_FREE_06 = 1 << 6,
-  };*/
 
   bool alphaTestEnabled = false;
   uint8_t alphaTestReferenceValue = 0;

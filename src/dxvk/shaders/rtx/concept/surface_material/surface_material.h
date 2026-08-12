@@ -144,8 +144,11 @@ struct TranslucentSurfaceMaterial
   float16_t m_freeFloat01;
   float16_t m_freeFloat02;
 
+  // 21
+  uint16_t samplerFeedbackStamp;
+
   // padding (to keep size matching with MemoryPolymorphicSurfaceMaterial)
-  uint16_t data[11];
+  uint16_t data[10];
 };
 
 struct RayPortalSurfaceMaterial

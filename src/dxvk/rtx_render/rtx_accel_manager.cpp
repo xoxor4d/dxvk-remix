@@ -49,6 +49,9 @@ namespace dxvk {
 
   AccelManager::AccelManager(DxvkDevice* device)
     : CommonDeviceObject(device)
+    , m_gpuCrashRecorder(
+        device->config().enableGpuCrashState,
+        device->config().enableGpuCrashStateBufferRetention)
     // Note: The scratch buffer's device address must be aligned to the minimum alignment required by the Vulkan runtime, otherwise
     //    // even if scratch allocation offsets are aligned they may add to a device address which will mess up this alignment (the alignment
     //    // requirement in Vulkan applies to the scratch buffer's device address, not just an offset as the name may imply). The lack of
@@ -59,6 +62,7 @@ namespace dxvk {
   }
 
   void AccelManager::clear() {
+    m_gpuCrashRecorder.clear();
     m_blasPool.clear();
 
     // Invalidate incremental rebuild cache
@@ -1028,7 +1032,8 @@ namespace dxvk {
     }
 
     buildBlases(ctx, execBarriers, cameraManager, opacityMicromapManager, instanceManager, 
-                textures, instances, blasBuckets, blasToBuild, blasRangesToBuild, totalScratchMemory);
+                textures, instances, blasBuckets, blasToBuild, blasRangesToBuild,
+                instanceTransforms, totalScratchMemory);
 
     // If new OMMs were built this frame, force a full scene rebuild next frame
     // so tryBindOpacityMicromap runs on all instances and the BLASes pick up the new OMMs.
@@ -1209,9 +1214,35 @@ namespace dxvk {
         }
       }
 
+      struct TopologyHashData {
+        XXH64_hash_t previousHash;
+        XXH64_hash_t indexHash;
+        uint32_t primitiveOffset;
+        uint32_t firstVertex;
+      };
+
+      XXH64_hash_t newTopologyHash = kEmptyHash;
+      for (uint32_t geometryIndex = 0; geometryIndex < bucket->geometries.size(); ++geometryIndex) {
+        const BlasEntry* blasEntry = bucket->originalInstances[geometryIndex]->getBlas();
+        const TopologyHashData topologyHashData {
+          newTopologyHash,
+          blasEntry->modifiedGeometryData.hashes[HashComponents::Indices],
+          bucket->ranges[geometryIndex].primitiveOffset,
+          bucket->ranges[geometryIndex].firstVertex,
+        };
+        newTopologyHash = hashStructByMemory<TopologyHashData,
+            &TopologyHashData::previousHash,
+            &TopologyHashData::indexHash,
+            &TopologyHashData::primitiveOffset,
+            &TopologyHashData::firstVertex>(topologyHashData);
+      }
+
       // Must ensure that if we are updating an existing blas, rather than rebuilding, the blas is compatible with our new build info
       // Cannot update a blas that contains OMM instances, this leads to sporadic device lost errors
-      if (!bucket->hasOmmInstances && selectedBlas && validateUpdateMode(selectedBlas->buildInfo, buildInfo) && selectedBlas->primitiveCounts == bucket->primitiveCounts) {
+      if (!bucket->hasOmmInstances && selectedBlas &&
+          selectedBlas->topologyHash == newTopologyHash &&
+          validateUpdateMode(selectedBlas->buildInfo, buildInfo) &&
+          selectedBlas->primitiveCounts == bucket->primitiveCounts) {
         buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
       }
 
@@ -1225,6 +1256,7 @@ namespace dxvk {
       }
       assert(selectedBlas);
       selectedBlas->frameLastTouched = currentFrame;
+      selectedBlas->topologyHash = newTopologyHash;
 
       // Record the assigned BLAS on the bucket so the per-bucket cache can capture it
       bucket->assignedBlas = selectedBlas;
@@ -1257,13 +1289,13 @@ namespace dxvk {
         // Geometry order is part of the merged BLAS layout and affects primitive
         // to surface mapping, so include the bucket order in the content hash.
         if (!contentHashData.empty()) {
-          newContentHash = hashStructArrayByMemory(contentHashData.data(), contentHashData.size(),
+          newContentHash = hashStructArrayByMemory<BucketGeometryContentHashData,
               &BucketGeometryContentHashData::vertexHash,
               &BucketGeometryContentHashData::indexHash,
               &BucketGeometryContentHashData::boneHash,
               &BucketGeometryContentHashData::transform,
               &BucketGeometryContentHashData::primitiveCount,
-              &BucketGeometryContentHashData::pad);
+              &BucketGeometryContentHashData::pad>(contentHashData.data(), contentHashData.size());
         }
       }
 
@@ -1732,6 +1764,7 @@ namespace dxvk {
                                  const std::vector<std::unique_ptr<BlasBucket>>& blasBuckets,
                                  std::vector<VkAccelerationStructureBuildGeometryInfoKHR>& blasToBuild,
                                  std::vector<VkAccelerationStructureBuildRangeInfoKHR*>& blasRangesToBuild,
+                                 const std::vector<VkTransformMatrixKHR>& instanceTransforms,
                                  size_t& totalScratchMemory) {
     ScopedGpuProfileZone(ctx, "buildBLAS");
     // Upload surfaces before opacity micromap generation which reads the surface data on the GPU
@@ -1794,6 +1827,12 @@ namespace dxvk {
         desc.scratchData.deviceAddress += m_scratchBuffer->getDeviceAddress();
       }
       assert(blasToBuild.size() == blasRangesToBuild.size());
+      m_gpuCrashRecorder.recordBlasBuilds(
+        m_device->getCurrentFrameId(),
+        blasToBuild,
+        blasRangesToBuild,
+        m_transformBuffer != nullptr ? m_transformBuffer->getDeviceAddress() : 0,
+        instanceTransforms);
       ctx->vkCmdBuildAccelerationStructuresKHR(blasToBuild.size(), blasToBuild.data(), blasRangesToBuild.data());
 
       execBarriers.accessBuffer(
@@ -1811,6 +1850,13 @@ namespace dxvk {
     if (m_vkInstanceBuffer == nullptr) {
       return;
     }
+
+    m_gpuCrashRecorder.recordScene(
+      m_device->getCurrentFrameId(),
+      m_lastProcessedGeneration,
+      m_reorderedSurfaces,
+      m_blasPool,
+      m_activeDynamicBlases);
 
     ScopedGpuProfileZone(ctx, "buildTLAS");
 
@@ -1868,9 +1914,11 @@ namespace dxvk {
     instancesVk.data.deviceAddress = m_vkInstanceBuffer->getDeviceAddress();
 
     // Rewind address to tlas start (normal + PointInstancer slots per preceding type)
+    VkDeviceSize instanceBufferOffset = 0;
     for (size_t n = 0; n < type; ++n) {
-      instancesVk.data.deviceAddress += (m_mergedInstances[n].size() + m_pointInstancerSlotsPerType[n]) * sizeof(VkAccelerationStructureInstanceKHR);
+      instanceBufferOffset += (m_mergedInstances[n].size() + m_pointInstancerSlotsPerType[n]) * sizeof(VkAccelerationStructureInstanceKHR);
     }
+    instancesVk.data.deviceAddress += instanceBufferOffset;
 
     // Put the above into a VkAccelerationStructureGeometryKHR. We need to put the
     // instances struct in a union and label it as instance data.
@@ -1926,6 +1974,16 @@ namespace dxvk {
     const VkAccelerationStructureBuildRangeInfoKHR* pBuildOffsetInfo = &buildOffsetInfo;
 
     // Build the TLAS
+    m_gpuCrashRecorder.recordTlasBuild(
+      m_device->getCurrentFrameId(),
+      type,
+      buildInfo,
+      buildOffsetInfo,
+      m_mergedInstances[type],
+      m_pointInstancerSlotsPerType[type],
+      instancesVk.data.deviceAddress,
+      instanceBufferOffset,
+      tlas.accelStructure);
     ctx->getCommandList()->vkCmdBuildAccelerationStructuresKHR(1, &buildInfo, &pBuildOffsetInfo);
 
     ctx->getCommandList()->trackResource<DxvkAccess::Write>(tlas.accelStructure);

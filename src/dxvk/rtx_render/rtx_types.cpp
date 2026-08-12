@@ -411,6 +411,7 @@ namespace dxvk {
     setCategory(InstanceCategories::Sky, lookupHash(RtxOptions::skyBoxTextures(), textureHash));
 
     setCategory(InstanceCategories::ParticleEmitter, lookupHash(RtxOptions::particleEmitterTextures(), textureHash));
+    setCategory(InstanceCategories::HairCards, lookupHash(RtxOptions::hairCardTextures(), textureHash));
 
     setCategory(InstanceCategories::DisableBackfaceCulling, lookupHash(RtxOptions::disableBackfacecullingTextures(), textureHash));
   }
@@ -609,11 +610,7 @@ namespace dxvk {
     }
 
   void BlasEntry::unlinkInstance(RtInstance* instance) {
-    auto it = std::find(m_linkedInstances.begin(), m_linkedInstances.end(), instance);
-    if (it != m_linkedInstances.end()) {
-      std::swap(*it, m_linkedInstances.back());
-      m_linkedInstances.pop_back();
-    } else {
+    if (m_linkedInstances.erase(instance) == 0) {
       ONCE(Logger::err("Tried to unlink an instance, which was never linked!"));
     }
   }
