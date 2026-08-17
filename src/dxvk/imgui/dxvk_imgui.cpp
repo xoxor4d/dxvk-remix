@@ -1138,7 +1138,7 @@ namespace dxvk {
       OptionLayerUI::renderLayerButtons(userLayer, "User");
 
       ImGui::Separator();
-
+      /*
       // --- Migration: Move miscategorized options from user.conf to rtx.conf ---
       // Get cached count of options in user.conf that don't have UserSetting flag
       const uint32_t userMiscategorizedCount = userLayer ? userLayer->countMiscategorizedOptions() : 0;
@@ -1225,7 +1225,7 @@ namespace dxvk {
 
       ImGui::Spacing();
       ImGui::Separator();
-      ImGui::Spacing();
+      ImGui::Spacing();*/
 
       // --- Create .conf file for Logic ---
       ImGui::Text("Create .conf file for Logic:");
@@ -1746,6 +1746,63 @@ namespace dxvk {
 
     if (IMGUI_ADD_TOOLTIP(RemixGui::CollapsingHeader("Option Layers"), "View what options are present in each layer, and alter the blend strength and threshold for them.")) {
       ImGui::Indent();
+
+      RtxOptionLayer* rtxConfLayer = RtxOptionLayer::getRtxConfLayer();
+      const bool rtxHasUnsaved = rtxConfLayer && rtxConfLayer->hasUnsavedChanges();
+
+      // --- RTX Config Layer ---
+      ImGui::Text("Remix Config (rtx.conf):");
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("The main place where Remix configuration is stored.\n"
+          "Saves to rtx.conf. This should be where mod\n"
+          "developers configure game-specific settings.");
+      }
+      if (rtxHasUnsaved) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.0f, 1.0f), "(unsaved changes)");
+        if (ImGui::IsItemHovered()) {
+          ImGui::SetTooltip("Changes have been made since the rtx.conf file was last saved.");
+        }
+      }
+
+      // Show unsaved changes in a CollapsingHeader
+      if (rtxHasUnsaved && rtxConfLayer) {
+        if (RemixGui::CollapsingHeader("View Changes##RtxConf")) {
+          ImGui::Indent();
+          OptionLayerUI::RenderOptions renderOpts;
+          renderOpts.uniqueId = "##RtxConfLayerList";
+          OptionLayerUI::renderToImGui(rtxConfLayer, renderOpts);
+          ImGui::Unindent();
+        }
+      }
+
+      OptionLayerUI::renderLayerButtons(rtxConfLayer, "RtxConf");
+
+      // --- Migration: Move miscategorized options from rtx.conf to user.conf ---
+      const uint32_t rtxMiscategorizedCount = rtxConfLayer ? rtxConfLayer->countMiscategorizedOptions() : 0;
+      if (rtxMiscategorizedCount > 0) {
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.65f, 0.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.95f, 0.75f, 0.1f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.75f, 0.55f, 0.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+
+        std::string buttonLabel = str::format("Migrate ", rtxMiscategorizedCount, " User Setting", (rtxMiscategorizedCount > 1 ? "s" : ""), " to user.conf");
+        if (ImGui::Button(buttonLabel.c_str(), ImVec2(-1, 0))) {
+          const uint32_t migratedCount = rtxConfLayer->migrateMiscategorizedOptions();
+          Logger::info(str::format("[RTX Option]: Migrated ", migratedCount, " user settings from rtx.conf to user.conf"));
+        }
+
+        ImGui::PopStyleColor(4);
+
+        // Tooltip needs to come after the PopStyleColor button to avoid having black text on a dark background
+        if (ImGui::IsItemHovered()) {
+          ImGui::SetTooltip("The rtx.conf file contains settings that should be in user.conf (end user options that should not be in mods).\n\n"
+                            "This button will move these settings from rtx.conf to user.conf.\n"
+                            "It does not save the changes.");
+        }
+      }
+
       static char optionLayerFilter[256] = "";
       // Filter for option layer contents
       IMGUI_ADD_TOOLTIP(ImGui::InputText("RtxOption Display Filter", optionLayerFilter, IM_ARRAYSIZE(optionLayerFilter)), 
