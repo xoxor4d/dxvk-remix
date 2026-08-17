@@ -1619,7 +1619,7 @@ namespace {
 
     dxvk::Config newSetting;
     newSetting.setOptionMove(std::move(strKey), std::string{ value });
-    option->readOption(newSetting, dxvk::RtxOptionLayer::getUserLayer());
+    option->readOption(newSetting, dxvk::RtxOptionLayer::getDerivedLayer());
 
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
