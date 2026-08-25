@@ -47,13 +47,15 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
     uint32_t blendAlphaBlendOp;
     uint32_t blendWriteMask;
 
-    // l4d2
+    // unused renderstates
     uint32_t remixTextureCategoryFlagsFromD3D; // RS 42
     uint32_t remixModifierFromD3D; // RS 149
     XXH64_hash_t remixHashFromD3D; // RS 150
-    float remixTempFloat01FromD3D; // RS 169
-    float remixTempFloat02FromD3D; // RS 177
-    uint32_t remixPackedFloat4_RS210FromD3D; // RS 210 - Packed DWORD containing 2x uint16_t (lower 16 bits = packedParams1, upper 16 bits = packedParams2)
+    float remixFloatRS169FromD3D; // RS 169
+    float remixFloatRS177FromD3D; // RS 177
+    float remixFloatRS196FromD3D; // RS 196
+    float remixFloatRS197FromD3D; // RS 197
+    uint32_t remixUInt32RS210FromD3D; // RS 210
     float remixFloatRS211FromD3D; // RS 211
     float remixFloatRS212FromD3D; // RS 212
     float remixFloatRS213FromD3D; // RS 213
@@ -93,13 +95,15 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
   data.blendAlphaBlendOp = static_cast<uint32_t>(blendMode.alphaBlendOp);
   data.blendWriteMask = static_cast<uint32_t>(blendMode.writeMask);
 
-  // l4d2
+  // unused renderstates
   data.remixTextureCategoryFlagsFromD3D = remixTextureCategoryFlagsFromD3D, // RS 42
   data.remixModifierFromD3D = remixModifierFromD3D, // RS 149
   data.remixHashFromD3D = remixHashFromD3D, // RS 150
-  data.remixTempFloat01FromD3D = remixTempFloat01FromD3D, // RS 169
-  data.remixTempFloat02FromD3D = remixTempFloat02FromD3D, // RS 177
-  data.remixPackedFloat4_RS210FromD3D = remixPackedFloat4_RS210FromD3D, // RS 210 - Packed DWORD containing 2x uint16_t (lower 16 bits = packedParams1, upper 16 bits = packedParams2)
+  data.remixFloatRS169FromD3D = remixFloatRS169FromD3D, // RS 169
+  data.remixFloatRS177FromD3D = remixFloatRS177FromD3D, // RS 177
+  data.remixFloatRS196FromD3D = remixFloatRS196FromD3D, // RS 196
+  data.remixFloatRS197FromD3D = remixFloatRS197FromD3D, // RS 197
+  data.remixUInt32RS210FromD3D = remixUInt32RS210FromD3D, // RS 210 
   data.remixFloatRS211FromD3D = remixFloatRS211FromD3D, // RS 211
   data.remixFloatRS212FromD3D = remixFloatRS212FromD3D, // RS 212
   data.remixFloatRS213FromD3D = remixFloatRS213FromD3D, // RS 213
@@ -137,13 +141,15 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
       &LegacyMaterialIdentityHashData::blendAlphaBlendOp,
       &LegacyMaterialIdentityHashData::blendWriteMask,
 
-      // l4d2
+      // unused renderstates
       &LegacyMaterialIdentityHashData::remixTextureCategoryFlagsFromD3D, // RS 42
       &LegacyMaterialIdentityHashData::remixModifierFromD3D, // RS 149
       &LegacyMaterialIdentityHashData::remixHashFromD3D, // RS 150
-      &LegacyMaterialIdentityHashData::remixTempFloat01FromD3D, // RS 169
-      &LegacyMaterialIdentityHashData::remixTempFloat02FromD3D, // RS 177
-      &LegacyMaterialIdentityHashData::remixPackedFloat4_RS210FromD3D, // RS 210 - Packed DWORD containing 2x uint16_t (lower 16 bits = packedParams1, upper 16 bits = packedParams2)
+      &LegacyMaterialIdentityHashData::remixFloatRS169FromD3D, // RS 169
+      &LegacyMaterialIdentityHashData::remixFloatRS177FromD3D, // RS 177
+      &LegacyMaterialIdentityHashData::remixFloatRS196FromD3D, // RS 196
+      &LegacyMaterialIdentityHashData::remixFloatRS197FromD3D, // RS 197
+      &LegacyMaterialIdentityHashData::remixUInt32RS210FromD3D, // RS 210
       &LegacyMaterialIdentityHashData::remixFloatRS211FromD3D, // RS 211
       &LegacyMaterialIdentityHashData::remixFloatRS212FromD3D, // RS 212
       &LegacyMaterialIdentityHashData::remixFloatRS213FromD3D, // RS 213

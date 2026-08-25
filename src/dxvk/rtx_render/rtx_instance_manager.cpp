@@ -1095,7 +1095,7 @@ namespace dxvk {
         }
 
         // emissive scalar - does not seem to make a difference having that here - might need to trigger currentInstance.surface.hasMaterialChanged ?
-        currentInstance.m_remixFloatRS169 = drawCall.getMaterialData().remixTempFloat01FromD3D;
+        currentInstance.m_remixFloatRS169 = drawCall.getMaterialData().remixFloatRS169FromD3D;
 
 
         // Surface meta data

@@ -1788,12 +1788,12 @@ namespace dxvk {
       }
 
       if (drawCallState.getMaterialData().remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_EMISSIVE_TWEAK) {
-        emissiveIntensity *= drawCallState.getMaterialData().remixTempFloat01FromD3D;
+        emissiveIntensity *= drawCallState.getMaterialData().remixFloatRS169FromD3D;
       }
 
       // EG:
-      /*if (drawCallState.getMaterialData().remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_FREE00) {
-        emissiveIntensity *= drawCallState.getMaterialData().remixTempFloat01FromD3D;
+      /*if (drawCallState.getMaterialData().remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_FREE15) {
+        emissiveIntensity *= drawCallState.getMaterialData().remixFloatRS219FromD3D;
       }*/
 
       subsurfaceMeasurementDistance = opaqueMaterialData.getSubsurfaceMeasurementDistance() * RtxOptions::SubsurfaceScattering::surfaceThicknessScale();
