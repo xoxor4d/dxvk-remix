@@ -316,7 +316,7 @@ namespace dxvk {
       DxvkRtxdiRayQuery::permutationSamplingNthFrame.setDeferred(1);
       DxvkRtxdiRayQuery::enableDenoiserConfidence.setDeferred(false);
       DxvkRtxdiRayQuery::enableBestLightSampling.setDeferred(false);
-      DxvkRtxdiRayQuery::initialSampleCount.setDeferred(3);
+      //DxvkRtxdiRayQuery::initialSampleCount.setDeferred(3);
       DxvkRtxdiRayQuery::spatialSamples.setDeferred(2);
       DxvkRtxdiRayQuery::disocclusionSamples.setDeferred(2);
       DxvkRtxdiRayQuery::enableSampleStealing.setDeferred(false);
