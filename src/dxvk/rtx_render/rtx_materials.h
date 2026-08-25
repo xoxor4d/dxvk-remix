@@ -81,8 +81,8 @@ static_assert((int)AlphaTestType::kAlways == (int)VkCompareOp::VK_COMPARE_OP_ALW
 
 enum REMIX_MODIFIER_FROM_D3D : std::uint16_t {
   REMIX_MODIFIER_FROM_D3D_NONE = 0,
-  REMIX_MODIFIER_FROM_D3D_INFECTED = 1 << 0,
-  REMIX_MODIFIER_FROM_D3D_EMISSIVE_TWEAK = 1 << 1,
+  REMIX_MODIFIER_FROM_D3D_EMISSIVE_TWEAK = 1 << 0,
+  REMIX_MODIFIER_FROM_D3D_FREE01 = 1 << 1,
   REMIX_MODIFIER_FROM_D3D_FREE02 = 1 << 2,
   REMIX_MODIFIER_FROM_D3D_FREE03 = 1 << 3,
   REMIX_MODIFIER_FROM_D3D_FREE04 = 1 << 4,
@@ -1958,9 +1958,11 @@ struct LegacyMaterialData {
   uint32_t remixTextureCategoryFlagsFromD3D = 0u; // RS 42
   uint32_t remixModifierFromD3D = 0u; // RS 149
   XXH64_hash_t remixHashFromD3D = 0; // RS 150
-  float remixTempFloat01FromD3D = 0.0f; // RS 169
-  float remixTempFloat02FromD3D = 0.0f; // RS 177
-  uint32_t remixPackedFloat4_RS210FromD3D = 0u; // RS 210 - Packed DWORD containing 2x uint16_t (lower 16 bits = packedParams1, upper 16 bits = packedParams2)
+  float remixFloatRS169FromD3D = 0.0f; // RS 169
+  float remixFloatRS177FromD3D = 0.0f; // RS 177
+  float remixFloatRS196FromD3D = 0.0f; // RS 196
+  float remixFloatRS197FromD3D = 0.0f; // RS 197
+  uint32_t remixUInt32RS210FromD3D = 0u; // RS 210
   float remixFloatRS211FromD3D = 0.0f; // RS 211
   float remixFloatRS212FromD3D = 0.0f; // RS 212
   float remixFloatRS213FromD3D = 0.0f; // RS 213
@@ -2008,7 +2010,6 @@ private:
   uint32_t colorTextureSlot[kMaxSupportedTextures] = { kInvalidResourceSlot };
 
   XXH64_hash_t m_cachedHash = kEmptyHash;
-  bool m_isHashOverridden = false;
 };
 
 struct MaterialData {
