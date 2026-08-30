@@ -60,7 +60,7 @@
 #include "rtx_fork_hooks.h"
 
 #include "../../lssusd/usd_include_begin.h"
-#include <src/usd-plugins/RemixParticleSystem/ParticleSystemAPI.h>
+//#include <src/usd-plugins/RemixParticleSystem/ParticleSystemAPI.h>
 #include "../../lssusd/usd_include_end.h"
 
 #include <windows.h>

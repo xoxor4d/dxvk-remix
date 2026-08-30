@@ -49,5 +49,6 @@ namespace dxvk {
     "remix_category:particle_emitter",
     "remix_category:smooth_normals",
     "remix_category:hair_cards",
+    "remix_category:disable_backface_culling",
   };
 }
