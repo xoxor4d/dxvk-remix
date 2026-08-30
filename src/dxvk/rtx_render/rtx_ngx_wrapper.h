@@ -182,6 +182,7 @@ namespace dxvk {
       bool depthInverted,
       bool autoExposure,
       bool sharpening,
+      NVSDK_NGX_DLSS_Hint_Render_Preset dlssPreset,
       NVSDK_NGX_PerfQuality_Value perfQuality = NVSDK_NGX_PerfQuality_Value_MaxPerf);
 
     /** Release DLSS.
@@ -242,7 +243,6 @@ namespace dxvk {
       const Resources::Resource* pRoughness;
       const Resources::Resource* pBiasCurrentColorMask;
       const Resources::Resource* pHitDistance;
-      const Resources::Resource* pInTransparencyLayer;
       const Resources::Resource* pDisocclusionMask;
     };
 

@@ -447,6 +447,7 @@ namespace dxvk
                                   bool depthInverted,
                                   bool autoExposure,
                                   bool sharpening,
+                                  NVSDK_NGX_DLSS_Hint_Render_Preset dlssPreset,
                                   NVSDK_NGX_PerfQuality_Value perfQuality) {
     ScopedCpuProfileZone();
 
@@ -474,6 +475,12 @@ namespace dxvk
     createParams.InFeatureCreateFlags = createFlags;
 
     VkCommandBuffer vkCommandBuffer = renderContext->getCommandList()->getCmdBuffer(dxvk::DxvkCmdBuffer::ExecBuffer);
+
+    m_parameters->Set(NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_DLAA, dlssPreset);
+    m_parameters->Set(NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Quality, dlssPreset);
+    m_parameters->Set(NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Balanced, dlssPreset);
+    m_parameters->Set(NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Performance, dlssPreset);
+    m_parameters->Set(NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_UltraPerformance, dlssPreset);
 
     // Release video memory when DLSS is disabled.
     m_parameters->Set(NVSDK_NGX_Parameter_FreeMemOnReleaseFeature, 1);
@@ -710,7 +717,6 @@ namespace dxvk
     NVSDK_NGX_Resource_VK exposureResource = TextureToResourceVK(buffers.pExposure, false);
     NVSDK_NGX_Resource_VK biasCurrentColorMaskResource = TextureToResourceVK(buffers.pBiasCurrentColorMask, false);
     NVSDK_NGX_Resource_VK hitDistanceResource = TextureToResourceVK(buffers.pHitDistance, false);
-    NVSDK_NGX_Resource_VK inTransparencyLayerResource = TextureToResourceVK(buffers.pInTransparencyLayer, false);
 
     NVSDK_NGX_VK_DLSS_Eval_Params evalParams = {};
     evalParams.Feature.pInColor = &unresolvedColorResource;
@@ -750,8 +756,6 @@ namespace dxvk
     evalParams_DLDN.pInExposureTexture = nullptr;
     evalParams_DLDN.pInMotionVectors = &motionVectorsResource;
     evalParams_DLDN.pInBiasCurrentColorMask = nullptr;
-    evalParams_DLDN.pInTransparencyLayer = buffers.pInTransparencyLayer ? &inTransparencyLayerResource : nullptr;
-    evalParams_DLDN.pInTransparencyLayerOpacity = nullptr;
     evalParams_DLDN.InJitterOffsetX = settings.jitterOffset[0];
     evalParams_DLDN.InJitterOffsetY = settings.jitterOffset[1];
     evalParams_DLDN.InPreExposure = settings.preExposure;

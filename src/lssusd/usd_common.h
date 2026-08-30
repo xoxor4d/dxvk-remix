@@ -1,10 +1,5 @@
 #include "../dxvk/rtx_render/rtx_types.h"
-#include "../dxvk/rtx_render/rtx_option.h"
-#include "../util/util_string.h"
-
-#include <fstream>
-#include <sstream>
-#include <string>
+#include "remix_category_names.h"
 
 namespace dxvk {
   // Single source of truth mapping each InstanceCategories value to its USD
@@ -41,7 +36,6 @@ namespace dxvk {
     { InstanceCategories::ThirdPersonPlayerModel,  "remix_category:third_person_player_model","Third Person Player Model", "rtx.playerModelTextures" },
     { InstanceCategories::ThirdPersonPlayerBody,   "remix_category:third_person_player_body", "Third Person Player Body",  "rtx.playerModelBodyTextures" },
     { InstanceCategories::IgnoreBakedLighting,     "remix_category:ignore_baked_lighting",    "Ignore Baked Lighting",     "rtx.ignoreBakedLightingTextures" },
-    { InstanceCategories::IgnoreTransparencyLayer, "remix_category:ignore_transparency_layer","Ignore Transparency Layer", "rtx.ignoreTransparencyLayerTextures" },
     { InstanceCategories::ParticleEmitter,         "remix_category:particle_emitter",         "Particle Emitter",          "rtx.particleEmitterTextures" },
     { InstanceCategories::SmoothNormals,           "remix_category:smooth_normals",           "Smooth Normals",            "rtx.smoothNormalsTextures" },
     { InstanceCategories::HairCards,               "remix_category:hair_cards",               "Hair Cards",                "rtx.hairCardTextures" },
@@ -52,93 +46,11 @@ namespace dxvk {
   static_assert(sizeof(kRemixCategoryEntries) / sizeof(kRemixCategoryEntries[0]) == (size_t) InstanceCategories::Count,
                 "Please add/remove the category to kRemixCategoryEntries above.");
 
-  // Table must be in enum order so getInstanceCategorySubKey() can index it directly.
-  constexpr bool remixCategoryEntriesMatchEnumOrder() {
-    for (uint32_t i = 0; i < (uint32_t) InstanceCategories::Count; ++i) {
-      if ((uint32_t) kRemixCategoryEntries[i].category != i) {
-        return false;
-      }
-    }
-    return true;
-  }
-  static_assert(remixCategoryEntriesMatchEnumOrder(),
-                "kRemixCategoryEntries must be listed in the same order as the InstanceCategories enum.");
-
   // Used when reading/writing with Remix USD mods.
   static const char* getInstanceCategorySubKey(InstanceCategories cat) {
     if (cat >= InstanceCategories::Count) {
       return "";
     }
-    return kRemixCategoryEntries[(uint32_t) cat].attr;
-  }
-
-  // The category's RtxOption description if it has one, else a generic fallback.
-  inline std::string getRemixCategoryDoc(const RemixCategoryEntry& entry) {
-    if (entry.optionName != nullptr) {
-      const RtxOptionImpl* option = RtxOptionImpl::getOptionByFullName(entry.optionName);
-      if (option != nullptr && option->getDescription() != nullptr && option->getDescription()[0] != '\0') {
-        return option->getDescription();
-      }
-    }
-    return std::string("Remix instance category: ") + entry.displayName + ".";
-  }
-
-  // Render the RemixCategories schema.usda from kRemixCategoryEntries. This
-  // singleApply API schema is compiled by usdGenSchema into the RemixCategories
-  // USD plugin; test_remix_categories keeps the checked-in copy in sync.
-  inline std::string getRemixCategoriesSchemaUsda() {
-    std::stringstream ss;
-    ss << "#usda 1.0\n";
-    ss << "(\n";
-    ss << "    \"\"\"GENERATED - Remix instance categories exposed as boolean USD attributes. Do not edit by hand; edit kRemixCategoryEntries in src/lssusd/usd_common.h and regenerate via the test_remix_categories unit test.\"\"\"\n";
-    ss << "    subLayers = [\n";
-    ss << "        @usd/schema.usda@\n";
-    ss << "    ]\n";
-    ss << ")\n";
-    ss << "\n";
-    ss << "over \"GLOBAL\" (\n";
-    ss << "    customData = {\n";
-    ss << "        string libraryName = \"RemixCategories\"\n";
-    ss << "        string libraryPath = \".\"\n";
-    ss << "    }\n";
-    ss << ")\n";
-    ss << "{\n";
-    ss << "}\n";
-    ss << "\n";
-    ss << "class \"RemixInstanceCategoryAPI\" (\n";
-    ss << "    inherits = </APISchemaBase>\n";
-    ss << "    customData = {\n";
-    ss << "        token apiSchemaType = \"singleApply\"\n";
-    ss << "    }\n";
-    ss << "    doc = \"\"\"Adds Remix instance category flags to a prim. Each boolean marks the instance with the corresponding Remix draw-call category.\"\"\"\n";
-    ss << ")\n";
-    ss << "{\n";
-    for (const RemixCategoryEntry& entry : kRemixCategoryEntries) {
-      ss << "    bool " << entry.attr << " = 0 (\n";
-      ss << "        doc = \"" << str::escapeCStyle(getRemixCategoryDoc(entry)) << "\"\n";
-      ss << "        displayGroup = \"Remix Categories\"\n";
-      ss << "        displayName = \"" << entry.displayName << "\"\n";
-      ss << "    )\n";
-    }
-    ss << "}\n";
-    return ss.str();
-  }
-
-  // Write schema.usda to the given path.
-  inline bool writeRemixCategoriesSchemaUsda(const char* outputFilePath) {
-    std::ofstream file(outputFilePath);
-    if (!file.is_open()) {
-      Logger::err(std::string("Failed to open remix categories schema output file: ") + outputFilePath);
-      return false;
-    }
-    file << getRemixCategoriesSchemaUsda();
-    return true;
+    return kRemixCategoryNames[(uint32_t) cat];
   }
 }
-
-// Exported for test_remix_categories.cpp to regenerate and diff schema.usda.
-#ifdef _WIN32
-extern "C" __declspec(dllexport) bool writeRemixCategoriesSchemaUsda(const char* outputFilePath);
-#else
-extern "C" __attribute__((visibility("default"))) bool writeRemixCategoriesSchemaUsda(const char* outputFilePath);
-#endif
