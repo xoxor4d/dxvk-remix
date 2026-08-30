@@ -3916,6 +3916,24 @@ harmless unknown-option warning.
 
 ---
 
+## Workstream - install USD schema plugins into each apic (fork - 2026-08-30)
+
+After merging NVIDIA's USD-without-Python plugin rewrite (`673dc2af9`),
+`HasAPI("ParticleSystemAPI")` depends on `<d3d9.dll dir>/usd/plugins/RemixParticleSystem`
+being populated at install time. Upstream copies those files with
+`install_usd_plugins.bat`, whose `for /D` walk of `MESON_BUILD_ROOT` matches nothing
+when Meson uses forward slashes. Install still wrote the stub `usd/plugins/plugInfo.json`
+(`install_data`), so the tree looked valid and USD logged `usd plugins were not loaded`.
+
+### Upstream files touched
+
+- **`meson.build`** (root) - inline tweak.
+  *Replaces `add_install_script(install_usd_plugins.bat)` with per-file
+  `install_file_in_dir.bat` copies: DLL from the build dir, `generatedSchema.usda`
+  and `plugInfo.json` from `src/usd-plugins/<plugin>/resources/` (checked-in;
+  they are not guaranteed to exist in the build tree without a fresh configure).
+  Same helper as `d3d9.dll`; slash-safe and fails the install if a source is missing.*
+
 ## Workstream - DLSS-NR (NGX feature 18) neural rendering pass (fork - 2026-08-29)
 
 Ports NVIDIA's DLSS Neural Rendering integration (`nvngx_dlssnr.dll`, NGX feature 18)
