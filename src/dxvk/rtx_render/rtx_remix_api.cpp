@@ -1617,9 +1617,21 @@ namespace {
       return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
     }
 
+    std::string strValue { value };
+
+    const dxvk::RtxOptionLayer* layer = dxvk::RtxOptionLayer::getDerivedLayer();
+
+    if (strValue.compare(0, 5, "user ") == 0) {
+      layer = dxvk::RtxOptionLayer::getUserLayer();
+      strValue.erase(0, 5);
+    } else if (strValue.compare(0, 8, "derived ") == 0) {
+      layer = dxvk::RtxOptionLayer::getDerivedLayer();
+      strValue.erase(0, 8);
+    }
+
     dxvk::Config newSetting;
-    newSetting.setOptionMove(std::move(strKey), std::string{ value });
-    option->readOption(newSetting, dxvk::RtxOptionLayer::getDerivedLayer());
+    newSetting.setOptionMove(std::move(strKey), std::move(strValue));
+    option->readOption(newSetting, layer);
 
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
