@@ -66,7 +66,7 @@ namespace dxvk {
     RTX_OPTION_ARGS("rtx.di", bool, enableDenoiserConfidence, true, "",
                     args.flags = RtxOptionFlags::UserSetting);
     RTX_OPTION("rtx.di", bool, enableDenoiserGradient, true, "Enable gradient calculation, which is used by confidence calculation and GI sample validation.");
-    RTX_OPTION_ARGS("rtx.di", uint32_t, initialSampleCount, 4, "The number of lights randomly selected from the global pool to consider when selecting a light with RTXDI.",
+    RTX_OPTION_ARGS("rtx.di", uint32_t, initialSampleCount, 64, "The number of lights randomly selected from the global pool to consider when selecting a light with RTXDI.",
                     args.flags = RtxOptionFlags::UserSetting);
     RTX_OPTION_ARGS("rtx.di", uint32_t, spatialSamples, 2, "The number of spatial reuse samples in converged areas.",
                     args.flags = RtxOptionFlags::UserSetting);
