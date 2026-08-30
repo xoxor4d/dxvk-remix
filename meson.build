@@ -825,12 +825,29 @@ if dxvk_is_ninja or dxvk_is_woa_ec
     # Python DLL not needed for nopy USD build
     install_data(join_paths(global_src_root_norm, 'src', 'usd-plugins', 'plugInfo.json'), install_dir : join_paths(output_path, 'usd', 'plugins'), install_tag: target_suffix) 
 
-    # install USD plugins
-    meson.add_install_script(
-      join_paths(global_src_root_norm, 'scripts-common/install_usd_plugins.bat'),
-      output_path,
-      install_tag: target_suffix 
-    )
+    # NV-DXVK start: copy schema plugins with install_file_in_dir.bat (slash-safe).
+    # DLL is a build artifact; schema/plugInfo are checked-in under resources/.
+    foreach plugin_name : ['RemixParticleSystem', 'RemixCategories']
+      plugin_build_dir = join_paths(current_build_dir_norm, 'src/usd-plugins', plugin_name)
+      plugin_src_dir = join_paths(global_src_root_norm, 'src/usd-plugins', plugin_name, 'resources')
+      plugin_install_dir = join_paths(output_path, 'usd/plugins', plugin_name)
+      meson.add_install_script(
+        join_paths(global_src_root_norm, 'scripts-common/install_file_in_dir.bat'),
+        join_paths(plugin_build_dir, plugin_name + '.dll'), plugin_install_dir,
+        install_tag: target_suffix
+      )
+      meson.add_install_script(
+        join_paths(global_src_root_norm, 'scripts-common/install_file_in_dir.bat'),
+        join_paths(plugin_src_dir, 'generatedSchema.usda'), plugin_install_dir,
+        install_tag: target_suffix
+      )
+      meson.add_install_script(
+        join_paths(global_src_root_norm, 'scripts-common/install_file_in_dir.bat'),
+        join_paths(plugin_src_dir, 'plugInfo.json'), join_paths(plugin_install_dir, 'resources'),
+        install_tag: target_suffix
+      )
+    endforeach
+    # NV-DXVK end
 
     if dxvk_is_woa
       install_data(join_paths(nrc_dll_path, nrc_dll_name), install_dir : output_path, install_tag: target_suffix)
