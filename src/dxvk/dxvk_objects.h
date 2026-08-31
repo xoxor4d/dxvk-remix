@@ -52,6 +52,7 @@
 #include "rtx_render/rtx_geometry_utils.h"
 #include "rtx_render/rtx_image_utils.h"
 #include "rtx_render/rtx_postFx.h"
+#include "rtx_render/rtx_neural_uplift.h"
 #include "rtx_render/rtx_srgb_dither.h"
 #include "rtx_render/rtx_initializer.h"
 #include "rtx_render/rtx_scene_manager.h"
@@ -79,6 +80,7 @@ namespace dxvk {
   class CompositePass;
   class DebugView;
   class DxvkPostFx;
+  class DxvkNeuralUplift;
   class DxvkSRGBDither;
   class OpacityMicromapManager;
   class ImGUI;
@@ -279,6 +281,10 @@ namespace dxvk {
       return m_srgbDither.get();
     }
 
+    DxvkNeuralUplift& metaNeuralUplift() {
+      return m_neuralUplift.get();
+    }
+
     RtxReflex& metaReflex() {
       return m_reflex.get(m_device);
     }
@@ -406,6 +412,7 @@ namespace dxvk {
     Active<RtxImageUtils>                   m_imageUtils;
     Active<DxvkPostFx>                      m_postFx;
     Active<DxvkSRGBDither>                  m_srgbDither;
+    Active<DxvkNeuralUplift>                m_neuralUplift;
     Lazy<RtxReflex>                         m_reflex;
     Lazy<RtxDustParticles>                  m_dustParticles;
     Lazy<RtxParticleSystemManager>          m_particleSystem;
