@@ -1773,8 +1773,8 @@ namespace dxvk {
       if (isBik) 
       {
         d3dModifierFlags |= REMIX_MODIFIER_TO_OPAQUE_SHADER_BIK;
-        trackTexture(opaqueMaterialData.getBikRTexture(), bikRTextureIndex, hasTexcoords, true, samplerFeedbackStamp);
-        trackTexture(opaqueMaterialData.getBikBTexture(), bikBTextureIndex, hasTexcoords, true, samplerFeedbackStamp);
+        trackTexture(opaqueMaterialData.getBikRTexture(), bikRTextureIndex, hasTexcoords, true, &samplerFeedbackStamp);
+        trackTexture(opaqueMaterialData.getBikBTexture(), bikBTextureIndex, hasTexcoords, true, &samplerFeedbackStamp);
       }
 
       subsurfaceMeasurementDistance = opaqueMaterialData.getSubsurfaceMeasurementDistance() * RtxOptions::SubsurfaceScattering::surfaceThicknessScale();
