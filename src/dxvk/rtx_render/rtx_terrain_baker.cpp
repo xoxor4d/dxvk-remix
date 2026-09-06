@@ -646,6 +646,7 @@ namespace dxvk {
       createTextureRef(ReplacementMaterialTextureType::Metallic),
       createTextureRef(ReplacementMaterialTextureType::Emissive),
       TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), // SSS textures
+      TextureRef(), TextureRef(),
       Material::Properties::roughnessAnisotropy(),
       Material::Properties::emissiveIntensity(),
       Vector3(1, 1, 1), // AlbedoConstant - unused since the AlbedoOpacity texture must be always present for baking
@@ -654,6 +655,7 @@ namespace dxvk {
       Material::Properties::metallicConstant(),
       Material::Properties::emissiveColorConstant(),
       Material::Properties::enableEmission(),
+      false, // EnableAlbedoEmission
       // Setting expected constant values. Baked terrain should not need to have other values for the below material parameters set
       1, 1, 0, /* spriteSheet* */
       false, // LegacyMaterialDefaults::enableThinFilm(),

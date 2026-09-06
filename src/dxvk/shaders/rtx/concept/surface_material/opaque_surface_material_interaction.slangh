@@ -1,4 +1,4 @@
-/*
+﻿/*
 * Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
 *
 * Permission is hereby granted, free of charge, to any person obtaining a
@@ -565,6 +565,11 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
   opaqueSurfaceMaterialInteraction.flags |= thinFilmEnabled ? OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_USE_THIN_FILM_LAYER : 0;
 
+  // custom per drawcall mods ...
+  const bool d3dModEmissiveScale = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_EMISSIVE_SCALE;
+  const bool d3dModEmissiveForceOnWithAlbedo = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_EMISSIVE_FORCE_ON_WITH_ALBEDO;
+  const bool d3dModIsBik = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_D3D_BIK;
+
 #ifdef OPAQUE_MATERIAL_USE_POM
   if (cb.pomMode != DisplacementMode::Off && opaqueSurfaceMaterial.hasValidDisplacement())
   {
@@ -637,7 +642,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
   vec3 albedo = opaqueSurfaceMaterial.albedoOpacityConstant.rgb;
   float opacity = opaqueSurfaceMaterial.albedoOpacityConstant.a;
-  float emissiveBlendOverrideInfluence = float(1.0f);
+  float emissiveBlendOverrideInfluence = float(0.0f);
   float thinFilmThickness = float(0.0f);
 
   // Baked terrain is the only surface using cascaded view positions, so key off of that
@@ -657,6 +662,42 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   {
     albedo = albedoOpacitySample.rgb;
 
+    if (d3dModIsBik)
+    {
+      vec4 bikRSample;
+      vec4 bikBSample;
+      const bool bikRLoaded = surfaceMaterialInteractionTextureReadHelper(opaqueSurfaceMaterial.BikRTextureIndex, opaqueSurfaceMaterial.samplerIndex1, surfaceInteraction, bikRSample);
+      const bool bikBLoaded = surfaceMaterialInteractionTextureReadHelper(opaqueSurfaceMaterial.BikBTextureIndex, opaqueSurfaceMaterial.samplerIndex2, surfaceInteraction, bikBSample);
+
+      float  cR = 0.0f, cB = 0.0f;
+	  float  y = (float) albedo.r;
+
+      if (bikRLoaded) {
+        cR = (float) bikRSample.r;
+      }
+ 
+      if (bikBLoaded) {
+        cB = (float) bikBSample.r;
+      }
+
+      vec4 c;
+      c = vec4( y, cR, cB, 1.0f );
+      
+      vec4 tor = vec4( 1.164123535f,  1.595794678f,  0.0f,         -0.87065506f );
+      vec4 tog = vec4( 1.164123535f, -0.813476563f, -0.391448975f,  0.529705048f );
+      vec4 tob = vec4( 1.164123535f,  0.0f,          2.017822266f, -1.081668854f );
+      
+      // Note: The YCbCr->RGB conversion can legitimately produce values outside [0, 1] due to offsets
+      // and filtering. The original game's output would get clamped/saturated by the render target,
+      // but here we feed this into material albedo (and sometimes emissive). Clamp to avoid
+      // extreme values / FP16 issues causing color speckling when used as emissive.
+      vec3 bikRgb = float3(dot(c, tor), dot(c, tog), dot(c, tob));
+      bikRgb = saturate(bikRgb);
+	  albedo.r = (float16_t)bikRgb.r;
+	  albedo.g = (float16_t)bikRgb.g;
+	  albedo.b = (float16_t)bikRgb.b;
+    }
+
     // Note: Thin film thickness and opacity deriving their values from the alpha channel are mutually exclusive, set the appropriate
     // one based on the specified flags, and set the opposing variable to a default value (the "default" value must match how the material is decoded from the
     // GBuffer as well). Ideally we'd want to simply fall back on the existing opacity/thin film thickness constants instead, but we currently do not have a
@@ -674,6 +715,12 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
       opacity = albedoOpacitySample.a;
       thinFilmThickness = float(0.0f);
     }
+  }
+
+  // d3dmod: use albedo as emissive color source if material has no emissive map set
+  if (!emissiveColorLoaded && d3dModEmissiveForceOnWithAlbedo)
+  {
+    emissiveColor = albedo;
   }
 
 #if defined(RAY_TRACING_PRIMARY_RAY)
@@ -751,12 +798,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   // automatically do this conversion.
   // Todo: Disable this for when a sRGB texture is the source of the albedo.
   albedo = gammaToLinear(albedo);
-  
-  // Note: Gamma correct emissive color input (be it from a constant or a texture). Currently assuming all textures are not using sRGB formats which
-  // automatically do this conversion.
-  // Todo: Disable this for when a sRGB texture is the source of the emissive color.
-  emissiveColor = gammaToLinear(emissiveColor);
-  
+
   // Apply material modifiers/overrides
   albedo = saturate(albedo * cb.opaqueMaterialArgs.albedoScale + cb.opaqueMaterialArgs.albedoBias);
   
@@ -854,6 +896,9 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     
   metallic = saturate(metallic * cb.opaqueMaterialArgs.metallicScale + cb.opaqueMaterialArgs.metallicBias);
 
+  emissiveColor = gammaToLinear(emissiveColor);
+  const vec3 originalAlbedo = albedo;
+
   // Transform to desired Opaque Material Interaction values
 
   opaqueSurfaceMaterialInteraction.shadingNormal = getBentNormal(surfaceInteraction.geometryNormal, normal, -minimalRayInteraction.viewDirection);
@@ -872,7 +917,45 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     opaqueSurfaceMaterialInteraction.isotropicRoughness,
     opaqueSurfaceMaterialInteraction.anisotropicRoughness);
 
-  opaqueSurfaceMaterialInteraction.emissiveRadiance = emissiveBlendOverrideInfluence * emissiveColor * opaqueSurfaceMaterial.emissiveIntensity;
+  //opaqueSurfaceMaterialInteraction.emissiveRadiance = emissiveBlendOverrideInfluence * emissiveColor * opaqueSurfaceMaterial.emissiveIntensity;
+  // << revert ------
+  vec3 derivedEmissiveColor;
+  float derivedEmissiveIntensity;
+
+  // Note: "Fullbright", emissive blend modes and actual emissive color/intensity are mututally exclusive so this logic for selecting between them in this order is fine.
+  if (surface.isEmissive)
+  {
+    // Todo: Remove this hack when a proper legacy material model is created, or find some better solution to it (such as setting emissive information on the CPU side).
+    derivedEmissiveColor = originalAlbedo;
+
+    if (d3dModEmissiveScale || d3dModEmissiveForceOnWithAlbedo) { // #xoxor4d - set emissive intensity via unused renderstate 
+      derivedEmissiveIntensity = opaqueSurfaceMaterial.emissiveIntensity;
+    } else {
+      derivedEmissiveIntensity = float16_t(2.0f); // Note: Arbitrary constant, should be set on the CPU side instead and controllable.
+    }
+  }
+  else if (surface.isEmissiveBlend && cb.enableEmissiveBlendEmissiveOverride)
+  {
+    // Note: Interpret original material's albedo as emissive color and the emissive blend override influence combined with an arbitrary constant as emissive intensity.
+    // This is so that when "emissive" style blending is used it looks more correct in a physically based way based on the influence from the mode in question.
+    // Todo: Move this all once separate Surface Materials for D3D9 compatability and normal usage are created.
+    derivedEmissiveColor = originalAlbedo;
+
+    if (d3dModEmissiveScale || d3dModEmissiveForceOnWithAlbedo) { // #xoxor4d - set emissive intensity via unused renderstate 
+      derivedEmissiveIntensity = emissiveBlendOverrideInfluence * opaqueSurfaceMaterial.emissiveIntensity;
+    } else {
+      derivedEmissiveIntensity = emissiveBlendOverrideInfluence * uint16BitsToHalf(cb.emissiveBlendOverrideEmissiveIntensity);
+    }
+  }
+  else
+  {
+    derivedEmissiveColor = emissiveColor;
+    derivedEmissiveIntensity = opaqueSurfaceMaterial.emissiveIntensity;
+  }
+
+  derivedEmissiveIntensity *= uint16BitsToHalf(cb.emissiveIntensity); // Note: Global emissive intensity scalar on top of everything else.
+  opaqueSurfaceMaterialInteraction.emissiveRadiance = derivedEmissiveColor * derivedEmissiveIntensity;
+  // ------ revert >>
 
   opaqueSurfaceMaterialInteraction.subsurfaceMaterialInteraction =
     subSurfaceMaterialReadHelper(opaqueSurfaceMaterial.subsurfaceMaterialIndex, surfaceInteraction, opaqueSurfaceMaterial.samplerIndex);

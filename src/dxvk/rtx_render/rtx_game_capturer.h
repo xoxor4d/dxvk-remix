@@ -115,6 +115,10 @@ public:
                 "improve stage + mesh viewability in tools.\n"
                 "Hashes are unaffected.");
 
+  RTX_OPTION("rtx.capture", bool, captureApiLights, true,
+                "Capture lights that were created via the RemixApi. These lights can not be modified\n"
+                "and their only purpose is to illuminate the scene in the toolkit.");
+
   GameCapturer(DxvkDevice* const pDevice, SceneManager& sceneManager, AssetExporter& exporter);
   ~GameCapturer();
 
@@ -205,8 +209,8 @@ private:
   void captureFrame(const Rc<DxvkContext> ctx);
   void captureCamera();
   void captureLights();
-  void captureSphereLight(const dxvk::RtSphereLight& rtLight);
-  void captureDistantLight(const RtDistantLight& rtLight);
+  void captureSphereLight(const dxvk::RtSphereLight& rtLight, XXH64_hash_t captureKeyOverride = 0);
+  void captureDistantLight(const RtDistantLight& rtLight, XXH64_hash_t captureKeyOverride = 0);
   void captureInstances(const Rc<DxvkContext> ctx);
   void newInstance(const Rc<DxvkContext> ctx, const RtInstance& rtInstance);
   void captureMaterial(const Rc<DxvkContext> ctx, const LegacyMaterialData& materialData, const bool bEnableOpacity);
@@ -328,6 +332,7 @@ private:
       std::string stagePath;
     } instance;
     bool bSkyProbeBaked;
+    bool bApiLightsCaptured = false;
     size_t numFramesCaptured = 0;
     float currentFrameNum = 0.f;
     lss::Camera camera;

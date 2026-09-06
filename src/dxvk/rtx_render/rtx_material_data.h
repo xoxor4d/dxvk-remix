@@ -45,7 +45,9 @@
   X(SubsurfaceThicknessTexture,              subsurface_thickness_texture,         TextureRef, void, void, {}) \
   X(SubsurfaceSingleScatteringAlbedoTexture, subsurface_single_scattering_texture, TextureRef, void, void, {}) \
   X(SubsurfaceRadiusTexture,                 subsurface_radius_texture,            TextureRef, void, void, {}) \
-  X(SecondaryTexture,                        secondary_texture,                    TextureRef, void, void, {})
+  X(SecondaryTexture,                        secondary_texture,                    TextureRef, void, void, {}) \
+  X(BikRTexture,                             bik_r_texture,                        TextureRef, void, void, {}) \
+  X(BikBTexture,                             bik_b_texture,                        TextureRef, void, void, {})
 
 
 #define LIST_OPAQUE_MATERIAL_CONSTANTS(X) \
@@ -59,6 +61,7 @@
   X(MetallicConstant,                 metallic_constant,                      float,          0.f,                        1.f,                       0.f) \
   X(EmissiveColorConstant,            emissive_color_constant,                Vector3,        Vector3(0.f),               Vector3(1.f),              Vector3(1.0f, 0.1f, 0.1f)) \
   X(EnableEmission,                   enable_emission,                        bool,           false,                      true,                      false) \
+  X(EnableAlbedoEmission,             enable_albedo_emission,                 bool,           false,                      true,                      false) \
   X(SpriteSheetRows,                  sprite_sheet_rows,                      uint8_t,        0,                          255,                       0) \
   X(SpriteSheetCols,                  sprite_sheet_cols,                      uint8_t,        0,                          255,                       0) \
   X(SpriteSheetFPS,                   sprite_sheet_fps,                       uint8_t,        0,                          255,                       0) \
