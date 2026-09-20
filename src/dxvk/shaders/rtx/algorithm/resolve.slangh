@@ -303,6 +303,46 @@ void resolveVertexFinalMiss<let overrideRayInteraction : bool, T : IBasePayloadS
 #endif
 }
 
+bool stencilCutterBehindHit(Ray ray, SurfaceInteraction surfaceInteraction, uint8_t rayMask)
+{
+  Ray probeRay = ray;
+  probeRay.origin = rayOffsetSurfaceOriginHelper(surfaceInteraction, true);
+  probeRay.tMax = floatMax;
+
+  RayQuery<0> rayQuery = RayQuery<0>();
+  rayQuery.TraceRayInline(
+    topLevelAS,
+    RAY_FLAG_CULL_OPAQUE,
+    uint(rayMask),
+    rayToRayDesc(probeRay));
+
+  float closestCutterT = floatMax;
+  bool closestCutterIsInterior = false;
+  bool foundCutter = false;
+
+  const uint kMaxStencilCutterProbeSteps = 32;
+  for (uint step = 0; step < kMaxStencilCutterProbeSteps && rayQuery.Proceed(); step++)
+  {
+    if (rayQuery.CandidateType() != CANDIDATE_NON_OPAQUE_TRIANGLE)
+    {
+      continue;
+    }
+
+    RayHitInfo rayHitInfo;
+    RAY_HIT_INFO_CREATE_RAY_QUERY_CANDIDATE(rayHitInfo, rayQuery)
+
+    if (surfaces[calculateSurfaceIndex(rayHitInfo)].isStencilCutter &&
+        rayHitInfo.hitDistance < closestCutterT)
+    {
+      closestCutterT = rayHitInfo.hitDistance;
+      closestCutterIsInterior = !rayHitInfo.frontHit;
+      foundCutter = true;
+    }
+  }
+
+  return foundCutter && closestCutterIsInterior;
+}
+
 // Resolves a single vertex of the resolve loop. Note this should be called first thing from the function handling the hit logic.
 // Emissive radiance and attenuation may be accumulated immediately but the continueResolving flag must be checked to see if the
 // function should return and continue attempting to resolve an interaction. If false, the Ray Interaction can then be checked
@@ -380,6 +420,22 @@ void resolveVertex<T: IBasePayloadState>(
     // Continue resolving when we hit a clipped geometry to find possible objects behind it.
     resolveVertexFinalContinue(ray, surfaceInteraction, teleport, teleportMatrix, resolveVertexState);
     return;
+  }
+
+  if (resolveVertexState.continueResolving)
+  {
+    if (surface.isStencilCutter)
+    {
+      resolveVertexFinalContinue(ray, surfaceInteraction, teleport, teleportMatrix, resolveVertexState);
+      return;
+    }
+
+    if (surface.isStencilTarget &&
+        stencilCutterBehindHit(ray, surfaceInteraction, resolveVertexState.rayMask))
+    {
+      resolveVertexFinalContinue(ray, surfaceInteraction, teleport, teleportMatrix, resolveVertexState);
+      return;
+    }
   }
 
   if (!evalViewDistance(cb.viewDistanceArgs, cb.isZUp, camera, surfaceInteraction.position))

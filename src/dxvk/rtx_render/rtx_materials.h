@@ -85,8 +85,8 @@ static_assert((int)AlphaTestType::kAlways == (int)VkCompareOp::VK_COMPARE_OP_ALW
 enum REMIX_MODIFIER_FROM_D3D : std::uint16_t {
   REMIX_MODIFIER_FROM_D3D_NONE = 0,
   REMIX_MODIFIER_FROM_D3D_EMISSIVE_TWEAK = 1 << 0,
-  REMIX_MODIFIER_FROM_D3D_FREE01 = 1 << 1,
-  REMIX_MODIFIER_FROM_D3D_FREE02 = 1 << 2,
+  REMIX_MODIFIER_FROM_D3D_FREE01 = 1 << 1, // stencil cutter
+  REMIX_MODIFIER_FROM_D3D_FREE02 = 1 << 2, // stencil target (e.g. water)
   REMIX_MODIFIER_FROM_D3D_FREE03 = 1 << 3,
   REMIX_MODIFIER_FROM_D3D_FREE04 = 1 << 4,
   REMIX_MODIFIER_FROM_D3D_FREE05 = 1 << 5,
@@ -154,6 +154,8 @@ struct RtSurface {
     uint16_t flags0 = 0;
     flags0 |= normalFormat == VK_FORMAT_R32_UINT ? 1 : 0;
     flags0 |= isVertexColorBakedLighting ? (1 << 1) : 0;
+    flags0 |= isStencilCutter ? (1 << 2) : 0;
+    flags0 |= isStencilTarget ? (1 << 3) : 0;
     // NOTE: Spare flags bits here
 
     writeGPUHelper(data, offset, flags0);
@@ -374,6 +376,8 @@ struct RtSurface {
   bool isVertexColorBakedLighting = true;
   bool isMotionBlurMaskOut = false;
   bool skipSurfaceInteractionSpritesheetAdjustment = false;
+  bool isStencilCutter = false;
+  bool isStencilTarget = false;
 
   RtTextureArgSource textureColorArg1Source = RtTextureArgSource::Texture;
   RtTextureArgSource textureColorArg2Source = RtTextureArgSource::None;

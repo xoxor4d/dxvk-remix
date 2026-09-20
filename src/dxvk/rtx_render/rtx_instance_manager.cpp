@@ -1115,6 +1115,10 @@ namespace dxvk {
         currentInstance.surface.isTextureFactorBlend = drawCall.getMaterialData().isTextureFactorBlend;
         currentInstance.surface.isVertexColorBakedLighting = drawCall.getMaterialData().isVertexColorBakedLighting;
         currentInstance.surface.isMotionBlurMaskOut = currentInstance.testCategoryFlags(InstanceCategories::IgnoreMotionBlur);
+        currentInstance.surface.isStencilCutter =
+          (drawCall.getMaterialData().remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_FREE01) != 0;
+        currentInstance.surface.isStencilTarget =
+          (drawCall.getMaterialData().remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_FREE02) != 0;
 
         // Note: Skip the spritesheet adjustment logic in the surface interaction when using Ray Portal materials as this logic
         // is done later in the Surface Material Interaction (and doing it in both places will just double up the animation).
@@ -1298,6 +1302,14 @@ namespace dxvk {
     } else {
       // All other fully opaques go to the primary TLAS as opaque.
       currentInstance.m_geometryFlags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+    }
+
+    // Stencil cutters stay in the primary TLAS as non-opaque so a behind-water probe can find them.
+    if (currentInstance.surface.isStencilCutter) {
+      currentInstance.m_isUnordered = false;
+      currentInstance.m_geometryFlags = VK_GEOMETRY_NO_DUPLICATE_ANY_HIT_INVOCATION_BIT_KHR;
+      currentInstance.m_vkInstance.flags |= VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR;
+      currentInstance.m_vkInstance.flags |= VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
     }
     
     // Enable backface culling for Portals to avoid additional hits to the back of Portals

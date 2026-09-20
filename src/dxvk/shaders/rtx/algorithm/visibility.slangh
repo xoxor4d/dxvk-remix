@@ -64,6 +64,11 @@ vec3 handleVisibilityVertex<let VisibilityMode : uint>(Ray ray, RayHitInfo rayHi
 
   Surface surface = surfaces[uint(rayInteraction.surfaceIndex)]; 
 
+  if (surface.isStencilCutter)
+  {
+    return vec3(1.0f);
+  }
+
   // Since during visibility testing, we dont need all the data, we can just explicitly
   //   initialize these values and  help the compiler generate more optimal code paths.
   const bool requiresNormalsAndTangents = VisibilityMode & (visibilityModeEnableSubsurfaceMaterials|visibilityModeEnableTranslucentMaterials);
