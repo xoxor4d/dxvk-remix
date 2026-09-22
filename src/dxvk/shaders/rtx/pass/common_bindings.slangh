@@ -26,6 +26,7 @@
 // concepts are included to avoid dependencies on bindings within these includes.
 
 #include "rtx/pass/common_binding_indices.h"
+#include "rtx/pass/atmosphere/star_entry.h"
 
 #include "rtx/pass/raytrace_args.h"
 #include "rtx/concept/surface/surface.h"
@@ -183,6 +184,18 @@ SamplerState AtmosphereSkyViewSampler;
 // (REPEAT-U wraps the azimuth seam, CLAMP-V pins the nadir/zenith rows).
 layout(binding = BINDING_ATMOSPHERE_CLOUD_SECONDARY_LUT)
 Texture2D<float4> AtmosphereCloudSecondaryLut;
+
+// Star catalogue, read by the sky-miss path in evalCatalogueStars. Declared
+// here rather than only in atmosphere_bindings.slangh because the ray tracing
+// passes - which are the ones that draw stars - take their bindings from this
+// header and never include that one.
+layout(binding = BINDING_ATMOSPHERE_STAR_ENTRIES)
+StructuredBuffer<StarEntry> AtmosphereStarEntries;
+
+layout(binding = BINDING_ATMOSPHERE_STAR_CELL_OFFSETS)
+StructuredBuffer<uint> AtmosphereStarCellOffsets;
+#define ATMOSPHERE_STAR_CATALOGUE_AVAILABLE
+
 
 // Cloud depth companion (fork — 2026-09-05, world-space cloud migration Stage 4a). Same extent as
 // AtmosphereCloudRender (allocated/resized together, see RtxAtmosphere::ensureCloudRenderRT):

@@ -21,6 +21,9 @@
 */
 #pragma once
 
+#include "rtx_star_catalogue_data.h"
+#include "rtx/pass/atmosphere/star_entry.h"
+
 #include "rtx_resources.h"
 #include "rtx_mipmap.h"
 #include "rtx_common_object.h"
@@ -556,6 +559,49 @@ public:
                "0 = physical (use sunSize / 2, so shadow softness tracks the visible disc). When > 0 it "
                "overrides the sun light's half-angle WITHOUT changing the visible sun disc — larger = "
                "softer penumbra, for artistic soft shadows under a small sun.");
+    RTX_OPTION("rtx.atmosphere", float, nightExposureEv, 5.6f,
+               "Night exposure, in EV stops, applied at the source of every night illuminant - "
+               "moonlight on ground, clouds and air; starlight; airglow. The ratios between them "
+               "stay physical, so this moves the level of the night without changing its balance.\n"
+               "It exists because the tonemapper cannot bridge the gap alone: auto exposure caps at "
+               "8x and noon to full moon is about 400,000:1, while a game's own lamps and fires are "
+               "authored at the game's scale and a true scotopic exposure would blow them out. This "
+               "one gain replaced eight mutually-tuned ones.\n"
+               "Default 5.6 (48.5x) reproduces the ground brightness the previous defaults gave on "
+               "the default 3.5 degree moon. A physically sized 0.52 degree moon needs about 11.1 to "
+               "match, its solid angle being 45x smaller. By day the gain is 1 and every night "
+               "source sits at physical strength, where it is correctly invisible.");
+
+    RTX_OPTION("rtx.atmosphere", float, moonDiskExposureEv, 0.0f,
+               "Extra stops on the moon's visible disk only. Appearance, not illumination: it does "
+               "not change the light the moon casts on anything. A physically sized moon at "
+               "physical radiance reads as a small dim dot even when the illumination it throws is "
+               "exactly right, and the honest way to fix that is to expose the disk rather than to "
+               "raise the moon's brightness, which would take the whole scene with it. Raising this "
+               "also brings earthshine on a crescent's dark side into view, which is when the eye "
+               "sees it too.");
+
+    RTX_OPTION("rtx.atmosphere", float, airglowScale, 1.0f,
+               "Airglow brightness as a multiple of the measured dark-sky level (about half of a "
+               "22.0 mag/arcsec^2 sky, per Roach & Gordon). Airglow is the largest single component "
+               "of a genuinely moonless sky, so this is the knob for a night that reads as lit with "
+               "no moon up - rather than a star or cloud gain, which is what the retired "
+               "starAmbientCouplingStrength was and why clouds glowed blue.");
+
+    RTX_OPTION("rtx.atmosphere", float, moonShadowSoftnessDeg, 0.0f,
+               "Decoupled moon shadow softness, as the moon light's angular half-angle in degrees. "
+               "The counterpart of sunShadowSoftnessDeg, with the same meaning: 0 = physical (use the "
+               "moon's own angular radius, so softness tracks the visible disc), and > 0 overrides the "
+               "light's half-angle WITHOUT changing the visible moon. The real moon subtends almost "
+               "exactly what the sun does, so physical moonlight casts shadows just as hard as noon "
+               "does - raise this for the softer moonlight a night scene usually wants.");
+
+    RTX_OPTION("rtx.atmosphere", bool, moonCloudShadowed, true,
+               "Whether the cloud deck shadows moonlight, as it already shadows sunlight. With this "
+               "off - the prior behaviour - an overcast night still gets sharp moon shadows on the "
+               "ground from a moon that is not visible through the clouds. Costs the same cloud-shadow "
+               "lookup the sun already performs.");
+
     RTX_OPTION("rtx.atmosphere", float, sunIntensity, 1.09f, "Strength of Sun.");
     RTX_OPTION("rtx.atmosphere", float, sunElevation, 15.0f,
                "Sun elevation in degrees. Game-drivable per-frame; persists when saved unless overridden by a runtime push.");
@@ -668,14 +714,26 @@ public:
                "the visible sky.",
       args.minValue = 0.0f);
 
-    RTX_OPTION("rtx.atmosphere", float, starBrightness, 0.5f,
-               "Overall brightness multiplier for stars. Game-drivable per-frame (plugins can fade stars in/out around sunset/sunrise); persists when saved unless overridden by a runtime push.");
-    RTX_OPTION("rtx.atmosphere", float, starDensity, 0.5f,
-               "Star density on a linear-feel slider: 0 = no stars, 1 = maximum stars. Internally "
-               "maps via pow(starDensity, 4) * 0.05 to a per-cell visible-star fraction, so the "
-               "useful range (~0.1% to 5% of cells) spans the whole slider instead of compressing "
-               "into the top 1% (the prior behavior, which made 0.98/0.99/1.0 the only viable "
-               "settings). 0.5 = ~0.3% stars, 0.7 = ~1.2%, 1.0 = ~5%.");
+    RTX_OPTION("rtx.atmosphere", float, starBrightness, 1.0f,
+               "Artistic gain on starlight. 1.0 is physical: each star is drawn at the "
+               "irradiance its catalogue magnitude actually delivers, so the field is already "
+               "correct relative to the moon, the airglow and to every other star without "
+               "any tuning.\n"
+               "This used to multiply a procedural hash field that had no physical scale, "
+               "where values in the tens were normal. It no longer is one: 50 here is 4.2 "
+               "magnitudes of overexposure and blows the whole sky out. Treat anything above "
+               "~3 as deliberate stylisation.\n"
+               "Game-drivable per-frame (plugins can fade stars in/out around sunset and "
+               "sunrise); persists when saved unless overridden by a runtime push.");
+    RTX_OPTION("rtx.atmosphere", float, starMagnitudeLimit, 6.5f,
+               "Faintest star drawn, in visual magnitude. 6.5 is the naked-eye limit under a "
+               "dark sky and takes the whole catalogue (9096 stars); ~4.5 is a suburban sky, "
+               "2.0 leaves the constellation figures alone, 0 leaves a handful.\n"
+               "Magnitudes run backwards - larger is fainter - so lowering this removes "
+               "stars. It is also the per-ray loop's only early-out, which makes it the "
+               "cheapest control over star cost. Replaces starDensity, which thinned a "
+               "procedural field by a fraction of grid cells; that has no meaning against a "
+               "real catalogue, where which stars exist is not ours to choose.");
     RTX_OPTION("rtx.atmosphere", float, starTwinkleSpeed, 1.0f,
                "Speed of star twinkling animation (0 = no twinkle).");
     RTX_OPTION("rtx.atmosphere", float, starRotation, 0.0f,
@@ -712,14 +770,46 @@ public:
                "How strongly dust-lane patches darken the Milky Way glow. 0 = no dust (smooth "
                "uniform band), 1 = full dust contrast. Default 0.6.");
 
-    RTX_OPTION("rtx.atmosphere", float, starPsfSharpness, 20.0f,
-               "PSF Gaussian exponent for procedural stars. Controls the per-star spread "
-               "in cube-grid-cell space (gridScale=400 -> 13.5 arcmin/cell). Lower = wider "
-               "softer stars; higher = sharper pinpoints. At 1080p/90 deg FOV, k=20 yields "
-               "~1-pixel-FWHM (anti-aliased), k=800 yields ~0.08-pixel-FWHM (severe sub-"
-               "pixel flicker on camera motion). 8-30 is the useful range for typical "
-               "render resolutions; reduce starBrightness if widening the PSF makes stars "
-               "too bright overall.");
+    RTX_OPTION("rtx.atmosphere", float, starSizeMagnitudeScale, 0.8f,
+               "How much wider the brightest procedural stars are than the faintest, as a "
+               "multiple of the starPsfWidthPixels core radius. A real field shows magnitude "
+               "as size before it shows it as intensity, so with this at 0 - which "
+               "reproduces the old fixed-width field exactly - the only difference between "
+               "a bright star and a faint one is that the faint one is dimmer, and both "
+               "read as the same dot. The resulting multiplier is capped at 1.8 in the "
+               "shader: the profile has to vanish within one grid cell or it is clipped to "
+               "the square the 3x3 neighbourhood gathers over, so this cannot be raised "
+               "without bound. Default 0.8.");
+
+    RTX_OPTION("rtx.atmosphere", float, starHaloStrength, 0.055f,
+               "Amplitude of the faint skirt outside each star's core, relative to the core "
+               "peak. This is what is seen as a star glowing rather than sitting on the sky "
+               "as a pasted dot: a real point source puts a halo well outside its core. 0 "
+               "gives a bare Gaussian. Costs one extra exp() per visible star.");
+
+    RTX_OPTION("rtx.atmosphere", float, starSpikeStrength, 0.12f,
+               "Amplitude of the four-fold diffraction cross on each star, relative to the "
+               "core peak. The strongest single cue that something is a star rather than a "
+               "dot, and cheap here because only cells that already passed the density "
+               "threshold evaluate it. 0 disables the spikes and skips their atan2. Raise "
+               "for an overtly photographic look; lower for a bare sky.");
+
+    RTX_OPTION("rtx.atmosphere", float, starPsfWidthPixels, 0.7f,
+               "Gaussian width (sigma) of a star's drawn profile, in RENDER pixels - the "
+               "path tracer's internal resolution, not the display's, so an upscaler ratio "
+               "change does not change how stars look.\n"
+               "Renamed from starPsfSharpness, whose value meant the opposite: it was an "
+               "exponent on a hash-grid field, where larger was sharper. Here it is a width, "
+               "where larger is softer. A stale starPsfSharpness=20 read as this would ask "
+               "for sigma = 20 px = 2.1 degrees and spread every star over roughly 800x the "
+               "peak amplitude it belongs at, which is what invisible looks like. The rename "
+               "is what stops an old config doing that silently.\n"
+               "The profile is normalised over solid angle, so widening it does not change "
+               "how much light a star delivers - only how it is spread. 0.5-1.0 is the "
+               "useful range: below ~0.5 a star lands inside one pixel and flickers as the "
+               "camera turns; above ~1.5 the field goes soft. Hard-capped in the shader at "
+               "a third of the catalogue's bin margin, because a profile wider than the "
+               "region the CPU binned stars into gets clipped into a square.");
     RTX_OPTION("rtx.atmosphere", float, starCloudExtinctionPower, 2.5f,
                "Power exponent applied to cloud view-transmittance when extincting stars. "
                "Stars are HDR point sources; standard alpha compositing (T^1) leaves bright "
@@ -758,7 +848,7 @@ public:
                    "Moon " #N " surface light/dark contrast multiplier.");                       \
         RTX_OPTION("rtx.atmosphere.moon" #N, float, surfaceNoiseScale, 1.0f,                    \
                    "Moon " #N " surface feature size multiplier.");                              \
-        RTX_OPTION("rtx.atmosphere.moon" #N, float, darkSideBrightness, 0.005f,                 \
+        RTX_OPTION("rtx.atmosphere.moon" #N, float, earthshine, 1.0f,                           \
                    "Moon " #N " dark-side brightness as fraction of lit side.");                 \
         RTX_OPTION("rtx.atmosphere.moon" #N, float, roughnessAmount, 1.0f,                      \
                    "Moon " #N " micro-detail surface roughness amplitude.");                     \
@@ -1555,6 +1645,10 @@ private:
     const Vector3* weatherOverride = nullptr);
 
   void dropDistantLights();
+
+  // Built once from compile-time catalogue data; see the definition in
+  // rtx_atmosphere.cpp for why nothing in it depends on an option.
+  void buildStarCatalogueBuffers(DxvkContext* ctx);
   void createLutResources(Rc<DxvkContext> ctx);
   void dispatchTransmittanceLut(Rc<DxvkContext> ctx);
   void dispatchMultiscatteringLut(Rc<DxvkContext> ctx);
@@ -1648,6 +1742,10 @@ private:
   // Compact scene lights for this frame, and the per-cluster index lists the cull pass builds from
   // them. Both are grown on demand and never shrunk: the counts move every frame as lights come and
   // go, and a reallocation mid-frame would orphan a buffer a command list still references.
+  Rc<DxvkBuffer> m_starEntryBuffer;
+  Rc<DxvkBuffer> m_starCellOffsetBuffer;
+  uint32_t m_starEntryCount = 0u;
+
   Rc<DxvkBuffer> m_aerialPerspectiveLightBuffer;
   Rc<DxvkBuffer> m_aerialPerspectiveLightClusterBuffer;
   uint32_t m_aerialPerspectiveLightCapacity = 0u;

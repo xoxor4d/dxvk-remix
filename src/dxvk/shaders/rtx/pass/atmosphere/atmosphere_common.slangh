@@ -447,6 +447,151 @@ float atmosphereStepFraction(float x) {
 // sun NEE path uses. Forward-references that helper (defined later in this
 // file, line ~648); slang permits forward references to top-level functions.
 // ============================================================================
+// Lommel-Seeliger's disk-integrated bracket. Appears twice: as the shape the
+// moon disk is normalised against, and as the Earth's phase law for earthshine.
+// 1 at full, 0 at new.
+float moonPhiLommelSeeliger(float alpha) {
+  if (alpha < 1e-4f) { return 1.0f; }
+  if (alpha > kPi - 1e-4f) { return 0.0f; }
+  const float halfA = alpha * 0.5f;
+  const float quarterA = alpha * 0.25f;
+  return 1.0f - sin(halfA) * tan(halfA) * log(1.0f / max(tan(quarterA), 1e-8f));
+}
+
+// Disk-integrated illumination of a moon at a given phase, normalised to 1 at
+// full. One definition, used by the disk, the halo, the atmospheric coupling,
+// the cloud lighting and the C++ distant light (mirrored as
+// fhMoonPhaseIllumination in rtx_atmosphere.cpp).
+//
+// Krisciunas & Schaefer (1991, PASP 103, 1033), the fit observatory sky
+// brightness models use, itself derived from Rougier's lunar photometry:
+//
+//   dm(alpha) = 0.026 alpha + 4e-9 alpha^4     magnitudes fainter than full
+//   KS(alpha) = 10^(-0.4 dm)
+//
+// Full:quarter is 11.0, against an observed 0.25 lux / 0.03 lux. Three earlier
+// laws were all wrong in the same direction: the original `0.5 - 0.5 cos` is
+// the lit *area* of a flat disc and gives 2.0; a Lambert sphere with an
+// exponential opposition surge gives 5.95; and plain Lommel-Seeliger, which
+// the Jensen et al. night sky paper uses for illumination, gives 2.65. The
+// moon is a backscattering surface at every phase, not just near full, which
+// is what all three miss.
+//
+// K&S is fitted to about 150 degrees. Past that it levels off near 2.8e-4
+// instead of reaching zero at new moon, so the tail hands over to
+// Lommel-Seeliger scaled to match at the handoff - continuous in value, and
+// correctly zero at new.
+float moonPhaseIllumination(float phase) {
+  const float alpha = kPi * abs(1.0f - 2.0f * saturate(phase));
+  const float alphaDeg = alpha * (180.0f / kPi);
+
+  const float kHandoffDeg = 150.0f;
+  if (alphaDeg <= kHandoffDeg) {
+    const float dm = 0.026f * alphaDeg + 4.0e-9f * (alphaDeg * alphaDeg * alphaDeg * alphaDeg);
+    return pow(10.0f, -0.4f * dm);
+  }
+
+  // KS(150) / Phi_LS(150), precomputed: the scale that makes the tail continue
+  // from where the fit stops.
+  const float kTailScale = 0.09422f;
+  return kTailScale * moonPhiLommelSeeliger(alpha);
+}
+
+// How much darker the real regolith is than Lommel-Seeliger at this phase.
+// The disk multiplies its L-S shape by this, which makes the disk's integral
+// equal moonPhaseIllumination exactly - so the moon you see and the light it
+// casts are the same moon by construction rather than by tuning.
+//
+// Clamped past the handoff: below 150 degrees this is KS/Phi_LS, but both go
+// to zero at new moon and their ratio diverges, so beyond the handoff it is
+// the constant the tail is already scaled by.
+float moonPhaseOverLommelSeeliger(float phase) {
+  const float alpha = kPi * abs(1.0f - 2.0f * saturate(phase));
+  const float alphaDeg = alpha * (180.0f / kPi);
+  const float kHandoffDeg = 150.0f;
+  const float kTailScale = 0.09422f;
+  if (alphaDeg > kHandoffDeg) { return kTailScale; }
+  const float phi = moonPhiLommelSeeliger(alpha);
+  return (phi > 1e-5f) ? (moonPhaseIllumination(phase) / phi) : kTailScale;
+}
+
+// ============================================================================
+// Night radiometry (fork - night sky redesign, Stage 1)
+// ============================================================================
+// Every night illuminant in this system is entered as a physical quantity and
+// converted here, in one place, rather than arriving as a per-consumer gain.
+//
+// Why this exists. Night used to be lit by eight gains that disagreed with
+// each other - surfaceMoonBrightness 50, cloudMoonBrightness 0.2,
+// haloMoonBrightness 15, starBrightness 12, starAmbientCouplingStrength 0.25,
+// nightSkyBrightness 0.002, and the internal kStarCloudCoupling 0.008 and
+// kMoonAirglowScale 0.0015. Each was tuned against the others, so the ratio
+// between any two night sources was whatever the tuning left behind. The
+// clouds glowing uniformly blue on a starry night was one symptom: their
+// ambient came from nightSkyColor scaled by the *star brightness slider*,
+// which is not a radiometric quantity at all.
+//
+// The frame unit is set by the sun and derived at runtime, not hardcoded, so a
+// user who rescales sunIlluminance takes the whole night with them.
+struct NightRadiometry {
+  float framePerLux;    // frame irradiance per lux
+  float framePerWm2;    // frame irradiance per W/m^2
+  float gain;           // the single night exposure gain, >= 1
+  float adaptation;     // 0 by day, 1 at night; the one twilight ramp
+};
+
+// Physical anchors for the sun, which define the scale everything else is
+// measured against. 1361 W/m^2 and 128 klux at the top of the atmosphere.
+static const float kSunIrradianceWm2 = 1361.0f;
+static const float kSunIlluminanceLux = 128000.0f;
+
+NightRadiometry nightRadiometry(AtmosphereArgs args) {
+  NightRadiometry r;
+
+  // args.sunIlluminance is a vec3; its luminance is the frame-unit value that
+  // corresponds to the physical sun above.
+  const float sunFrame = max(dot(args.sunIlluminance, vec3(0.2126f, 0.7152f, 0.0722f)), 1e-6f);
+  r.framePerLux = sunFrame / kSunIlluminanceLux;
+  r.framePerWm2 = sunFrame / kSunIrradianceWm2;
+
+  // The mesopic range: the zenith sky falls from about 3 cd/m^2 at civil
+  // twilight to 0.01 at nautical, which is where the eye hands over from cones
+  // to rods. This single ramp replaces the four disagreeing twilight curves
+  // that were in the code - the cloud nightFactor, the LUT atmosphereFade, the
+  // star fade and the moon fade - so every night source now appears and
+  // disappears together instead of each on its own schedule.
+  const float kCivil = -0.0872f;     // sin(-5 deg)
+  const float kNautical = -0.2250f;  // sin(-13 deg)
+  r.adaptation = smoothstep(-kCivil, -kNautical, -args.sunDirection.y);
+
+  // Applied at the source of every night illuminant, so the ratios between
+  // them stay physical and only the overall level moves. Never below 1: by day
+  // the night sources are at physical strength, where they are correctly
+  // invisible against the lit sky, and no visibility hack is needed in either
+  // direction.
+  const float exposure = pow(2.0f, args.nightExposureEv);
+  r.gain = lerp(1.0f, exposure, r.adaptation);
+
+  return r;
+}
+
+// Irradiance a moon delivers at the ground, in frame units. THE one definition
+// - the distant light, the moon-scattered sky, the cloud light, the disk and
+// the glare all derive from this and nothing else, which is what keeps the
+// moon you see and the light it casts describing the same moon.
+//
+// L_full is the disk's mean radiance at full phase: a Lambert disk of the
+// moon's geometric albedo. The opposition surge is already inside the
+// definition of geometric albedo, so full moon needs no surge term; it is the
+// departure from full that a naive law gets wrong, which is what
+// moonPhaseIllumination handles.
+vec3 moonIrradianceFrame(MoonParams m, AtmosphereArgs args, NightRadiometry rad) {
+  const vec3 moonAirTrans = getAtmosphericTransmittanceForDir(normalize(m.direction), args);
+  const vec3 lFull = args.sunIlluminance * m.color * moonAirTrans * m.brightness / kPi;
+  const float solidAngle = 2.0f * kPi * (1.0f - cos(m.angularRadius));
+  return lFull * (moonPhaseIllumination(m.phase) * solidAngle * rad.gain);
+}
+
 vec3 computeMoonSharedFactor(MoonParams m, AtmosphereArgs args, vec3 albedo) {
   vec3 moonAirTrans = getAtmosphericTransmittanceForDir(normalize(m.direction), args);
   return args.sunIlluminance * albedo * moonAirTrans * m.brightness / kPi;
@@ -567,12 +712,14 @@ vec3 evalAtmosphereRadiance(
         if (m.enabled < 0.5f) continue;
         vec3 moonDir = normalize(m.direction);
         if (moonDir.y <= 0.01f) continue;
-        float phaseGlow = 0.5f - 0.5f * cos(m.phase * 2.0f * kPi);
-        if (phaseGlow <= 0.001f) continue;
-        vec3 sharedFactor = computeMoonSharedFactor(m, args, m.color);
-        float moonSolidAngleSr = 2.0f * kPi * (1.0f - cos(m.angularRadius));
-        vec3 moonIrradiance = sharedFactor * phaseGlow * moonSolidAngleSr
-                            * nightFactor * args.moonAtmosphericCouplingStrength;
+        // One definition (moonIrradianceFrame), one gain. The nightFactor
+        // that used to gate this is gone: the gain's own adaptation ramp is
+        // the only twilight dependence in the system now, so the moon-lit sky
+        // fades on the same curve as everything else rather than on its own.
+        NightRadiometry rad = nightRadiometry(args);
+        vec3 moonIrradiance = moonIrradianceFrame(m, args, rad)
+                            * args.moonAtmosphericCouplingStrength;
+        if (max(max(moonIrradiance.r, moonIrradiance.g), moonIrradiance.b) <= 0.0f) continue;
         float w = max(max(moonIrradiance.r, moonIrradiance.g), moonIrradiance.b);
         if (w <= 0.0f) continue;
         sumWeightedDir += moonDir * w;

@@ -21,6 +21,31 @@
 */
 #pragma once
 
+// ===========================================================================
+// WARNING: NOTHING INCLUDES THIS FILE.
+// ===========================================================================
+// Verified 2026-09-22: `grep -rn '#include.*atmosphere_bindings' src/dxvk/shaders/`
+// returns nothing. Every pass that samples the atmosphere gets its bindings
+// from one of two other places instead:
+//
+//   - the ray-tracing passes (geometry_resolver, integrator_indirect, and so
+//     everything that draws the sky to the eye) from common_bindings.slangh;
+//   - the atmosphere's own compute passes (the LUT bakers, cloud_render) from
+//     their own per-pass binding headers.
+//
+// So a binding added HERE is invisible: the declaration compiles, the resource
+// is bound on the C++ side, and the shader that needs it still takes the
+// #else branch of whatever availability #ifdef guards it. That is not
+// hypothetical - it is exactly how the star catalogue shipped with every star
+// missing, because the two StructuredBuffers were declared here and
+// ATMOSPHERE_STAR_CATALOGUE_AVAILABLE was therefore never defined anywhere
+// that mattered.
+//
+// If you are adding an atmosphere binding, add it to common_bindings.slangh
+// (and to COMMON_RAYTRACING_BINDINGS in common_binding_indices.h). Leave this
+// file alone, or delete it.
+// ===========================================================================
+
 #include "rtx/pass/common_binding_indices.h"
 
 // Atmosphere LUT bindings - only include in shaders that need atmosphere rendering

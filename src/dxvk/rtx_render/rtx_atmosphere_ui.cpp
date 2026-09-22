@@ -145,7 +145,7 @@ namespace {
     RtxOption<float>*    pCraterDensity   = nullptr;
     RtxOption<float>*    pSurfaceContrast = nullptr;
     RtxOption<float>*    pNoiseScale      = nullptr;
-    RtxOption<float>*    pDarkSide        = nullptr;
+    RtxOption<float>*    pEarthshine      = nullptr;
     RtxOption<float>*    pRoughness       = nullptr;
     RtxOption<float>*    pElevation       = nullptr;
     RtxOption<float>*    pRotation        = nullptr;
@@ -162,7 +162,7 @@ namespace {
         pCraterDensity   = &RtxAtmosphere::Moon##N::craterDensityObject();      \
         pSurfaceContrast = &RtxAtmosphere::Moon##N::surfaceContrastObject();    \
         pNoiseScale      = &RtxAtmosphere::Moon##N::surfaceNoiseScaleObject();  \
-        pDarkSide        = &RtxAtmosphere::Moon##N::darkSideBrightnessObject(); \
+        pEarthshine      = &RtxAtmosphere::Moon##N::earthshineObject();         \
         pRoughness       = &RtxAtmosphere::Moon##N::roughnessAmountObject();    \
         pElevation       = &RtxAtmosphere::Moon##N::elevationObject();          \
         pRotation        = &RtxAtmosphere::Moon##N::rotationObject();           \
@@ -225,7 +225,13 @@ namespace {
             "Drives Surface Contrast and Surface Noise Scale via a two-segment linear curve. "
             "Power users can .conf-tune surfaceContrast / surfaceNoiseScale individually for off-curve combinations.");
 
-        RemixGui::DragFloat("Dark Side Brightness", pDarkSide,  0.005f, 0.0f, 1.0f, "%.3f", sliderFlags);
+        RemixGui::DragFloat("Earthshine", pEarthshine, 0.05f, 0.0f, 20.0f, "%.2f", sliderFlags);
+        RemixGui::SetTooltipToLastWidgetOnHover(
+            "Sunlight reflected from the planet onto this moon and back, which is what lights "
+            "the dark side of a thin crescent. 1.0 is physical for an Earth-like planet: "
+            "0.095 W/m^2 against 1905 of sunlight, a ratio of 5e-5. Moons of gas giants want "
+            "considerably more. It tracks the planet phase, which is the complement of the "
+            "moon phase, so earthshine is strongest on a thin crescent - as it is in the sky.");
         RemixGui::DragFloat("Roughness",            pRoughness, 0.01f,  0.0f, 3.0f, "%.2f", sliderFlags);
         ImGui::TreePop();
       }
@@ -332,7 +338,7 @@ namespace {
     if (ImGui::TreeNode("Stars")) {
       RemixGui::DragFloat("Star Brightness", &RtxAtmosphere::starBrightnessObject(),
                           0.1f, 0.0f, 50.0f, "%.1f", sliderFlags);
-      RemixGui::DragFloat("Star Density", &RtxAtmosphere::starDensityObject(),
+      RemixGui::DragFloat("Star Magnitude Limit", &RtxAtmosphere::starMagnitudeLimitObject(),
                           0.01f, 0.0f, 1.0f, "%.2f", sliderFlags);
       RemixGui::SetTooltipToLastWidgetOnHover("Threshold: 0 = all stars visible, 1 = no stars.");
       RemixGui::DragFloat("Star Twinkle Speed", &RtxAtmosphere::starTwinkleSpeedObject(),
@@ -374,13 +380,74 @@ namespace {
     }
   }
 
+  void renderMoonLightQualityUI() {
+    constexpr ImGuiSliderFlags sliderFlags = ImGuiSliderFlags_AlwaysClamp;
+
+    // The one night level. Everything else below is either a physical quantity
+    // or is labelled as appearance-only.
+    RemixGui::DragFloat("Night Exposure (EV)", &RtxAtmosphere::nightExposureEvObject(),
+                        0.1f, -4.0f, 16.0f, "%.2f", sliderFlags);
+    RemixGui::SetTooltipToLastWidgetOnHover(
+        "Stops of exposure applied to every night illuminant at its source, so moonlight, "
+        "starlight and airglow keep their physical ratios while the level moves. Stands in for "
+        "the scotopic adaptation the tonemapper cannot reach: its auto exposure caps at 8x and "
+        "noon to full moon is about 400,000:1. "
+        "5.6 matches the old defaults on the default 3.5 degree moon; about 11.1 matches a "
+        "physically sized 0.52 degree one. This replaced eight gains that each had their own "
+        "idea of how bright night was.");
+    RemixGui::DragFloat("Moon Disk Exposure (EV)", &RtxAtmosphere::moonDiskExposureEvObject(),
+                        0.1f, -4.0f, 12.0f, "%.2f", sliderFlags);
+    RemixGui::SetTooltipToLastWidgetOnHover(
+        "Extra stops on the moon's disk only - it does not change the light the moon casts. A "
+        "physically sized moon at physical radiance looks like a small dim dot even when its "
+        "illumination is exactly right. Raising this also reveals earthshine on a crescent.");
+    RemixGui::DragFloat("Airglow Scale", &RtxAtmosphere::airglowScaleObject(),
+                        0.05f, 0.0f, 20.0f, "%.2f", sliderFlags);
+    RemixGui::SetTooltipToLastWidgetOnHover(
+        "Airglow as a multiple of the measured dark-sky level. Airglow is the biggest single "
+        "component of a moonless sky, so this is the knob for a moonless night that still reads "
+        "as lit - not a star or cloud gain.");
+    ImGui::Separator();
+    RemixGui::DragFloat("Moon Shadow Softness (deg)", &RtxAtmosphere::moonShadowSoftnessDegObject(),
+                        0.05f, 0.0f, 10.0f, "%.2f", sliderFlags);
+    RemixGui::SetTooltipToLastWidgetOnHover(
+        "0 = physical, so shadow softness tracks the visible moon. The real moon subtends about what "
+        "the sun does, so physical moonlight casts shadows as hard as noon; raise this for softer "
+        "moonlight without changing the moon you see. Counterpart of the sun's own softness control.");
+    RemixGui::Checkbox("Moon Light Is Cloud Shadowed", &RtxAtmosphere::moonCloudShadowedObject());
+    RemixGui::SetTooltipToLastWidgetOnHover(
+        "Let the cloud deck shadow moonlight, as it already shadows sunlight. Off gives the prior "
+        "behaviour: sharp moon shadows on an overcast night with no moon visible above.");
+  }
+
   void renderStarAppearanceUI() {
     constexpr ImGuiSliderFlags sliderFlags = ImGuiSliderFlags_AlwaysClamp;
     if (ImGui::TreeNode("Star rendering (advanced)")) {
-      RemixGui::DragFloat("Star PSF Sharpness", &RtxAtmosphere::starPsfSharpnessObject(),
-                          0.5f, 1.0f, 500.0f, "%.1f", sliderFlags);
+      RemixGui::DragFloat("Star PSF Width (render px)", &RtxAtmosphere::starPsfWidthPixelsObject(),
+                          0.02f, 0.2f, 1.5f, "%.2f", sliderFlags);
       RemixGui::SetTooltipToLastWidgetOnHover(
-          "Gaussian PSF exponent. Lower = bigger softer stars, higher = sharper pinpoints.");
+          "Gaussian width of a star, in render pixels. Larger = softer. The profile is "
+          "normalised over solid angle, so this changes only how a star is spread, never how "
+          "much light it delivers - a star keeps its catalogue brightness at any width or "
+          "resolution. Below ~0.5 stars flicker as the camera turns; above ~1.5 the field "
+          "goes soft. The range is clamped because a profile wider than the catalogue's "
+          "quarter-degree bin margin is clipped into a square.");
+      RemixGui::DragFloat("Star Size From Magnitude", &RtxAtmosphere::starSizeMagnitudeScaleObject(),
+                          0.05f, 0.0f, 2.0f, "%.2f", sliderFlags);
+      RemixGui::SetTooltipToLastWidgetOnHover(
+          "How much bigger the brightest stars are than the faintest. A real field reads "
+          "magnitude as size before intensity; at 0 every star is the same width and the "
+          "field reads as dots of varying dimness.");
+      RemixGui::DragFloat("Star Halo Strength", &RtxAtmosphere::starHaloStrengthObject(),
+                          0.005f, 0.0f, 0.5f, "%.3f", sliderFlags);
+      RemixGui::SetTooltipToLastWidgetOnHover(
+          "Faint skirt outside each star's core, relative to its peak. This is the glow that "
+          "makes a star sit in the sky rather than on it. 0 = bare Gaussian.");
+      RemixGui::DragFloat("Star Diffraction Spikes", &RtxAtmosphere::starSpikeStrengthObject(),
+                          0.01f, 0.0f, 1.0f, "%.2f", sliderFlags);
+      RemixGui::SetTooltipToLastWidgetOnHover(
+          "Four-fold cross on each star, relative to its peak. The strongest cue that "
+          "something is a star. 0 disables it and skips its atan2.");
       RemixGui::DragFloat("Star Cloud Extinction Power", &RtxAtmosphere::starCloudExtinctionPowerObject(),
                           0.1f, 1.0f, 6.0f, "%.2f", sliderFlags);
       RemixGui::SetTooltipToLastWidgetOnHover(
@@ -1397,6 +1464,7 @@ void RtxAtmosphere::showNightSettings(const WeatherSnapshot* weatherSnapshot) {
 
   renderStarsUI();
   renderMilkyWayUI();
+  renderMoonLightQualityUI();
   renderStarAppearanceUI();
 
   if (ImGui::TreeNode("Moons")) {

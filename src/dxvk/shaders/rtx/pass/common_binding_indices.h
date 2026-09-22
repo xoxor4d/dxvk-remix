@@ -124,8 +124,16 @@
 // Fork atmosphere/cloud bindings occupy a contiguous range ABOVE COMMON_MAX_BINDING
 // (which only covers the base common bindings). Expose the range so passes that
 // also bind their own resources (e.g. sparse rendering) can assert no overlap.
+// Star catalogue (fork - night sky redesign, Stage 3). Two read-only
+// structured buffers built once at startup from the Bright Star Catalogue
+// and never rebuilt: nothing in them depends on an option.
+//   ENTRIES - stars sorted by cell, conservatively binned, bright list first
+//   CELL_OFFSETS - STAR_CELL_COUNT + 1 prefix sums into ENTRIES
+#define BINDING_ATMOSPHERE_STAR_ENTRIES 218
+#define BINDING_ATMOSPHERE_STAR_CELL_OFFSETS 219
+
 #define BINDING_ATMOSPHERE_MIN                   BINDING_ATMOSPHERE_TRANSMITTANCE_LUT
-#define BINDING_ATMOSPHERE_MAX                   BINDING_ATMOSPHERE_CLOUD_DEPTH_RT
+#define BINDING_ATMOSPHERE_MAX                   BINDING_ATMOSPHERE_STAR_CELL_OFFSETS
 
 #define COMMON_MAX_BINDING                       BINDING_LIGHT_IDENTITY_BUFFER
 #define COMMON_NUM_BINDINGS                      (COMMON_MAX_BINDING + 1)
@@ -181,6 +189,8 @@
   TEXTURE3D(BINDING_ATMOSPHERE_CLOUD_D_AMBIENT)                     \
   SAMPLER(BINDING_ATMOSPHERE_SKY_VIEW_SAMPLER)                      \
   TEXTURE2D(BINDING_ATMOSPHERE_CLOUD_SECONDARY_LUT)                 \
-  TEXTURE2D(BINDING_ATMOSPHERE_CLOUD_DEPTH_RT)
+  TEXTURE2D(BINDING_ATMOSPHERE_CLOUD_DEPTH_RT)                      \
+  STRUCTURED_BUFFER(BINDING_ATMOSPHERE_STAR_ENTRIES)                \
+  STRUCTURED_BUFFER(BINDING_ATMOSPHERE_STAR_CELL_OFFSETS)
 
 #endif

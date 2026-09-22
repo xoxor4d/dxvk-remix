@@ -44,7 +44,7 @@ struct MoonParams {
 
   float surfaceContrast;   // Multiplier on surface light/dark variation
   float surfaceNoiseScale; // Multiplier on UV scale fed into surface noise
-  float darkSideBrightness;// Fraction of lit radiance applied on dark side
+  float earthshine;        // Earthshine strength; 1.0 = an Earth-like planet (Bond albedo 0.3)
   float roughnessAmount;   // Multiplier on micro-detail amplitude
 };
 
@@ -94,7 +94,7 @@ struct AtmosphereArgs {
 
   // ----- Night-sky additions (fork) -----
   float starBrightness;     // Overall star brightness multiplier
-  float starDensity;        // Density threshold (0=all stars, 1=no stars)
+  float starMagnitudeLimit; // Faintest star drawn, in visual magnitude (6.5 = the naked-eye sky)
   float starTwinkleSpeed;   // Animation rate
   float nightSkyBrightness; // Airglow / ambient night-sky brightness
 
@@ -116,16 +116,18 @@ struct AtmosphereArgs {
 
   // ----- Star anti-aliasing + cloud interaction (fork) -----
   //
-  // starPsfSharpness: exponent in the per-star Gaussian PSF inside evalStarField.
-  // The hash-grid cube-face mapping (gridScale = 400 cells per face = ~13.5
-  // arcmin/cell) was originally evaluated with a hardcoded exp(-dist² * 800) —
-  // half-width ~0.029 cells = ~0.08 pixels at 1080p/90° FOV, well sub-pixel. As
-  // the camera rotated, star centers crossed pixel boundaries discontinuously,
-  // producing severe per-frame flicker even with DLSS disabled. Lowering the
-  // exponent widens the PSF: k=20 gives a ~1-pixel-FWHM star at 1080p, k=8 at
-  // 720p. Sized to anti-alias at typical FNV render resolutions (~720p–1440p
-  // including DLSS internal resolutions). Lower = bigger softer stars;
-  // higher = sharper pinpoints (with more flicker).
+  // starPsfWidthPixels: Gaussian sigma of a star's drawn profile, in render
+  // pixels, converted to an angle in the shader via pixelAngleRad. The profile
+  // is normalised over solid angle, so this sets how a star is spread and never
+  // how much light it carries — which is what makes a star's energy independent
+  // of resolution and of the upscaler ratio.
+  //
+  // It replaces starPsfSharpness, which was the exponent of a hash-grid field
+  // and ran the other way (larger = sharper). The rename is deliberate and is
+  // the fix for a real bug: a config left at starPsfSharpness=20, read as a
+  // width, asks for sigma = 20 px = 2.1°, which drops a star's peak by ~800x
+  // and makes the whole sky empty. An option whose meaning inverts has to
+  // change name or every old config silently renders something else.
   //
   // Stars are also very bright HDR point sources (peak ~= starBrightness,
   // default 8). The standard alpha-composite (stars * (1-cloudOpacity)) attenuates
@@ -141,7 +143,7 @@ struct AtmosphereArgs {
   //     cloud-march nightLight term, analogous to moon-zenith fill. Brightens
   //     cloud bodies under starry skies so they visually compete with the
   //     bright HDR stars and don't read as "floating dots on a dim cloud."
-  float starPsfSharpness;               // PSF exponent for evalStarField (default 20.0; was hardcoded 800)
+  float starPsfWidthPixels;             // Star profile Gaussian sigma, in render pixels (default 0.7)
   float starCloudExtinctionPower;       // Power exponent on cloud view-T when extincting stars (default 2.5)
   float starAmbientCouplingStrength;    // Star/airglow coupling into cloud nightLight (default 0.01)
   float cloudViewSamplesMax;            // Cap on the adaptive cloud-march step count (fork —
@@ -797,5 +799,66 @@ struct AtmosphereArgs {
   float cloudReprojectDepthTolerance;
   uint padCloudInterleave0;
   uint padCloudInterleave1;
+
+  // ----- Star appearance (fork) -----
+  //
+  // One whole 16-byte row, per the alignment rule above. These do not ride the
+  // two cloud-interleave pads immediately before them even though they would
+  // fit: those pads are named for the row they sit in, and putting star
+  // controls inside a cloud screen-reuse row is how this struct became hard to
+  // read in the first place. The rule that matters is that the struct grows by
+  // a whole vec4 block, which this does.
+  //
+  // What these are for: a star drawn as a single fixed-width Gaussian in one of
+  // three colours reads as a white dot, because the two things the eye actually
+  // uses to see a star - a size that tracks magnitude, and a faint halo well
+  // outside the core - were both absent. See starProfile in atmosphere_sky.
+  //
+  //   starSizeMagnitudeScale - how much wider the brightest stars are than the
+  //     faintest, as a multiple of the starPsfWidthPixels radius. 0 reproduces
+  //     the old uniform-size field exactly.
+  //   starHaloStrength - amplitude of the skirt outside the core, relative to
+  //     the core peak. This is the "glow" read; 0 gives a bare Gaussian.
+  //   starSpikeStrength - amplitude of the four-fold diffraction cross, again
+  //     relative to the core peak. 0 disables the spikes and their atan2.
+  float starSizeMagnitudeScale;
+  float starHaloStrength;
+  float starSpikeStrength;
+  // Angle one render pixel subtends vertically, radians. Pushed from the
+  // CPU because the star profile is normalised in angle rather than in
+  // pixels: that is what makes a star's total energy independent of
+  // resolution and of the upscaler's ratio. Feeds no bake, so it is zeroed
+  // in the LUT cache key - a field-of-view change must not re-bake the sky.
+  float pixelAngleRad;
+
+  // ----- Night radiometry (fork - night sky redesign, Stage 1) -----
+  //
+  // One whole 16-byte row. See docs/NightSkyRedesign.md section 2: every night
+  // illuminant is a physical quantity converted in one place, and this row
+  // carries the only knobs that are not.
+  //
+  //   nightExposureEv - the single night exposure gain, in EV stops, applied
+  //     at the source of every night illuminant so the ratios between moon,
+  //     stars and airglow stay physical while the overall level moves. It
+  //     stands in for the scotopic adaptation the tonemapper cannot do: its
+  //     auto exposure caps at 8x, and noon to full moon is about 400,000:1.
+  //     Replaces eight mutually-tuned gains.
+  //   airglowScale - multiple of the measured dark-sky airglow level. Feeds
+  //     the sky-view LUT bake from Stage 5; until then it scales the interim
+  //     constant floor in the cloud march.
+  //   nightLightSelect - which light the cloud shadow grid follows at night
+  //     (0 = sun, 1..MAX_MOONS = that moon). Written from Stage 7; zero until
+  //     then, which keeps today's sun-only behaviour.
+  //   moonDiskExposureEv - appearance-only extra stops on the moon *disk*, so
+  //     a moon can read as bright as one looks without changing the light it
+  //     casts. Stage 2.
+  //
+  // nightExposureEv, airglowScale and nightLightSelect all feed a bake and so
+  // stay in the sky-view LUT cache key; moonDiskExposureEv does not and is
+  // zeroed there.
+  float nightExposureEv;
+  float airglowScale;
+  uint  nightLightSelect;
+  float moonDiskExposureEv;
 
 };

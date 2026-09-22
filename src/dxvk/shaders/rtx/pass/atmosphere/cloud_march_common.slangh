@@ -548,22 +548,17 @@ CloudShadeContext buildCloudShadeContext(AtmosphereArgs args) {
         MoonParams m = args.moons[mi];
         if (m.enabled < 0.5f) continue;
         vec3 moonDir = normalize(m.direction);
-        float moonDot = max(dot(moonDir, vec3(0.0f, 1.0f, 0.0f)), 0.0f);
-        // phaseGlow peaks at full moon (phase=0.5), zero at new (0 or 1).
-        float phaseGlow = 0.5f - 0.5f * cos(m.phase * 2.0f * kPi);
-
-        // Ambient airglow contribution (uniform across the cloud volume).
-        // Rebase (2026-06-14): the 0.0015 night-radiance scale moved into the
-        // internal kMoonAirglowScale constant so the user-facing knob is an
-        // O(1) "multiple of the calibrated night level" (default 1.0) instead
-        // of a sub-0.01 raw gain. Effective value at the default is unchanged.
-        const float kMoonAirglowScale = 0.0015f;
-        vec3 sharedFactorAmbient = computeMoonSharedFactor(m, args, m.color);
-        nightLight += sharedFactorAmbient * args.moonAmbientAirglow * kMoonAirglowScale
-                    * moonDot * phaseGlow * args.cloudMoonBrightness * nightFactor;
+        // The moon's uniform ambient lift is gone. It was
+        //   sharedFactor * moonAmbientAirglow * 0.0015 * moonDot * phaseGlow
+        //     * cloudMoonBrightness * nightFactor
+        // which is a fill light with a physical-looking expression and no
+        // physical meaning: two internal constants, two user gains, and a
+        // horizon term (moonDot) standing in for the scattering it did not
+        // compute. Cloud ambient at night now comes from the same sky-view LUT
+        // taps the day uses, plus the airglow floor below.
 
         // Directional contribution — only above-horizon moons matter.
-        if (moonDir.y > 0.01f && args.moonNeeStrength > 0.001f) {
+        if (moonDir.y > 0.01f) {
           // Silver-lining response decomposed: diffuse (Lambert) amount and
           // phase (HG-gain) amount are precomputed here; the HG phase function
           // itself is evaluated per-sample in the march loop below so it can
@@ -572,35 +567,54 @@ CloudShadeContext buildCloudShadeContext(AtmosphereArgs args) {
           const float kMoonPhaseGain   = args.moonCloudPhaseGain;
           float moonLambert = saturate(moonDir.y * 0.8f + 0.2f);
 
-          // Physical irradiance scaffold — sharedFactor × phaseGlow × solidAngle
-          // × moonNeeStrength × cloudMoonBrightness × nightFactor.
-          vec3 sharedFactor = computeMoonSharedFactor(m, args, m.color);
-          float moonSolidAngleSr = 2.0f * kPi * (1.0f - cos(m.angularRadius));
-          vec3 moonIrradiance = sharedFactor * phaseGlow * moonSolidAngleSr
-                              * args.moonNeeStrength * args.cloudMoonBrightness
-                              * nightFactor;
+          // The one moon irradiance, same as the ground and the sky get.
+          // moonNeeStrength and cloudMoonBrightness are both gone: between
+          // them they gave clouds 1/250 of the moonlight the ground received
+          // at their shipped defaults, which is why the uniform blue term
+          // above existed to compensate. Clouds and ground now see the same
+          // moon, so moonlit cloud is brighter than it used to be - that is
+          // the correction, not a regression.
+          NightRadiometry radMoon = nightRadiometry(args);
+          vec3 moonIrradiance = moonIrradianceFrame(m, args, radMoon);
           moonDiffuseCoeff[mi] = moonIrradiance * kMoonDiffuseGain * moonLambert;
           moonPhaseAmt[mi]     = moonIrradiance * kMoonPhaseGain;
           moonDirNorm[mi]      = moonDir;
         }
       }
-      // Night-sky airglow baseline (uncolored, mirrors legacy `* 0.5f`).
-      nightLight += args.nightSkyColor * args.nightSkyBrightness * nightFactor * 0.5f;
+      // Airglow floor. Temporary: Stage 5 of the redesign puts airglow into
+      // the sky-view LUT with its van Rhijn elevation dependence, at which
+      // point cloud ambient reads it from the same LUT taps as daylight and
+      // this constant goes away. Until then it stands in for the LUT's night
+      // contribution, which atmosphereFade still forces to zero below -5 deg.
+      //
+      // 1.1e-8 frame units is airglow's measured share of a dark sky: half of
+      // 22.0 mag/arcsec^2, per Roach & Gordon. Grey on purpose - airglow's
+      // 557.7 nm line is green, but the eye is scotopic here and sees no hue,
+      // and the saturated blue this replaces was the other half of why clouds
+      // read as glowing rather than as dark shapes.
+      {
+        NightRadiometry radFloor = nightRadiometry(args);
+        const float kAirglowDarkSkyFrame = 1.1e-8f;
+        nightLight += vec3(kAirglowDarkSkyFrame) * args.airglowScale * radFloor.gain;
+      }
 
-      // Starlight ambient coupling (fork).
-      // Adds a faint per-ray ambient lift to cloud body lighting derived from
-      // the sky's star contribution so cumulus under starry skies doesn't read
-      // as pitch-black against HDR ~8 stars overhead.
-      // Rebase (2026-06-14): kStarCloudCoupling absorbs the night-radiance
-      // scale (and the calibrated reduction from the too-bright 0.03 raw gain)
-      // so starAmbientCouplingStrength is an O(1) "multiple of the calibrated
-      // night level" (default 1.0). This was the single largest UNIFORM night
-      // cloud term (added uncolored to every sample), so it drove most of the
-      // "clouds glow blue at night" read; coupled to args.starBrightness so the
-      // lift tracks the user's star slider.
-      const float kStarCloudCoupling = 0.008f;
-      nightLight += args.nightSkyColor * args.starBrightness
-                  * args.starAmbientCouplingStrength * kStarCloudCoupling * nightFactor;
+      // The star coupling is gone, and it is the direct cause of the
+      // complaint this redesign started from. It was
+      //   nightSkyColor * starBrightness * starAmbientCouplingStrength * 0.008
+      // added uncoloured to every sample: a cloud's ambient brightness was
+      // proportional to the user's *star brightness slider*. At the tuned
+      // values in use (starBrightness 12, coupling 0.25, a saturated blue
+      // nightSkyColor) it came to (1.6e-3, 2.3e-3, 5.2e-3) frame units, which
+      // is around thirty times a moonless sky's actual radiance and larger
+      // than the moonlit ambient it sat on top of. The code's own comment
+      // already named it as what "drove most of the clouds glow blue at night
+      // read".
+      //
+      // Resolved starlight is genuinely about 5e-9 frame units of equivalent
+      // uniform radiance - a quarter of a dark sky, most of which is airglow
+      // and zodiacal light - and it arrives through the airglow floor above
+      // and, from Stage 4, the night dome's mean radiance. There is nothing
+      // to add here.
     }
   }
 

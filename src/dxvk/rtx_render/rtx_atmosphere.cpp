@@ -444,7 +444,7 @@ namespace {
       color           = RtxAtmosphere::Moon0::color();           brightness      = RtxAtmosphere::Moon0::brightness();
       surfaceStyle    = RtxAtmosphere::Moon0::surfaceStyle();    phase           = RtxAtmosphere::Moon0::phase();
       craterDensity   = RtxAtmosphere::Moon0::craterDensity();   surfaceContrast = RtxAtmosphere::Moon0::surfaceContrast();
-      noiseScale      = RtxAtmosphere::Moon0::surfaceNoiseScale(); darkSide      = RtxAtmosphere::Moon0::darkSideBrightness();
+      noiseScale      = RtxAtmosphere::Moon0::surfaceNoiseScale(); darkSide      = RtxAtmosphere::Moon0::earthshine();
       roughness       = RtxAtmosphere::Moon0::roughnessAmount();
       break;
     case 1:
@@ -453,7 +453,7 @@ namespace {
       color           = RtxAtmosphere::Moon1::color();           brightness      = RtxAtmosphere::Moon1::brightness();
       surfaceStyle    = RtxAtmosphere::Moon1::surfaceStyle();    phase           = RtxAtmosphere::Moon1::phase();
       craterDensity   = RtxAtmosphere::Moon1::craterDensity();   surfaceContrast = RtxAtmosphere::Moon1::surfaceContrast();
-      noiseScale      = RtxAtmosphere::Moon1::surfaceNoiseScale(); darkSide      = RtxAtmosphere::Moon1::darkSideBrightness();
+      noiseScale      = RtxAtmosphere::Moon1::surfaceNoiseScale(); darkSide      = RtxAtmosphere::Moon1::earthshine();
       roughness       = RtxAtmosphere::Moon1::roughnessAmount();
       break;
     case 2:
@@ -462,7 +462,7 @@ namespace {
       color           = RtxAtmosphere::Moon2::color();           brightness      = RtxAtmosphere::Moon2::brightness();
       surfaceStyle    = RtxAtmosphere::Moon2::surfaceStyle();    phase           = RtxAtmosphere::Moon2::phase();
       craterDensity   = RtxAtmosphere::Moon2::craterDensity();   surfaceContrast = RtxAtmosphere::Moon2::surfaceContrast();
-      noiseScale      = RtxAtmosphere::Moon2::surfaceNoiseScale(); darkSide      = RtxAtmosphere::Moon2::darkSideBrightness();
+      noiseScale      = RtxAtmosphere::Moon2::surfaceNoiseScale(); darkSide      = RtxAtmosphere::Moon2::earthshine();
       roughness       = RtxAtmosphere::Moon2::roughnessAmount();
       break;
     case 3:
@@ -471,7 +471,7 @@ namespace {
       color           = RtxAtmosphere::Moon3::color();           brightness      = RtxAtmosphere::Moon3::brightness();
       surfaceStyle    = RtxAtmosphere::Moon3::surfaceStyle();    phase           = RtxAtmosphere::Moon3::phase();
       craterDensity   = RtxAtmosphere::Moon3::craterDensity();   surfaceContrast = RtxAtmosphere::Moon3::surfaceContrast();
-      noiseScale      = RtxAtmosphere::Moon3::surfaceNoiseScale(); darkSide      = RtxAtmosphere::Moon3::darkSideBrightness();
+      noiseScale      = RtxAtmosphere::Moon3::surfaceNoiseScale(); darkSide      = RtxAtmosphere::Moon3::earthshine();
       roughness       = RtxAtmosphere::Moon3::roughnessAmount();
       break;
     default:
@@ -494,7 +494,7 @@ namespace {
     m.craterDensity      = craterDensity;
     m.surfaceContrast    = surfaceContrast;
     m.surfaceNoiseScale  = noiseScale;
-    m.darkSideBrightness = darkSide;
+    m.earthshine         = darkSide;
     m.roughnessAmount    = roughness;
   }
 
@@ -562,14 +562,23 @@ namespace {
     // BUG FIX (2026-07-16): starRotation was not zeroed anywhere, re-baking the entire LUT cascade every
     // frame at night. Zeroed here in the base so every derived key inherits it.
     args.starBrightness              = 0.0f;
-    args.starDensity                 = 0.0f;
+    args.starMagnitudeLimit          = 0.0f;
     args.starTwinkleSpeed            = 0.0f;
     args.starRotation                = 0.0f;
     args.starAxisElevation           = 0.0f;
     args.starAxisRotation            = 0.0f;
-    args.starPsfSharpness            = 0.0f;
+    args.starPsfWidthPixels          = 0.0f;
     args.starCloudExtinctionPower    = 0.0f;
     args.starAmbientCouplingStrength = 0.0f;
+    args.starSizeMagnitudeScale      = 0.0f;
+    args.starHaloStrength            = 0.0f;
+    args.starSpikeStrength           = 0.0f;
+    // nightExposureEv, airglowScale and nightLightSelect are deliberately NOT
+    // zeroed: all three feed the bake, so they belong in the key. Zeroing the
+    // exposure here would bake a night-time sky at daylight gain and hand it
+    // back unchanged when the gain moved.
+    args.moonDiskExposureEv          = 0.0f;
+    args.pixelAngleRad               = 0.0f;
     args.milkyWayEnabled             = 0.0f;
     args.milkyWayDensityBoost        = 0.0f;
     args.milkyWayBackgroundBrightness = 0.0f;
@@ -681,7 +690,7 @@ namespace {
     args.cloudEvolutionOffsetZ = quantizeDirComponent(evoKm.z, stepKm);
 
     args.starBrightness     = 0.0f;
-    args.starDensity        = 0.0f;
+    args.starMagnitudeLimit = 0.0f;
     args.starTwinkleSpeed   = 0.0f;
     args.nightSkyBrightness = 0.0f;
     args.nightSkyColor      = vec3(0.0f, 0.0f, 0.0f);
@@ -690,9 +699,12 @@ namespace {
     args.starAxisElevation = 0.0f;
     args.starAxisRotation  = 0.0f;
 
-    args.starPsfSharpness            = 0.0f;
+    args.starPsfWidthPixels          = 0.0f;
     args.starCloudExtinctionPower    = 0.0f;
     args.starAmbientCouplingStrength = 0.0f;
+    args.starSizeMagnitudeScale      = 0.0f;
+    args.starHaloStrength            = 0.0f;
+    args.starSpikeStrength           = 0.0f;
 
     args.milkyWayEnabled              = 0.0f;
     args.milkyWayDensityBoost         = 0.0f;
@@ -1048,7 +1060,7 @@ AtmosphereArgs RtxAtmosphere::getAtmosphereArgs() const {
 
   // ----- Night-sky shading (fork) -----
   args.starBrightness     = RtxAtmosphere::starBrightness();
-  args.starDensity        = RtxAtmosphere::starDensity();
+  args.starMagnitudeLimit = RtxAtmosphere::starMagnitudeLimit();
   args.starTwinkleSpeed   = RtxAtmosphere::starTwinkleSpeed();
   args.nightSkyBrightness = wx ? wx->nightSkyBrightness : RtxAtmosphere::nightSkyBrightness();
   args.nightSkyColor      = wx ? wx->nightSkyColor      : RtxAtmosphere::nightSkyColor();
@@ -1069,9 +1081,34 @@ AtmosphereArgs RtxAtmosphere::getAtmosphereArgs() const {
   // (nubis3SharpenStrength — the former pad3 slot — is filled in the cloud
   // block below alongside the other Nubis3 fields.)
 
-  args.starPsfSharpness            = RtxAtmosphere::starPsfSharpness();
+  args.starPsfWidthPixels          = RtxAtmosphere::starPsfWidthPixels();
   args.starCloudExtinctionPower    = RtxAtmosphere::starCloudExtinctionPower();
   args.starAmbientCouplingStrength = RtxAtmosphere::starAmbientCouplingStrength();
+  // Star appearance row. Clamped at zero rather than trusted: each of these is
+  // an amplitude added onto the core profile, and a negative one would subtract
+  // from a star's own centre and punch a hole in it.
+  // Night radiometry row. nightExposureEv is not clamped at zero: negative
+  // stops are a legitimate ask for a darker night than physical-times-one.
+  args.nightExposureEv             = RtxAtmosphere::nightExposureEv();
+  args.airglowScale                = std::max(RtxAtmosphere::airglowScale(), 0.0f);
+  args.nightLightSelect            = 0u;   // Stage 7 writes this
+  args.moonDiskExposureEv          = RtxAtmosphere::moonDiskExposureEv();
+
+  args.starSizeMagnitudeScale      = std::max(RtxAtmosphere::starSizeMagnitudeScale(), 0.0f);
+  args.starHaloStrength            = std::max(RtxAtmosphere::starHaloStrength(), 0.0f);
+  args.starSpikeStrength           = std::max(RtxAtmosphere::starSpikeStrength(), 0.0f);
+  // One render pixel's vertical angle. Taken from the *downscaled* extent,
+  // which is what the path tracer actually renders at, so the star profile
+  // tracks the internal resolution rather than the display's - a DLSS ratio
+  // change must not change how much energy a star deposits.
+  {
+    const RtCamera& starCamera = m_device->getCommon()->getSceneManager().getCamera();
+    const VkExtent3D renderExtent =
+      m_device->getCommon()->getResources().getDownscaleDimensions();
+    const float fovY = starCamera.getFov();
+    const float height = std::max(float(renderExtent.height), 1.0f);
+    args.pixelAngleRad = 2.0f * std::tan(std::max(fovY, 1e-3f) * 0.5f) / height;
+  }
   // Adaptive-march sample cap riding the former padStarCloud0 slot (fork —
   // 2026-06-12, adaptive march sampling); CB layout unchanged.
   args.cloudViewSamplesMax         = static_cast<float>(RtxAtmosphere::cloudViewSamplesMax());
@@ -3992,6 +4029,9 @@ AtmosphereArgs RtxAtmosphere::updateFrame(RtxContext& ctx,
 }
 
 void RtxAtmosphere::bindResources(RtxContext& ctx) {
+  // Compile-time data, so this is a no-op after the first call.
+  buildStarCatalogueBuffers(&ctx);
+
   initialize(&ctx);
 
   if (m_transmittanceLut.isValid()) {
@@ -4002,6 +4042,12 @@ void RtxAtmosphere::bindResources(RtxContext& ctx) {
   }
   if (m_skyViewLut.isValid()) {
     ctx.bindResourceView(BINDING_ATMOSPHERE_SKY_VIEW_LUT, m_skyViewLut.view, nullptr);
+  }
+  if (m_starEntryBuffer != nullptr && m_starCellOffsetBuffer != nullptr) {
+    ctx.bindResourceBuffer(BINDING_ATMOSPHERE_STAR_ENTRIES,
+      DxvkBufferSlice(m_starEntryBuffer, 0, m_starEntryBuffer->info().size));
+    ctx.bindResourceBuffer(BINDING_ATMOSPHERE_STAR_CELL_OFFSETS,
+      DxvkBufferSlice(m_starCellOffsetBuffer, 0, m_starCellOffsetBuffer->info().size));
   }
   if (m_cloudSkyTransmittanceLut.isValid()) {
     ctx.bindResourceView(BINDING_ATMOSPHERE_CLOUD_SKY_TRANSMITTANCE_LUT, m_cloudSkyTransmittanceLut.view, nullptr);
@@ -4078,6 +4124,33 @@ namespace {
   // march needs none, because it returns zero as soon as the planet occludes the body.
   //
   // dirYUp must be normalized and in Y-up space. Cost is 40 steps once per body per frame.
+  // Mirror of moonPhaseIllumination in atmosphere_common.slangh. Kept in step
+  // with it by hand, the way fhAtmTransmittanceYUp mirrors the shader's march:
+  // the distant light this feeds has to agree with the disk the sky draws, or
+  // the moon you see and the shadows it casts are lit by different moons.
+  float fhMoonPhiLommelSeeliger(float alpha) {
+    if (alpha < 1e-4f) { return 1.0f; }
+    if (alpha > kFhPi - 1e-4f) { return 0.0f; }
+    const float halfA = alpha * 0.5f;
+    const float quarterA = alpha * 0.25f;
+    return 1.0f - std::sin(halfA) * std::tan(halfA)
+                * std::log(1.0f / std::max(std::tan(quarterA), 1e-8f));
+  }
+
+  float fhMoonPhaseIllumination(float phase) {
+    const float clamped = std::min(std::max(phase, 0.0f), 1.0f);
+    const float alpha = kFhPi * std::abs(1.0f - 2.0f * clamped);
+    const float alphaDeg = alpha * (180.0f / kFhPi);
+    constexpr float kHandoffDeg = 150.0f;
+    if (alphaDeg <= kHandoffDeg) {
+      const float dm = 0.026f * alphaDeg
+                     + 4.0e-9f * (alphaDeg * alphaDeg * alphaDeg * alphaDeg);
+      return std::pow(10.0f, -0.4f * dm);
+    }
+    constexpr float kTailScale = 0.09422f;
+    return kTailScale * fhMoonPhiLommelSeeliger(alpha);
+  }
+
   Vector3 fhAtmTransmittanceYUp(const AtmosphereArgs& a, const Vector3& dirYUp) {
     const Vector3 planetCenter(0.0f, -a.planetRadius, 0.0f);
     const Vector3 origin(0.0f, 0.0f, 0.0f);
@@ -4139,6 +4212,32 @@ namespace {
       std::exp(-std::min(opticalDepth.y, 1e3f)),
       std::exp(-std::min(opticalDepth.z, 1e3f)));
   }
+
+  // Mirrors of nightRadiometry() and moonIrradianceFrame() in
+  // atmosphere_common.slangh. Kept in step by hand, the way
+  // fhAtmTransmittanceYUp mirrors the shader's march: the distant light has to
+  // agree with the sky and with the disk, or the moon lighting the ground is
+  // not the moon on screen.
+  float fhNightAdaptation(const AtmosphereArgs& a) {
+    // sin(-5 deg) to sin(-13 deg) - the mesopic range, and the only twilight
+    // ramp left in the system.
+    return fhSmoothstep(0.0872f, 0.2250f, -a.sunDirection.y);
+  }
+
+  float fhNightGain(const AtmosphereArgs& a) {
+    const float exposure = std::pow(2.0f, a.nightExposureEv);
+    return 1.0f + (exposure - 1.0f) * fhNightAdaptation(a);
+  }
+
+  Vector3 fhMoonIrradianceFrame(const AtmosphereArgs& a, const MoonParams& m,
+                                const Vector3& dirN, float nightGain) {
+    const Vector3 T = fhAtmTransmittanceYUp(a, dirN);
+    const Vector3 sunIll(a.sunIlluminance.x, a.sunIlluminance.y, a.sunIlluminance.z);
+    const Vector3 color(m.color.x, m.color.y, m.color.z);
+    const Vector3 lFull = fhMul(fhMul(sunIll, color), T) * (m.brightness / kFhPi);
+    const float solidAngle = 2.0f * kFhPi * (1.0f - std::cos(m.angularRadius));
+    return lFull * (fhMoonPhaseIllumination(m.phase) * solidAngle * nightGain);
+  }
 }  // anonymous namespace
 
 void RtxAtmosphere::dropDistantLights() {
@@ -4156,6 +4255,227 @@ void RtxAtmosphere::dropDistantLights() {
     m_lightningLight->markForGarbageCollection();
     m_lightningLight = nullptr;
   }
+}
+
+
+// ============================================================================
+// Star catalogue buffers (fork - night sky redesign, Stage 3)
+// ============================================================================
+// Built once, from compile-time data, and never rebuilt: nothing in them
+// depends on a runtime option, so every option that affects stars is a
+// shader-side compare or scale. See docs/NightSkyRedesign.md section 3.
+
+namespace {
+  // Ballesteros (2012), a two-term fit that lands Vega at about 10,100 K.
+  // Preferred over the night sky paper's 7000/(B-V + 0.56), which puts Vega at
+  // 12,500 K - a whole spectral class too hot, and visibly too blue across the
+  // brightest stars in the sky.
+  float starTemperatureFromBv(float bv) {
+    const float d = 0.92f * bv;
+    return 4600.0f * (1.0f / (d + 1.7f) + 1.0f / (d + 0.62f));
+  }
+
+  // Planckian locus in CIE xy, Kang et al. (2002), valid 1667-25000 K.
+  void planckianLocusXy(float tK, float& x, float& y) {
+    const float t = std::min(std::max(tK, 1667.0f), 25000.0f);
+    const float t2 = t * t;
+    const float t3 = t2 * t;
+    if (t < 4000.0f) {
+      x = -0.2661239e9f / t3 - 0.2343589e6f / t2 + 0.8776956e3f / t + 0.179910f;
+    } else {
+      x = -3.0258469e9f / t3 + 2.1070379e6f / t2 + 0.2226347e3f / t + 0.240390f;
+    }
+    const float x2 = x * x;
+    const float x3 = x2 * x;
+    if (t < 2222.0f) {
+      y = -1.1063814f * x3 - 1.34811020f * x2 + 2.18555832f * x - 0.20219683f;
+    } else if (t < 4000.0f) {
+      y = -0.9549476f * x3 - 1.37418593f * x2 + 2.09137015f * x - 0.16748867f;
+    } else {
+      y = 3.0817580f * x3 - 5.87338670f * x2 + 3.75112997f * x - 0.37001483f;
+    }
+  }
+
+  // Chromaticity only: normalised so its Rec.709 luminance is exactly 1, which
+  // is what keeps a star's magnitude the sole carrier of its brightness. A
+  // "temperature tint" multiplied by a separate brightness counts luminance
+  // twice and drifts with colour, which is what the retired procedural field
+  // did.
+  void starChromaFromBv(float bv, float& r, float& g, float& b) {
+    float x = 0.0f, y = 0.0f;
+    planckianLocusXy(starTemperatureFromBv(bv), x, y);
+    y = std::max(y, 1e-4f);
+
+    // xyY -> XYZ at Y = 1.
+    const float X = x / y;
+    const float Y = 1.0f;
+    const float Z = (1.0f - x - y) / y;
+
+    // XYZ -> linear sRGB, D65.
+    r =  3.2404542f * X - 1.5371385f * Y - 0.4985314f * Z;
+    g = -0.9692660f * X + 1.8760108f * Y + 0.0415560f * Z;
+    b =  0.0556434f * X - 0.2040259f * Y + 1.0572252f * Z;
+
+    // The locus runs outside sRGB at both ends, so the deepest reds and blues
+    // clip. Clamping and then renormalising keeps the luminance contract
+    // exact, at the cost of some saturation on stars that are already at the
+    // edge of what a display can show.
+    r = std::max(r, 0.0f); g = std::max(g, 0.0f); b = std::max(b, 0.0f);
+    const float luma = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+    if (luma > 1e-5f) { r /= luma; g /= luma; b /= luma; }
+    else { r = g = b = 1.0f; }
+  }
+
+  // Which cube-face cell a direction falls in. Mirrored exactly in
+  // atmosphere_sky.slangh: a disagreement here puts stars in cells the shader
+  // never reads, which shows as stars that vanish at particular headings.
+  uint32_t starCellIndex(float dx, float dy, float dz) {
+    const float ax = std::abs(dx), ay = std::abs(dy), az = std::abs(dz);
+    uint32_t face; float u, v, m;
+    if (ax >= ay && ax >= az)      { face = dx > 0.0f ? 0u : 1u; m = ax; u = dy / m; v = dz / m; }
+    else if (ay >= az)             { face = dy > 0.0f ? 2u : 3u; m = ay; u = dx / m; v = dz / m; }
+    else                           { face = dz > 0.0f ? 4u : 5u; m = az; u = dx / m; v = dy / m; }
+
+    const float n = float(STAR_CELLS_PER_FACE);
+    int i = int((u * 0.5f + 0.5f) * n);
+    int j = int((v * 0.5f + 0.5f) * n);
+    i = std::min(std::max(i, 0), int(STAR_CELLS_PER_FACE) - 1);
+    j = std::min(std::max(j, 0), int(STAR_CELLS_PER_FACE) - 1);
+    return face * STAR_CELLS_PER_FACE * STAR_CELLS_PER_FACE + uint32_t(j) * STAR_CELLS_PER_FACE + uint32_t(i);
+  }
+}
+
+void RtxAtmosphere::buildStarCatalogueBuffers(DxvkContext* ctx) {
+  if (m_starEntryBuffer != nullptr) {
+    return;   // compile-time data; built once
+  }
+
+  // 256-entry chroma table indexed by the catalogue's packed B-V byte, so the
+  // per-star work below is a lookup and the shader does no colour maths at all.
+  float chromaR[256], chromaG[256], chromaB[256];
+  for (uint32_t i = 0; i < 256; ++i) {
+    const float bv = float(i) / 40.0f - 0.5f;
+    starChromaFromBv(bv, chromaR[i], chromaG[i], chromaB[i]);
+  }
+
+  struct Decoded { float dir[3]; uint32_t packed; float mag; };
+  std::vector<Decoded> decoded;
+  decoded.reserve(kStarCatalogueCount);
+
+  for (uint32_t i = 0; i < kStarCatalogueCount; ++i) {
+    const StarCatalogueRecord& rec = kStarCatalogue[i];
+    const float ra = (float(rec.ra) / 65536.0f) * 2.0f * kFhPi;
+    const float dec = (float(rec.dec) / 32767.0f) * (kFhPi * 0.5f);
+    const float mag = float(rec.v) / 25.0f - 2.0f;
+
+    // Celestial frame: +Y is the pole, which is the frame the existing
+    // starAxisElevation / starRotation controls already rotate about.
+    const float cosDec = std::cos(dec);
+    Decoded d;
+    d.dir[0] = cosDec * std::cos(ra);
+    d.dir[1] = std::sin(dec);
+    d.dir[2] = cosDec * std::sin(ra);
+
+    const uint32_t r = uint32_t(std::min(chromaR[rec.bv] * 255.0f + 0.5f, 255.0f));
+    const uint32_t g = uint32_t(std::min(chromaG[rec.bv] * 255.0f + 0.5f, 255.0f));
+    const uint32_t b = uint32_t(std::min(chromaB[rec.bv] * 255.0f + 0.5f, 255.0f));
+    d.packed = r | (g << 8) | (b << 16) | (uint32_t(rec.v) << 24);
+    d.mag = mag;
+    decoded.push_back(d);
+  }
+
+  // Brightest first, so the bright list the glare pass walks is the buffer's
+  // own prefix and needs no second structure.
+  std::sort(decoded.begin(), decoded.end(),
+            [](const Decoded& a, const Decoded& b) { return a.mag < b.mag; });
+  std::vector<Decoded> brightList(decoded.begin(),
+                                  decoded.begin() + std::min<size_t>(STAR_BRIGHT_COUNT, decoded.size()));
+
+  // Conservative binning. A star goes into every cell that comes within
+  // STAR_BIN_MARGIN_RAD of it, so a ray reads one cell and still sees every
+  // star whose drawn profile could reach it. The margin is walked as a small
+  // cross on the cube face rather than solved analytically - cells are 0.6 to
+  // 1.8 degrees and the margin is 0.25, so the four axial probes plus the
+  // diagonals cover every cell the disc can touch.
+  std::vector<std::vector<uint32_t>> cellStars(STAR_CELL_COUNT);
+  const float margin = STAR_BIN_MARGIN_RAD;
+  for (uint32_t i = 0; i < decoded.size(); ++i) {
+    const Decoded& d = decoded[i];
+    uint32_t seen[9];
+    uint32_t seenCount = 0;
+    for (int oy = -1; oy <= 1; ++oy) {
+      for (int ox = -1; ox <= 1; ++ox) {
+        // Offset the direction by the margin in two tangent directions and bin
+        // wherever it lands. Building the tangent frame per probe keeps this
+        // correct across face boundaries, where a fixed 2D offset would not.
+        Vector3 dir(d.dir[0], d.dir[1], d.dir[2]);
+        Vector3 up = (std::abs(dir.y) > 0.99f) ? Vector3(1.0f, 0.0f, 0.0f) : Vector3(0.0f, 1.0f, 0.0f);
+        Vector3 tx = normalize(cross(up, dir));
+        Vector3 ty = cross(dir, tx);
+        Vector3 probe = dir + tx * (float(ox) * margin) + ty * (float(oy) * margin);
+        probe = normalize(probe);
+        const uint32_t cell = starCellIndex(probe.x, probe.y, probe.z);
+
+        bool dup = false;
+        for (uint32_t s = 0; s < seenCount; ++s) { if (seen[s] == cell) { dup = true; break; } }
+        if (dup) { continue; }
+        seen[seenCount++] = cell;
+        cellStars[cell].push_back(i);
+      }
+    }
+  }
+
+  // Flatten to entries + prefix sums.
+  std::vector<uint32_t> offsets(STAR_CELL_COUNT + 1, 0u);
+  std::vector<StarEntry> entries;
+  entries.reserve(decoded.size() * 2 + STAR_BRIGHT_COUNT);
+
+  // The bright list occupies the first STAR_BRIGHT_COUNT slots.
+  for (const Decoded& d : brightList) {
+    StarEntry e;
+    e.dir = Vector3(d.dir[0], d.dir[1], d.dir[2]);
+    e.packed = d.packed;
+    entries.push_back(e);
+  }
+
+  uint32_t maxOccupancy = 0;
+  for (uint32_t c = 0; c < STAR_CELL_COUNT; ++c) {
+    offsets[c] = uint32_t(entries.size());
+    maxOccupancy = std::max(maxOccupancy, uint32_t(cellStars[c].size()));
+    for (uint32_t idx : cellStars[c]) {
+      StarEntry e;
+      e.dir = Vector3(decoded[idx].dir[0], decoded[idx].dir[1], decoded[idx].dir[2]);
+      e.packed = decoded[idx].packed;
+      entries.push_back(e);
+    }
+  }
+  offsets[STAR_CELL_COUNT] = uint32_t(entries.size());
+
+  Logger::info(str::format(
+    "Star catalogue: ", kStarCatalogueCount, " stars -> ", entries.size(),
+    " binned entries across ", STAR_CELL_COUNT, " cells (worst cell ", maxOccupancy,
+    "), ", (entries.size() * sizeof(StarEntry) + offsets.size() * sizeof(uint32_t)) / 1024,
+    " KB"));
+
+  DxvkBufferCreateInfo info = {};
+  info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+  info.stages = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+              | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
+  info.access = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+
+  info.size = sizeof(StarEntry) * entries.size();
+  m_starEntryBuffer = m_device->createBuffer(
+    info, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, DxvkMemoryStats::Category::RTXBuffer,
+    "Atmosphere Star Entries");
+  ctx->updateBuffer(m_starEntryBuffer, 0, info.size, entries.data());
+
+  info.size = sizeof(uint32_t) * offsets.size();
+  m_starCellOffsetBuffer = m_device->createBuffer(
+    info, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, DxvkMemoryStats::Category::RTXBuffer,
+    "Atmosphere Star Cell Offsets");
+  ctx->updateBuffer(m_starCellOffsetBuffer, 0, info.size, offsets.data());
+
+  m_starEntryCount = uint32_t(entries.size());
 }
 
 void RtxAtmosphere::syncDistantLights(LightManager& lm, const AtmosphereArgs& args) {
@@ -4213,15 +4533,23 @@ void RtxAtmosphere::syncDistantLights(LightManager& lm, const AtmosphereArgs& ar
     ensureLight(m_sunLight, propDir, sunHalfAngle, radiance, /*cloudShadowed=*/true);
   }
 
-  // ---- Moons (lazily created; mirror sampleAtmosphereMoonLight radiance) ----
-  const float moonNee = args.moonNeeStrength;
-  const float surfMoon = args.surfaceMoonBrightness;
-  const float nightFactor = fhSmoothstep(0.02f, -0.05f, args.sunDirection.y);
+  // ---- Moons: one irradiance, shared with the sky, the clouds and the disk ----
+  //
+  // moonNeeStrength, surfaceMoonBrightness and the nightFactor gate are all
+  // gone. surfaceMoonBrightness was 50 and cloudMoonBrightness 0.2, so the
+  // ground saw 250x the moonlight the clouds did and the difference was being
+  // papered over by a uniform blue ambient. Both are now the same number.
+  //
+  // Dropping the nightFactor gate keeps the light alive by day at physical
+  // strength - around 1/400,000 of the sun for a real-size moon, so RTXDI will
+  // essentially never sample it and the cost is one light-list entry. The
+  // night gain's own adaptation ramp is the only twilight dependence.
+  const float nightGain = fhNightGain(args);
   for (uint32_t i = 0; i < MAX_MOONS; ++i) {
     const MoonParams& m = args.moons[i];
     const Vector3 dirRaw(m.direction.x, m.direction.y, m.direction.z);
     const float len = std::sqrt(dirRaw.x * dirRaw.x + dirRaw.y * dirRaw.y + dirRaw.z * dirRaw.z);
-    const bool lit = (m.enabled >= 0.5f) && (moonNee > 0.0f) && (nightFactor > 0.001f) && (len > 1e-4f);
+    const bool lit = (m.enabled >= 0.5f) && (len > 1e-4f);
 
     if (!lit && m_moonLights[i] == nullptr) {
       continue;
@@ -4231,18 +4559,32 @@ void RtxAtmosphere::syncDistantLights(LightManager& lm, const AtmosphereArgs& ar
                                        : Vector3(0.0f, 1.0f, 0.0f);
     Vector3 radiance(0.0f, 0.0f, 0.0f);
     if (lit) {
-      const Vector3 T = fhAtmTransmittanceYUp(args, dirN);
-      const Vector3 sunIll(args.sunIlluminance.x, args.sunIlluminance.y, args.sunIlluminance.z);
-      const Vector3 color(m.color.x, m.color.y, m.color.z);
-      const Vector3 sharedFactor = fhMul(fhMul(sunIll, color), T) * (m.brightness / kFhPi);
-      const float phaseGlow = 0.5f - 0.5f * std::cos(m.phase * 2.0f * kFhPi);
-      const float moonSolidAngleSr = 2.0f * kFhPi * (1.0f - std::cos(m.angularRadius));
-      const Vector3 sample = sharedFactor * (phaseGlow * moonSolidAngleSr * moonNee * surfMoon * nightFactor);
-      radiance = sample * (radScale / kFhPi);
+      // RtDistantLight::radiance is E / pi - the exit radiance of a white
+      // Lambert surface facing the light (distant_light.slangh:88 divides by
+      // sin^2(halfAngle) against a uniform-cone pdf).
+      const Vector3 E = fhMoonIrradianceFrame(args, m, dirN, nightGain);
+      radiance = E * (radScale / kFhPi);
     }
     const Vector3 toMoon = toWorld(dirN);
     const Vector3 propDir = lit ? Vector3(-toMoon.x, -toMoon.y, -toMoon.z) : Vector3(0.0f, -1.0f, 0.0f);
-    ensureLight(m_moonLights[i], propDir, m.angularRadius, radiance, /*cloudShadowed=*/false);
+
+    // Softness, decoupled from the visible disc exactly as the sun's is. The
+    // moon's true angular radius is within a hundredth of a degree of the
+    // sun's, so a physical moon throws shadows just as hard-edged - which is
+    // correct, and just as often not what is wanted. Same control, same
+    // meaning, same zero-means-physical default.
+    const float moonSoftnessDeg = RtxAtmosphere::moonShadowSoftnessDeg();
+    const float moonHalfAngle = (moonSoftnessDeg > 0.0f) ? (moonSoftnessDeg * (kFhPi / 180.0f))
+                                                         : m.angularRadius;
+
+    // Cloud shadowing, which the sun has had and the moon has not. A moon is a
+    // distant light behind the same cloud deck, so an overcast night was
+    // getting sharp moon shadows on the ground with no moon visible overhead -
+    // the one gap that reads as a bug rather than as a look. Opt-out rather
+    // than opt-in because the cost is the sun's already-paid cloud-shadow
+    // lookup, and off is the old behaviour for anyone who tuned against it.
+    ensureLight(m_moonLights[i], propDir, moonHalfAngle, radiance,
+                /*cloudShadowed=*/RtxAtmosphere::moonCloudShadowed());
   }
 
   // ---- Lightning scene flash (fork — 2026-07-14, tier 2) ----
