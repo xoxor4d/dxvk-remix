@@ -558,7 +558,7 @@ vec3 evalAtmosphereRadiance(
   vec3 combinedMoonIrradiance = vec3(0.0f);
   if (args.moonAtmosphericCouplingStrength > 0.001f) {
     float sunElev_local = sunDir.y;
-    float nightFactor   = smoothstep(0.02f, -0.05f, sunElev_local);
+    float nightFactor   = 1.0f; //smoothstep(0.02f, -0.05f, sunElev_local);
     if (nightFactor > 0.001f) {
       vec3  sumWeightedDir = vec3(0.0f);
       float sumWeight      = 0.0f;

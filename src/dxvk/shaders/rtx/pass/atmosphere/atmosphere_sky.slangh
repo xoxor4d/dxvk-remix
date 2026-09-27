@@ -760,7 +760,7 @@ vec3 evalSkyRadiance(
   // stars would render on top of the moon disk after the moon-replace mix below
   // (since stars are not in `radiance` here).
   float starThroughMoons = 1.0f;
-  float moonFade = smoothstep(0.0f, -0.09f, args.sunDirection.y);
+  float moonFade = 1.0f; //smoothstep(0.0f, -0.09f, args.sunDirection.y);
   if (moonFade > 0.001f) {
     // Moon glow/halo: soft radial Gaussian falloff around each enabled moon,
     // additive. Rendered before the opaque disks so each disk cleanly
