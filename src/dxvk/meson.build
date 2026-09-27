@@ -177,6 +177,7 @@ dxvk_src = files([
   'rtx_render/rtx.h',
   'rtx_render/rtx_accel_manager.cpp',
   'rtx_render/rtx_accel_manager.h',
+  'rtx_render/rtx_accel_size_cache.h',
   'rtx_render/rtx_accumulation.cpp',
   'rtx_render/rtx_accumulation.h',
   'rtx_render/rtx_sparse_rendering.cpp',
@@ -189,6 +190,9 @@ dxvk_src = files([
   'rtx_render/rtx_asset_package.h',
   'rtx_render/rtx_asset_replacer.cpp',
   'rtx_render/rtx_asset_replacer.h',
+  'rtx_render/rtx_atmosphere.cpp',
+  'rtx_render/rtx_atmosphere.h',
+  'rtx_render/rtx_atmosphere_ui.cpp',
   'rtx_render/rtx_auto_exposure.cpp',
   'rtx_render/rtx_auto_exposure.h',
   'rtx_render/rtx_bindless_resource_manager.cpp',
@@ -217,8 +221,6 @@ dxvk_src = files([
   'rtx_render/rtx_dlfg.h',
   'rtx_render/rtx_dlss.cpp', 
   'rtx_render/rtx_dlss.h',
-  'rtx_render/rtx_dlss_neural_rendering.cpp',
-  'rtx_render/rtx_dlss_neural_rendering.h',
   'rtx_render/rtx_draw_call_cache.cpp',
   'rtx_render/rtx_draw_call_cache.h',
   'rtx_render/rtx_draw_call_tracker.cpp',
@@ -227,8 +229,32 @@ dxvk_src = files([
   'rtx_render/rtx_dust_particles.h',
   'rtx_render/rtx_env.cpp',
   'rtx_render/rtx_env.h',
+  'rtx_render/rtx_external_effect_image.cpp',
+  'rtx_render/rtx_external_effect_image.h',
+  'rtx_render/rtx_external_effect_manifest.cpp',
+  'rtx_render/rtx_external_effect_manifest.h',
+  'rtx_render/rtx_external_effects.cpp',
+  'rtx_render/rtx_external_effects.h',
   'rtx_render/rtx_file_watch.cpp',
   'rtx_render/rtx_file_watch.h',
+  'rtx_render/rtx_fork_api_entry.cpp',
+  'rtx_render/rtx_fork_capture.cpp',
+  'rtx_render/rtx_fork_fsr.cpp',
+  'rtx_render/rtx_fork_fsr.h',
+  'rtx_render/rtx_fork_fsr_framegen.cpp',
+  'rtx_render/rtx_fork_fsr_framegen.h',
+  'rtx_render/rtx_fork_game_state.h',
+  'rtx_render/rtx_fork_hooks.h',
+  'rtx_render/rtx_fork_light.cpp',
+  'rtx_render/rtx_fork_overlay.cpp',
+  'rtx_render/rtx_fork_rcas.cpp',
+  'rtx_render/rtx_fork_rcas.h',
+  'rtx_render/rtx_fork_post_processing.cpp',
+  'rtx_render/rtx_fork_post_processing.h',
+  'rtx_render/rtx_fork_submit.cpp',
+  'rtx_render/rtx_fork_tonemap.cpp',
+  'rtx_render/rtx_fork_tonemap.h',
+  'rtx_render/rtx_fork_upscaler_ui.cpp',
   'rtx_render/rtx_game_capturer.cpp',
   'rtx_render/rtx_game_capturer.h',
   'rtx_render/rtx_game_capturer_utils.h',
@@ -263,8 +289,6 @@ dxvk_src = files([
   'rtx_render/rtx_lights_data.h',
   'rtx_render/rtx_light_utils.cpp',
   'rtx_render/rtx_light_utils.h',
-  'rtx_render/rtx_local_tone_mapping.cpp',
-  'rtx_render/rtx_local_tone_mapping.h',
   'rtx_render/rtx_materials.cpp',
   'rtx_render/rtx_materials.h',
   'rtx_render/rtx_material_data.h',
@@ -279,6 +303,8 @@ dxvk_src = files([
   'rtx_render/rtx_nee_cache.h',
   'rtx_render/rtx_neural_radiance_cache.cpp',
   'rtx_render/rtx_neural_radiance_cache.h',
+  'rtx_render/rtx_neural_uplift.cpp',
+  'rtx_render/rtx_neural_uplift.h',
   'rtx_render/rtx_ngx_wrapper.cpp',
   'rtx_render/rtx_ngx_wrapper.h',
   'rtx_render/rtx_nis.cpp',
@@ -336,6 +362,8 @@ dxvk_src = files([
   'rtx_render/rtx_semaphore.h',
   'rtx_render/rtx_shader_manager.cpp',
   'rtx_render/rtx_shader_manager.h',
+  'rtx_render/rtx_sharc.cpp',
+  'rtx_render/rtx_sharc.h',
   'rtx_render/rtx_sparse_unique_cache.h',
   'rtx_render/rtx_staging.h',
   'rtx_render/rtx_staging.cpp',
@@ -352,12 +380,17 @@ dxvk_src = files([
   'rtx_render/rtx_types.cpp',
   'rtx_render/rtx_types.h',
   'rtx_render/rtx_utils.h',
+  'rtx_render/rtx_weather.cpp',
+  'rtx_render/rtx_weather.h',
   'rtx_render/rtx_xess.cpp',
   'rtx_render/rtx_xess.h',
 
   'rtx_render/rtx_system_info.cpp',
   'rtx_render/rtx_system_info.h',
   
+  'rtx_render/rtx_fork_particle_spawn.cpp',
+  'rtx_render/rtx_precipitation.cpp',
+  'rtx_render/rtx_precipitation.h',
   'rtx_render/rtx_particle_system.cpp',
   'rtx_render/rtx_particle_system.h',
 
@@ -419,6 +452,8 @@ dxvk_src = files([
   'imgui/dxvk_imgui_first_use_guide.h',
   'imgui/dxvk_imgui_splash.cpp',
   'imgui/dxvk_imgui_splash.h',
+  'imgui/imgui_remix_exports.cpp',
+  'imgui/imgui_remix_exports.h',
   'imgui/rtx_user_menu.cpp',
   'imgui/imconfig.h',
   'imgui/imgui.cpp',
@@ -470,6 +505,25 @@ if not dxvk_is_woa
   )
 endif
 
+# FSR3 (FidelityFX SDK) dependency
+# Link against the prebuilt import library for the signed DLL.
+fsr3_lib_path = join_paths(global_src_root_norm, 'submodules/FidelityFX-SDK/PrebuiltSignedDLL')
+fsr3_include_dir = include_directories(
+  '../../submodules/FidelityFX-SDK/ffx-api/include'
+)
+fsr3_lib = dxvk_compiler.find_library('amd_fidelityfx_vk', dirs : fsr3_lib_path, required : true)
+fsr3_dep = declare_dependency(
+  dependencies : [ fsr3_lib ],
+  include_directories : fsr3_include_dir
+)
+
+# amd_fidelityfx_vk.dll is delay-loaded rather than statically imported: without
+# this, a missing/blocked FidelityFX DLL makes the whole of d3d9.dll fail to
+# load and the game will not start at all. Delay-loading downgrades that to
+# "FSR reports unsupported", which is what fork_hooks::fsrRuntimeAvailable()
+# probes for before any FFX entry point is called.
+fsr3_delay_load_args = [ '/DELAYLOAD:amd_fidelityfx_vk.dll' ]
+
 nrc_lib = dxvk_compiler.find_library('NRC_Vulkan', dirs : nrc_lib_path, required : true)
 
 nrc_dep = declare_dependency(
@@ -501,6 +555,13 @@ dxvk_deps = [ thread_dep, vkcommon_dep, dxvk_extradep, usd_dep, lssUsd_dep, nrc_
 if not dxvk_is_woa
   dxvk_deps += xess_dep
 endif
+
+# NV-DXVK start: FSR 3.1
+# Appended on its own line rather than inlined into the dxvk_deps literal above:
+# upstream rewrites that literal (e.g. moving xess_dep under a Windows-on-ARM
+# guard), and an inlined entry turns every such edit into a merge conflict.
+dxvk_deps += [ fsr3_dep ]
+# NV-DXVK end
 
 if enable_rtxio
   dxvk_deps += rtxio_dep

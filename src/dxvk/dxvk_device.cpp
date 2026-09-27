@@ -26,11 +26,16 @@
 #include "rtx_render/rtx_ray_reconstruction.h"
 #include "rtx_render/rtx_texture_manager.h"
 #include "rtx_render/rtx_neural_radiance_cache.h"
+#include "rtx_render/rtx_sharc.h"
 #include "rtx_render/rtx_rtxdi_rayquery.h"
 #include "rtx_render/rtx_restir_gi_rayquery.h"
 #include "rtx_render/rtx_composite.h"
 #include "rtx_render/rtx_debug_view.h"
 #include "rtx_render/rtx_xess.h"
+#include "rtx_render/rtx_fork_fsr.h"
+#include "rtx_render/rtx_fork_fsr_framegen.h"
+#include "rtx_render/rtx_fork_rcas.h"
+#include "rtx_render/rtx_external_effects.h"
 
 #include "rtx_render/rtx_sparse_rendering.h"
 
@@ -71,6 +76,16 @@ namespace dxvk {
     if (adapterQueueInfos.present.has_value()) {
       m_queues.present = getQueue(adapterQueueInfos.present->queueFamilyIndex, adapterQueueInfos.present->queueIndex);
     }
+
+    // NV-DXVK start: FSR FG integration
+    if (adapterQueueInfos.imageAcquire.has_value()) {
+      m_queues.imageAcquire = getQueue(adapterQueueInfos.imageAcquire->queueFamilyIndex, adapterQueueInfos.imageAcquire->queueIndex);
+    }
+
+    if (adapterQueueInfos.fsrPresent.has_value()) {
+      m_queues.fsrPresent = getQueue(adapterQueueInfos.fsrPresent->queueFamilyIndex, adapterQueueInfos.fsrPresent->queueIndex);
+    }
+    // NV-DXVK end
 
     if (__DLFG_QUEUE_INFO_CHECK(adapterQueueInfos)) {
       // Note: When DLFG is active a separate queue is used for out of band rendering/presentation, so it should be marked accordingly.
@@ -141,6 +156,11 @@ namespace dxvk {
 
     // NV-DXVK start: RTX initializer
     m_objects.getRtxInitializer().release();
+    // RemixFX effects hang off a process lifetime singleton, so the images and
+    // shaders they own are the only device resources with no owner that dies
+    // alongside the device. Released here, after waitForIdle, for the same
+    // reason everything else in this destructor is.
+    RtxExternalEffects::instance().onDestroyDevice(this);
     // NV-DXVK end
 
 #ifdef TRACY_ENABLE
@@ -532,6 +552,9 @@ namespace dxvk {
     m_textureManager { std::make_unique<RtxTextureManager>(device) },
     m_imgui(device),
     m_dummyResources(device),
+    // NV-DXVK start: Numos atmosphere
+    m_atmosphere(device),
+    // NV-DXVK end
     m_globalVolumetrics(device),
     m_sparseRendering(device),
     m_pathtracerGbuffer(device),
@@ -542,6 +565,8 @@ namespace dxvk {
     m_demodulate(device),
     m_neeCache(device),
     m_neuralRadianceCache(device),
+    m_precipitation(device),
+    m_sharc(device),
     m_primaryDirectLightDenoiser(device, DenoiserType::DirectLight),
     m_primaryIndirectLightDenoiser(device, DenoiserType::IndirectLight),
     m_primaryCombinedLightDenoiser(device, DenoiserType::DirectAndIndirectLight),
@@ -553,16 +578,18 @@ namespace dxvk {
     m_referenceDenoiserSecondLobe2(device, DenoiserType::Reference),
     m_dlss(device),
     m_rayReconstruction(device),
-    m_dlssNeuralRendering(device),
+    m_neuralUplift(device),
     m_nis(device),
     m_taa(device),
     m_xess(device),
+    m_fsr(device),
+    m_fsrFrameGen(device),
+    m_rcas(device),
     m_composite(device),
     m_gpuCrash(device),
     m_debug_view(device),
     m_autoExposure(device),
     m_toneMapping(device),
-    m_localToneMapping(device),
     m_bloom(device),
     m_geometryUtils(device),
     m_imageUtils(device),
@@ -589,9 +616,10 @@ namespace dxvk {
     m_referenceDenoiserSecondLobe1.get().onDestroy();
     m_referenceDenoiserSecondLobe2.get().onDestroy();
     m_rayReconstruction.get().onDestroy();
-    m_dlssNeuralRendering.get().onDestroy();
+    m_neuralUplift.get().onDestroy();
     m_dlss.get().onDestroy();
     m_dlfg.get().onDestroy();
+    m_fsrFrameGen.get().onDestroy();
     // NV-DXVK start: Shut down NGX after releasing its features
     m_device->waitForIdle();
     m_ngxContext.get().shutdown();

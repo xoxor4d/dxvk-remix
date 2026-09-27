@@ -62,6 +62,7 @@ struct AssetReplacement;
 struct AssetReplacer;
 class OpacityMicromapManager;
 class TerrainBaker;
+class WeatherBlender;
 
 // The resource cache can be *searched* by other users
 class ResourceCache {
@@ -117,11 +118,33 @@ struct ExternalDrawState {
   XXH64_hash_t computeExternalDrawIdentityHash() const;
 };
 
+// Forward decls so SceneManager can friend the fork hook that needs access
+// to private m_drawCallMeta state. See docs/fork-touchpoints.md.
+class SceneManager;
+namespace fork_hooks {
+  void externalDrawObjectPicking(
+    DxvkDevice& device,
+    DrawCallState& drawCall,
+    XXH64_hash_t textureHash,
+    SceneManager& scene);
+}
+
 // Scene manager is a super manager, it's the interface between rendering and world state
 // along with managing the operation of other caches, scene manager also manages the cache
 // directly for "SceneObject"'s - which are "unique meshes/geometry", which map 1-to-1 with
 // BLAS entries in raytracing terminology.
 class SceneManager : public CommonDeviceObject, public ResourceCache {
+  friend class ImGUI;
+  RTX_OPTION("rtx.geometry", bool, optimizeAnimatedTexcoords, false,
+    "Refresh UV-only animation without a BLAS refit for compatible fixed-function geometry. "
+    "Shader capture, skinning, smooth normals, and active opacity micromaps retain the refit path. "
+    "Disable to use the conservative animation refresh path.");
+  // Fork touchpoint: the external-draw object-picking hook needs access to
+  // private m_drawCallMeta. Tracked as an inline tweak in
+  // docs/fork-touchpoints.md.
+  friend void fork_hooks::externalDrawObjectPicking(
+    DxvkDevice&, DrawCallState&, XXH64_hash_t, SceneManager&);
+
 public:
   SceneManager(SceneManager const&) = delete;
   SceneManager& operator=(SceneManager const&) = delete;
@@ -178,6 +201,8 @@ public:
   GraphManager& getGraphManager() { return m_graphManager; }
   std::unique_ptr<AssetReplacer>& getAssetReplacer() { return m_pReplacer; }
   TerrainBaker& getTerrainBaker() { return *m_terrainBaker.get(); }
+
+  WeatherBlender* getWeatherBlender() const { return m_weatherBlender.get(); }
 
   // Scene utility functions
   static Vector3 getSceneUp();
@@ -448,6 +473,8 @@ private:
   std::unordered_map<XXH64_hash_t, uint32_t> m_currentFrameMeshHashes;
 
   DrawCallTracker m_drawCallTracker;
+
+  std::unique_ptr<WeatherBlender> m_weatherBlender;
 };
 
 }  // namespace nvvk

@@ -22,6 +22,7 @@
 #include <cstring>
 #include <cmath>
 #include <cassert>
+#include <array>
 
 #include "dxvk_device.h"
 #include "dxvk_scoped_annotation.h"
@@ -36,6 +37,8 @@
 #include "rtx_terrain_baker.h"
 #include "rtx_texture_manager.h"
 #include "rtx_neural_radiance_cache.h"
+#include "rtx_sharc.h"
+#include "rtx_fork_hooks.h"
 #include "rtx_ray_reconstruction.h"
 #include "rtx_xess.h"
 #include "rtx_rtxdi_rayquery.h"
@@ -74,6 +77,10 @@
 
 #include "rtx_matrix_helpers.h"
 #include "../util/util_fastops.h"
+
+#include "rtx_atmosphere.h"
+#include "rtx_weather.h"
+#include "rtx_precipitation.h"
 
 // Destructor requires the struct definitions
 #include "rtx_sky.h"
@@ -269,6 +276,8 @@ namespace dxvk {
         uint32_t recommendedJitterLength = xess.calcRecommendedJitterSequenceLength();
         uint32_t currentJitterLength = RtxOptions::cameraJitterSequenceLength();
       }
+    } else if (RtxOptions::isFSREnabled()) {
+      fork_hooks::setFsrDownscaleExtent(*this, upscaleExtent, downscaleExtent);
     } else if (shouldUseNIS() || shouldUseTAA()) {
       auto resolutionScale = RtxOptions::resolutionScale();
       downscaleExtent.width = uint32_t(std::roundf(upscaleExtent.width * resolutionScale));
@@ -293,8 +302,8 @@ namespace dxvk {
     uint32_t renderSize[] = { downscaleExtent.width, downscaleExtent.height };
     uint32_t displaySize[] = { upscaleExtent.width, upscaleExtent.height };
 
-    DlssNeuralRendering& dlssnr = m_common->metaDlssNeuralRendering();
-    dlssnr.setDlssNeuralRenderingSettings(displaySize);
+    DxvkNeuralUplift& dlssnr = m_common->metaNeuralUplift();
+    dlssnr.setNeuralUpliftSettings(displaySize);
 
     // Set resolution to cameras for jittering
     for (int i = 0; i < CameraType::Count; i++) {
@@ -329,6 +338,8 @@ namespace dxvk {
       return InternalUpscaler::DLSS_RR;
     } else if (shouldUseXeSS() && m_common->metaXeSS().isActive()) {
       return InternalUpscaler::XeSS;
+    } else if (fork_hooks::isFsrUpscalerActive(*this)) {
+      return InternalUpscaler::FSR;
     } else if (shouldUseNIS()) {
       return InternalUpscaler::NIS;
     } else if (shouldUseTAA()) {
@@ -423,6 +434,18 @@ namespace dxvk {
     // Release resources when switching upscalers
     m_currentUpscaler = getCurrentFrameUpscaler();
     if (m_currentUpscaler != m_previousUpscaler) {
+      // Say which upscaler actually won (fork -- 2026-09-17). getCurrentFrameUpscaler gates DLSS and
+      // DLSS-RR on isActive(), so an option set to DLSS can still resolve to FSR, NIS or None if NGX
+      // never came up -- and nothing logged the resolved choice, so it had to be inferred from option
+      // defaults. That inference was wrong once already. Log what was chosen, not what was asked for.
+      {
+        static const char* const kUpscalerNames[7] = { "None", "DLSS-SR", "NIS", "TAA-U", "XeSS", "FSR", "DLSS-RR" };
+        const uint32_t idx = static_cast<uint32_t>(m_currentUpscaler);
+        Logger::info(str::format("[RTX] Active upscaler resolved to: ",
+          idx < 7u ? kUpscalerNames[idx] : "?",
+          " (useRayReconstruction=", useRayReconstruction() ? "true" : "false",
+          ", upscalerType option=", static_cast<int>(RtxOptions::upscalerType()), ")"));
+      }
       // Need to wait before the previous frame is executed.
       getDevice()->waitForIdle();
 
@@ -642,13 +665,21 @@ namespace dxvk {
       m_submitContainsInjectRtx = true;
       m_cachedReflexFrameId = cachedReflexFrameId;
 
+      beginGpuStageTiming();
+
+      // Submit weather precipitation before prepareSceneData; particle
+      // simulation consumes this frame's spawn contexts there.
+      getCommonObjects()->metaPrecipitation().submit(*this);
+
       // Update all the GPU buffers needed to describe the scene
       getSceneManager().prepareSceneData(this, m_execBarriers);
+      recordGpuStageTiming("ScenePreparation");
       
       // If we really don't have any RT to do, just bail early (could be UI/menus rendering)
       if (getSceneManager().getSurfaceBuffer() != nullptr) {
 
         VkExtent3D downscaledExtent = onInjectRtxFrameBegin(targetImage->info().extent);
+        recordGpuStageTiming("FrameResourcePreparation");
 
         Resources::RaytracingOutput& rtOutput = getResourceManager().getRaytracingOutput();
 
@@ -664,12 +695,26 @@ namespace dxvk {
 
         // Generate ray tracing constant buffer
         updateRaytraceArgsConstantBuffer(rtOutput, downscaledExtent, targetImage->info().extent);
+        recordGpuStageTiming("RaytraceArgsAfterAtmosphere");
 
         // Volumetric Lighting
         dispatchVolumetrics(rtOutput);
+        recordGpuStageTiming("Volumetrics");
         
         // Path Tracing
         dispatchPathTracing(rtOutput);
+
+        // Cloud screen pass (fork, world-space cloud migration Stage 4a). MUST run here, immediately
+        // after dispatchPathTracing and nowhere earlier: the march clamps against
+        // rtOutput.m_primaryLinearViewZ, which the G-buffer raytracing (metaPathtracerGbuffer) just
+        // finished writing for every pixel this frame. Before that call PrimaryLinearViewZ either holds
+        // last frame's stale content or is uninitialized, so moving this any earlier would clamp against
+        // the wrong frame's geometry (or none at all). See RtxAtmosphere::dispatchCloudScreenPass's doc
+        // comment for what stays behind in updateFrame/computeLuts instead.
+        m_common->metaAtmosphere().dispatchCloudScreenPass(*this, rtOutput);
+        recordGpuStageTiming("CloudScreen");
+        m_common->metaAtmosphere().dispatchCloudSampleStatistics(this);
+        recordGpuStageTiming("CloudSampleStatistics");
 
         // Neural Radiance Cache
         m_common->metaNeuralRadianceCache().dispatchTrainingAndResolve(*this, rtOutput);
@@ -679,6 +724,7 @@ namespace dxvk {
 
         // ReSTIR GI
         m_common->metaReSTIRGIRayQuery().dispatch(this, rtOutput);
+        recordGpuStageTiming("OtherLightingAndConfidence");
         
         if (captureScreenImage && captureDebugImage) {
           takeScreenshot("baseReflectivity", rtOutput.m_primaryBaseReflectivity.image(Resources::AccessType::Read));
@@ -688,6 +734,7 @@ namespace dxvk {
 
         // Demodulation
         dispatchDemodulate(rtOutput);
+        recordGpuStageTiming("Demodulation");
 
         // Note: Primary direct diffuse/specular radiance textures noisy and in a demodulated state after demodulation step.
         if (captureScreenImage && captureDebugImage) {
@@ -697,6 +744,7 @@ namespace dxvk {
 
         // Denoising
         dispatchDenoise(rtOutput);
+        recordGpuStageTiming("Denoising");
 
         // Note: Primary direct diffuse/specular radiance textures denoised but in a still demodulated state after denoising step.
         if (captureScreenImage && captureDebugImage) {
@@ -706,6 +754,7 @@ namespace dxvk {
 
         // Composition
         dispatchComposite(rtOutput);
+        recordGpuStageTiming("Composition");
 
         // Post composite Debug View that may overwrite Composite output
         dispatchReplaceCompositeWithDebugView(rtOutput);
@@ -716,6 +765,7 @@ namespace dxvk {
 
         getCommonObjects()->getTextureManager().copySamplerFeedbackToHost(this);
         dispatchObjectPicking(rtOutput, downscaledExtent, targetImage->info().extent);
+        recordGpuStageTiming("FeedbackAndPicking");
 
         // Upscaling if DLSS/NIS enabled, or the Composition Pass will do upscaling
         if (m_currentUpscaler == InternalUpscaler::DLSS) {
@@ -729,6 +779,9 @@ namespace dxvk {
         } else if (m_currentUpscaler == InternalUpscaler::XeSS) {
           m_common->metaAutoExposure().createResources(this);
           dispatchXeSS(rtOutput);
+        } else if (m_currentUpscaler == InternalUpscaler::FSR) {
+          m_common->metaAutoExposure().createResources(this);
+          fork_hooks::dispatchFsrUpscale(*this, rtOutput);
         } else if (m_currentUpscaler == InternalUpscaler::NIS) {
           dispatchNIS(rtOutput);
         } else if (m_currentUpscaler == InternalUpscaler::TAAU){
@@ -743,30 +796,35 @@ namespace dxvk {
             { 0, 0, 0 },
             rtOutput.m_compositeOutputExtent);
         }
+        fork_hooks::dispatchRcasSharpening(*this, rtOutput);
         m_previousUpscaler = m_currentUpscaler;
+        recordGpuStageTiming("UpscalingOrRayReconstruction");
 
         RtxDustParticles& dust = m_common->metaDustParticles();
         dust.simulateAndDraw(this, m_state, rtOutput);
 
+        // DLSS-NR deliberately stays outside the ordered post-processing stack:
+        // it is an upscaling-adjacent denoiser rather than a reorderable post
+        // effect, it must observe linear HDR before any stack member runs, it
+        // performs its own auto-exposure dispatch internally, and it must not be
+        // gated by the stack's "Post FX Enabled" switch.
         const bool dlssNrEnabled = dispatchDlssNR(rtOutput);
-
-        dispatchBloom(rtOutput);
-
-        // Motion blur runs before tonemapping while the image is still in linear HDR space.
-        dispatchPostFxMotionBlur(rtOutput);
-
-        dispatchToneMapping(rtOutput, !dlssNrEnabled);
-
-        // Lens effects (chromatic aberration, vignette) run AFTER tonemapping. They are
-        // display-space artifacts so they operate on post-tonemap LDR data.
-        dispatchPostFxLensEffects(rtOutput);
 
         // Final output pass converts the linear post-tonemap LDR image to sRGB and applies
         // dithering as the very last step. SRGB conversion is suppressed for screenshot
         // captures (WAR for TREX-553: NVTT implicitly applies sRGB during dds->png conversion
         // for 16bit float formats).
         const bool performSRGBConversion = !captureScreenImage && g_allowSrgbConversionForOutput;
-        dispatchSRGBDither(rtOutput, performSRGBConversion);
+        // !dlssNrEnabled is forwarded to dispatchToneMapping's updateAutoExposure
+        // parameter: DLSS-NR already dispatched auto exposure above, so the
+        // tonemapper must not dispatch it a second time.
+        fork_hooks::dispatchPostProcessingStack(
+          this, rtOutput, performSRGBConversion, /* updateAutoExposure */ !dlssNrEnabled);
+
+        // Composite the Remix C API screen overlay after tone mapping and display encoding,
+        // before screenshot capture, so plugin UI is never fed through a post-tonemap pass.
+        dispatchScreenOverlay(rtOutput);
+        recordGpuStageTiming("PostProcessing");
 
         if (captureScreenImage) {
           if (m_common->metaDebugView().debugViewIdx() == DEBUG_VIEW_DISABLED) {
@@ -789,6 +847,9 @@ namespace dxvk {
 
         dispatchDLFG();
 
+        // Match FSR-3.1 sequencing: configure/prepare frame generation before final game-target blit.
+        fork_hooks::dispatchFsrFrameGeneration(*this, srcImage);
+
         // Blit to the game target
         {
           ScopedGpuProfileZone(this, "Blit to Game");
@@ -807,6 +868,7 @@ namespace dxvk {
         raytracedThisFrame = true;
       }
 
+      endGpuStageTiming();
       m_framesWithoutValidScene = 0;
     } else {
       // If raytracing is only disabled because we don't have shaders available, we don't want to clear the scene.
@@ -1022,6 +1084,14 @@ namespace dxvk {
 
   void RtxContext::commitExternalGeometryToRT(std::unique_ptr<ExternalDrawState> state) {
     getSceneManager().submitExternalDraw(this, std::move(state));
+  }
+
+  void RtxContext::setScreenOverlayData(Rc<DxvkBuffer> stagingBuffer, uint32_t width, uint32_t height, VkFormat format, float opacity) {
+    m_pendingScreenOverlay = ScreenOverlayFrame {
+      std::move(stagingBuffer),
+      width, height,
+      format, opacity
+    };
   }
 
   static uint32_t jenkinsHash(uint32_t a) {
@@ -1291,6 +1361,7 @@ namespace dxvk {
     constants.enableNrc = nrc.isActive();
     constants.allowNrcTraining = NeuralRadianceCache::NrcOptions::trainCache();
     nrc.setRaytraceArgs(constants);
+    m_common->metaSharc().setRaytraceArgs(*this, constants);
 
     m_common->metaNeeCache().setRaytraceArgs(constants, m_resetHistory);
     constants.surfaceCount = getSceneManager().getAccelManager().getSurfaceCount();
@@ -1317,11 +1388,11 @@ namespace dxvk {
       constants.debugKnob = debugView.debugKnob();
       constants.forceFirstHitInGBufferPass = debugView.showFirstGBufferHit();
       constants.enableDlssNrControlMask =
-        m_common->metaDlssNeuralRendering().useDlssNeuralRendering() &&
-        !DlssNeuralRendering::useAutoMask();
+        m_common->metaNeuralUplift().useNeuralUplift() &&
+        !DxvkNeuralUplift::useAutoMask();
       constants.enableDlssNrVolumetricControlMask =
         constants.enableDlssNrControlMask &&
-        DlssNeuralRendering::enableVolumetricControlMask();
+        DxvkNeuralUplift::enableVolumetricControlMask();
 
       constants.gpuPrintThreadIndex = u16vec2 { kInvalidThreadIndex, kInvalidThreadIndex };
       constants.gpuPrintElementIndex = frameIdx % kMaxFramesInFlight;
@@ -1361,10 +1432,19 @@ namespace dxvk {
     constants.viewModelRayTMax = RtxOptions::ViewModel::rangeMeters() * RtxOptions::getMeterToWorldUnitScale();
     constants.roughnessDemodulationOffset = m_common->metaDemodulate().demodulateRoughnessOffset();
     
-    const RtxGlobalVolumetrics& globalVolumetrics = getCommonObjects()->metaGlobalVolumetrics();
+    const WeatherSnapshot* weatherSnapshot = getSceneManager().getWeatherBlender()
+      ? getSceneManager().getWeatherBlender()->getBlendedSnapshot()
+      : nullptr;
+
+    RtxGlobalVolumetrics& globalVolumetrics = getCommonObjects()->metaGlobalVolumetrics();
+    // Weather is transient frame state. Volumetrics and atmosphere consume the
+    // same immutable snapshot; authored RtxOptions remain untouched.
+    globalVolumetrics.applyWeatherOverride(weatherSnapshot);
     constants.volumeArgs = globalVolumetrics.getVolumeArgs(cameraManager, getSceneManager().getFogState(), enablePortalVolumes);
     constants.startInMediumMaterialIndex = getSceneManager().getStartInMediumMaterialIndex();
     OpaqueMaterialOptions::fillShaderParams(constants.opaqueMaterialArgs);
+    constants.opaqueMaterialArgs.legacySpecularLevel = std::clamp(LegacyMaterialDefaults::specularLevel(), 0.0f, 1.0f);
+    constants.opaqueMaterialArgs.legacyFresnelGrazing = std::clamp(LegacyMaterialDefaults::fresnelGrazing(), 0.0f, 1.0f);
     TranslucentMaterialOptions::fillShaderParams(constants.translucentMaterialArgs);
     ViewDistanceOptions::fillShaderParams(constants.viewDistanceArgs, RtxOptions::getMeterToWorldUnitScale());
     constants.alphaBlendSurfacePackMult = RtxOptions::getMeterToWorldUnitScale();
@@ -1387,6 +1467,41 @@ namespace dxvk {
     constants.resolveStochasticAlphaBlendThreshold = m_common->metaComposite().stochasticAlphaBlendOpacityThreshold();
 
     constants.skyBrightness = RtxOptions::skyBrightness();
+
+    constants.skyMode = static_cast<uint32_t>(RtxOptions::skyMode());
+    constants.particleSkyAmbientScale = std::max(
+      weatherSnapshot ? weatherSnapshot->precipitationSkyLight : PrecipitationSystem::skyLight(),
+      0.0f);
+
+    const SkyMode currentSkyMode = RtxOptions::skyMode();
+    if (currentSkyMode != m_lastSkyMode) {
+      if (currentSkyMode == SkyMode::Numos) {
+        auto skyProbe = getResourceManager().getSkyProbe(this, m_skyColorFormat);
+        auto skyMatte = getResourceManager().getSkyMatte(this, m_skyRtColorFormat);
+
+        VkClearValue clearValue = {};
+        if (skyProbe.view != nullptr) {
+          DxvkContext::clearRenderTarget(skyProbe.view, VK_IMAGE_ASPECT_COLOR_BIT, clearValue);
+        }
+        if (skyMatte.view != nullptr) {
+          DxvkContext::clearRenderTarget(skyMatte.view, VK_IMAGE_ASPECT_COLOR_BIT, clearValue);
+        }
+      }
+      m_lastSkyMode = currentSkyMode;
+    }
+
+    if (WeatherBlender* weather = getSceneManager().getWeatherBlender()) {
+      weather->update(GlobalTime::get().deltaTime());
+    }
+
+    RtxAtmosphere& atmosphere = getCommonObjects()->metaAtmosphere();
+    recordGpuStageTiming("RaytraceArgsBeforeAtmosphere");
+    const AtmosphereArgs atmosphereArgs = atmosphere.updateFrame(*this, weatherSnapshot, GlobalTime::get().deltaTime());
+    recordGpuStageTiming("AtmosphereFinish");
+    if (currentSkyMode == SkyMode::Numos) {
+      constants.atmosphereArgs = atmosphereArgs;
+    }
+
     constants.isLastCompositeOutputValid = restirGI.isActive() && restirGI.getLastCompositeOutput().matchesWriteFrameIdx(frameIdx - 1);
     constants.isZUp = RtxOptions::zUp();
     constants.enableCullingSecondaryRays = RtxOptions::enableCullingInSecondaryRays();
@@ -1428,6 +1543,9 @@ namespace dxvk {
     getDenoiseArgs(primaryDirectNrdArgs, primaryIndirectNrdArgs, secondaryNrdArgs);
 
     constants.primaryDirectMissLinearViewZ = primaryDirectNrdArgs.missLinearViewZ;
+    // Same sentinel to the cloud pass, which tests it to tell a sky ray from a surface hit but has no
+    // binding for NRD constants. Set here rather than duplicated as a literal.
+    getCommonObjects()->metaAtmosphere().setMissLinearViewZ(primaryDirectNrdArgs.missLinearViewZ);
 
     constants.wboitEnergyLossCompensation = RtxOptions::wboitEnergyLossCompensation();
     constants.wboitDepthWeightTuning = RtxOptions::wboitDepthWeightTuning();
@@ -1499,6 +1617,8 @@ namespace dxvk {
     bindResourceView(BINDING_VALUE_NOISE_SAMPLER, valueNoiseLut, nullptr);
     bindResourceSampler(BINDING_VALUE_NOISE_SAMPLER, linearSampler);
     bindResourceBuffer(BINDING_SAMPLER_READBACK_BUFFER, DxvkBufferSlice(samplerFeedbackBuffer, 0, samplerFeedbackBuffer.ptr() ? samplerFeedbackBuffer->info().size : 0));
+
+    getCommonObjects()->metaAtmosphere().bindResources(*this);
   }
 
   void RtxContext::bindResourceView(const uint32_t slot, const Rc<DxvkImageView>& imageView, const Rc<DxvkBufferView>& bufferView)
@@ -1572,41 +1692,161 @@ namespace dxvk {
     }
   }
 
+  void RtxContext::beginGpuStageTiming() {
+    m_gpuStageSlot = -1;
+    if (!(gpuStages() || RtxAtmosphere::cloudProfilingLog()) || !m_device->adapter()->deviceProperties().limits.timestampComputeAndGraphics) {
+      return;
+    }
+    for (auto& frame : m_gpuStageFrames) {
+      if (!frame.pending) {
+        continue;
+      }
+      std::array<DxvkQueryData, 64> data;
+      bool ready = true;
+      for (uint32_t i = 0; i < frame.count; ++i) {
+        const auto status = frame.queries[i]->getData(data[i]);
+        if (status != DxvkGpuQueryStatus::Available) {
+          ready = false;
+          if (status != DxvkGpuQueryStatus::Pending) {
+            frame.pending = false;
+          }
+          break;
+        }
+      }
+      if (!ready) {
+        continue;
+      }
+      const double scale = m_device->adapter()->deviceProperties().limits.timestampPeriod * 1e-6;
+      for (uint32_t i = 1; i < frame.count; ++i) {
+        const double milliseconds = double(data[i].timestamp.time - data[i - 1].timestamp.time) * scale;
+        if (std::strcmp(frame.labels[i], "CloudScreen") == 0) {
+          const char* mode = frame.cloudMode == 1 ? "NoMoonShadows"
+                           : frame.cloudMode == 2 ? "DensityOnly"
+                           : frame.cloudMode == 3 ? "FullQuality16x4"
+                           : frame.cloudMode == 4 ? "FullQuality8x4"
+                           : frame.cloudMode == 5 ? "TightDensityBounds"
+                           : frame.cloudMode == 6 ? "DensityOnlyTightBounds" : "Normal";
+          Logger::info(str::format("[Cloud profile] frame=", frame.frameId, " mode=", mode,
+            " samples=", frame.cloudSamples, " maxSamples=", frame.cloudSamplesMax,
+            " spacingKm=", frame.cloudSampleSpacingKm,
+            " screenPeriod=", frame.cloudScreenPeriod,
+            " sunBlocks=", frame.cloudSunCoherentBlocks,
+            " emptyAdvance=", frame.cloudEmptySpaceAdvance,
+            " bakeInterleave=", frame.cloudSunGridPeriod, "/", frame.cloudDomePeriod,
+            " extent=", frame.cloudRenderWidth, "x", frame.cloudRenderHeight,
+            " detailLod=", frame.cloudDetailLod, " detailLodBias=", frame.cloudDetailLodBias,
+            " ms=", milliseconds));
+        }
+        if (gpuStages()) {
+          Logger::info(str::format("[GPU stages] frame=", frame.frameId, " stage=", frame.labels[i],
+            " ms=", milliseconds));
+        }
+      }
+      if (gpuStages()) {
+        // Record the resolved bake periods, native extent and live detail-filter settings.
+        Logger::info(str::format("[GPU stages] frame=", frame.frameId, " stage=CloudConfig bakeInterleave=",
+          frame.cloudSunGridPeriod, "/", frame.cloudDomePeriod,
+          " sunBlocks=", frame.cloudSunCoherentBlocks,
+          " emptyAdvance=", frame.cloudEmptySpaceAdvance,
+          " extent=", frame.cloudRenderWidth, "x", frame.cloudRenderHeight,
+          " detailLod=", frame.cloudDetailLod, " detailLodBias=", frame.cloudDetailLodBias));
+        Logger::info(str::format("[GPU stages] frame=", frame.frameId, " stage=MeasuredSequence ms=",
+          double(data[frame.count - 1].timestamp.time - data[0].timestamp.time) * scale));
+      }
+      frame.pending = false;
+    }
+    if (m_gpuStageSampleCounter++ % 120 != 0) {
+      return;
+    }
+    const uint32_t slot = m_gpuStageNextSlot++ % m_gpuStageFrames.size();
+    auto& frame = m_gpuStageFrames[slot];
+    if (frame.pending) {
+      return;
+    }
+    frame.count = 0;
+    frame.frameId = m_device->getCurrentFrameId();
+    // Retain dispatch-time settings while asynchronous timestamp results are pending.
+    frame.cloudMode = RtxAtmosphere::cloudProfilingMode();
+    frame.cloudSamples = RtxAtmosphere::cloudViewSamples();
+    frame.cloudSamplesMax = RtxAtmosphere::cloudViewSamplesMax();
+    m_gpuStageSlot = int(slot);
+    recordGpuStageTiming("Begin");
+  }
+
+  void RtxContext::recordGpuStageTiming(const char* label) {
+    if (m_gpuStageSlot < 0) {
+      return;
+    }
+    auto& frame = m_gpuStageFrames[m_gpuStageSlot];
+    if (frame.count >= frame.queries.size()) {
+      m_gpuStageSlot = -1;
+      return;
+    }
+    auto& query = frame.queries[frame.count];
+    if (query == nullptr) {
+      query = m_device->createGpuQuery(VK_QUERY_TYPE_TIMESTAMP, 0, 0);
+    }
+    frame.labels[frame.count++] = label;
+    if (std::strcmp(label, "CloudScreen") == 0) {
+      const auto& state = m_common->metaAtmosphere().getCloudProfileState();
+      frame.cloudSamples = state.samples;
+      frame.cloudSamplesMax = state.maxSamples;
+      frame.cloudSampleSpacingKm = state.sampleSpacingKm;
+      frame.cloudScreenPeriod = state.screenPeriod;
+      frame.cloudSunCoherentBlocks = state.sunCoherentBlocks;
+      frame.cloudEmptySpaceAdvance = state.emptySpaceAdvance;
+      frame.cloudSunGridPeriod = state.sunGridPeriod;
+      frame.cloudDomePeriod    = state.domePeriod;
+      frame.cloudRenderWidth   = state.renderWidth;
+      frame.cloudRenderHeight  = state.renderHeight;
+      frame.cloudDetailLod     = state.detailLod;
+      frame.cloudDetailLodBias = state.detailLodBias;
+    }
+    writeTimestamp(query);
+  }
+
+  void RtxContext::endGpuStageTiming() {
+    if (m_gpuStageSlot >= 0) {
+      recordGpuStageTiming("OutputAndFrameGeneration");
+      if (m_gpuStageSlot >= 0) {
+        m_gpuStageFrames[m_gpuStageSlot].pending = true;
+        m_gpuStageSlot = -1;
+      }
+    }
+  }
+
   void RtxContext::dispatchIntegrate(const Resources::RaytracingOutput& rtOutput) {
     ScopedGpuProfileZone(this, "Integrate Raytracing");
 
     // Integrate direct
     m_common->metaPathtracerIntegrateDirect().dispatch(this, rtOutput);
+    recordGpuStageTiming("DirectIntegration");
 
     // RTXDI Gradient pass
     m_common->metaRtxdiRayQuery().dispatchGradient(this, rtOutput);
+    recordGpuStageTiming("RTXDIGradients");
 
-    // Integrate indirect
-    {
-      ScopedGpuProfileZone(this, "Integrate Indirect Raytracing");
-      setFramePassStage(RtxFramePassStage::IndirectIntegration);
-      
-      m_common->metaPathtracerIntegrateIndirect().dispatch(this, rtOutput);
-    }
-
-    // Integrate indirect - NEE Cache pass
-    m_common->metaPathtracerIntegrateIndirect().dispatchNEE(this, rtOutput);
+    m_common->metaPathtracerIntegrateIndirect().dispatchLighting(this, rtOutput);
   }
 
   void RtxContext::dispatchPathTracing(const Resources::RaytracingOutput& rtOutput) {
 
     // Gbuffer Raytracing
     m_common->metaPathtracerGbuffer().dispatch(this, rtOutput);
+    recordGpuStageTiming("GBuffer");
 
     // Sparse Rendering: sampling rates + active-pixel mask + compaction.
     // Runs after Gbuffer so the active-pixel mask can read current-frame SharedFlags.
     m_common->metaSparseRendering().dispatch(*this, rtOutput);
+    recordGpuStageTiming("SparsePreparation");
 
     // RTXDI
     m_common->metaRtxdiRayQuery().dispatch(this, rtOutput);
+    recordGpuStageTiming("RTXDI");
 
     // NEE Cache
     dispatchNeeCache(rtOutput);
+    recordGpuStageTiming("NEECache");
 
     // Integration Raytracing
     dispatchIntegrate(rtOutput);
@@ -1816,8 +2056,8 @@ namespace dxvk {
   bool RtxContext::dispatchDlssNR(const Resources::RaytracingOutput& rtOutput) {
     ScopedCpuProfileZone();
 
-    auto& dlssNr = m_common->metaDlssNeuralRendering();
-    if (!dlssNr.useDlssNeuralRendering()) {
+    auto& dlssNr = m_common->metaNeuralUplift();
+    if (!dlssNr.useNeuralUplift()) {
       return false;
     }
 
@@ -1864,25 +2104,17 @@ namespace dxvk {
         rtOutput, GlobalTime::get().deltaTimeMs());
     }
 
-    const bool resetToneMapperHistory = m_resetHistory || getSceneManager().getCamera().isCameraCut();
     setFramePassStage(RtxFramePassStage::ToneMapping);
-    if (RtxOptions::tonemappingMode() == TonemappingMode::Global) {
+    // Operator-only tonemapping (dynamic tone curve removed in the fork's 2026-05-13 refactor).
+    // sRGB conversion + dithering are deferred to dispatchSRGBDither (upstream's post-FX
+    // pipeline refactor), so the tonemapper runs with performSRGBConversion=false and leaves
+    // the image in linear space for the final output pass.
+    {
       DxvkToneMapping& toneMapper = m_common->metaToneMapping();
       toneMapper.dispatch(this,
-        getResourceManager().getSampler(VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER),
         autoExposure.getExposureTexture().view,
         rtOutput,
-        GlobalTime::get().deltaTimeMs(),
-        resetToneMapperHistory,
-        autoExposure.enabled());
-    }
-    DxvkLocalToneMapping& localTonemapper = m_common->metaLocalToneMapping();
-    if (localTonemapper.isActive()) {
-      localTonemapper.dispatch(this,
-        getResourceManager().getSampler(VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE),
-        autoExposure.getExposureTexture().view,
-        rtOutput,
-        GlobalTime::get().deltaTimeMs(),
+        /* performSRGBConversion */ false,
         autoExposure.enabled());
     }
   }
@@ -1920,6 +2152,40 @@ namespace dxvk {
       mainCamera.isViewHistoryInvalidated(m_device->getCurrentFrameId()));
   }
 
+  void RtxContext::dispatchPostFxNtsc(Resources::RaytracingOutput& rtOutput) {
+    ScopedCpuProfileZone();
+    DxvkPostFx& postFx = m_common->metaPostFx();
+    const RtCamera& mainCamera = getSceneManager().getCamera();
+
+    postFx.dispatchNtsc(this,
+      getResourceManager().getSampler(VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE),
+      mainCamera.getShaderConstants().resolution,
+      rtOutput);
+  }
+
+  void RtxContext::dispatchPostFxDof(Resources::RaytracingOutput& rtOutput) {
+    ScopedCpuProfileZone();
+    DxvkPostFx& postFx = m_common->metaPostFx();
+    const RtCamera& mainCamera = getSceneManager().getCamera();
+    if (!postFx.enable()) {
+      return;
+    }
+
+    NrdArgs primaryDirectNrdArgs;
+    NrdArgs primaryIndirectNrdArgs;
+    NrdArgs secondaryNrdArgs;
+    getDenoiseArgs(primaryDirectNrdArgs, primaryIndirectNrdArgs, secondaryNrdArgs);
+
+    postFx.dispatchDof(this,
+      getResourceManager().getSampler(VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE),
+      mainCamera.getShaderConstants().resolution,
+      RtxOptions::rngSeedWithFrameIndex() ? m_device->getCurrentFrameId() : 0,
+      primaryDirectNrdArgs.missLinearViewZ,
+      rtOutput,
+      GlobalTime::get().deltaTimeMs(),
+      mainCamera.isViewHistoryInvalidated(m_device->getCurrentFrameId()));
+  }
+
   void RtxContext::dispatchPostFxLensEffects(Resources::RaytracingOutput& rtOutput) {
     ScopedCpuProfileZone();
     DxvkPostFx& postFx = m_common->metaPostFx();
@@ -1939,6 +2205,10 @@ namespace dxvk {
     ScopedCpuProfileZone();
 
     m_common->metaSRGBDither().dispatch(this, rtOutput, performSRGBConversion);
+  }
+
+  void RtxContext::dispatchScreenOverlay(Resources::RaytracingOutput& rtOutput) {
+    fork_hooks::dispatchScreenOverlay(*this, rtOutput);
   }
 
   void RtxContext::dispatchDebugView(Rc<DxvkImage>& srcImage, const Resources::RaytracingOutput& rtOutput, bool captureScreenImage)  {
@@ -2733,6 +3003,10 @@ namespace dxvk {
   }
 
   void RtxContext::rasterizeSky(const DrawParameters& params, const DrawCallState& drawCallState) {
+    if (RtxOptions::skyMode() == SkyMode::Numos) {
+      return;
+    }
+
     // Grab and apply replacement texture if any
     // NOTE: only the original color texture will be replaced with albedo-opacity texture
     std::shared_ptr<MaterialData> replacementMaterial = getSceneManager().getAssetReplacer()->getReplacementMaterial(drawCallState.getMaterialData().getHash());

@@ -588,6 +588,8 @@ endif
 
 xess_dll_path = join_paths(global_src_root_norm, 'submodules/xess/bin/')
 
+fsr3_dll_path = join_paths(global_src_root_norm, 'submodules/FidelityFX-SDK/PrebuiltSignedDLL/')
+
 nrd_lib_path = join_paths(global_src_root_norm, 'external/nrd/Lib/Release/')
 if get_option('buildtype') == 'debug'
   nrd_lib_path = join_paths(global_src_root_norm, 'external/nrd/Lib/Debug/')
@@ -776,6 +778,8 @@ if dxvk_is_ninja or dxvk_is_woa_ec
       install_data(join_paths(xess_dll_path, 'libxess.dll'), install_dir : output_path, install_tag: target_suffix)
     endif
 
+    install_data(join_paths(fsr3_dll_path, 'amd_fidelityfx_vk.dll'), install_dir : output_path, install_tag: target_suffix)
+
     install_data(join_paths(dlss_bin_path, 'nvngx_dlss.dll'), install_dir : output_path, install_tag: target_suffix) 
     install_data(join_paths(dlss_bin_path, 'nvngx_dlssd.dll'), install_dir : output_path, install_tag: target_suffix) 
     install_data(join_paths(dlss_bin_path, 'nvngx_dlssg.dll'), install_dir : output_path, install_tag: target_suffix) 
@@ -847,6 +851,6 @@ if dxvk_is_ninja or dxvk_is_woa_ec
   endif
 endif # dxvk_is_ninja
 
-if fs.is_dir('nv-private')
+if fs.is_file('nv-private/meson.build')
   subdir('nv-private')
 endif

@@ -69,7 +69,8 @@ namespace dxvk {
     DLSS,
     NIS,
     TAAU,
-    XeSS
+    XeSS,
+    FSR
   };
 
   enum class GraphicsPreset : int {
@@ -129,10 +130,28 @@ namespace dxvk {
     YawRotation
   };
 
-  enum class TonemappingMode : int {
-    Global = 0,
-    Local
+  // TonemappingMode (Global / Local / Direct) and the dynamic tone curve
+  // were removed in the tonemap refactor (2026-05-13 / 2026-05-15). The
+  // apply pass dispatches the selected operator directly via
+  // RtxForkGlobalTonemap::tonemapOperator.
+
+  // Frame Generation technology selection. Selecting a backend here *is* the
+  // enable action - there is no separate per-backend enable checkbox in the UI.
+  enum class FrameGenerationType : int {
+    None = 0,    // Frame generation disabled
+    DLSS,        // NVIDIA DLSS Frame Generation (DLSS 3.0/4.0)
+    FSR          // AMD FSR 3 Frame Generation
   };
+
+  namespace fork_hooks {
+    // Drives DxvkDLFG::enable / DxvkFSRFrameGen::enable from
+    // rtx.frameGenerationType. Wired as that option's onChange handler so the
+    // invariant holds for config files, DXVK_FRAMEGEN_TYPE and the API - not
+    // just while the settings menu happens to be open.
+    // Declared here rather than pulled in from rtx_fork_hooks.h to avoid a
+    // circular include. Implementation in rtx_fork_upscaler_ui.cpp.
+    void applyFrameGenerationType(DxvkDevice* device);
+  } // namespace fork_hooks
 
   enum class UIType : int {
     None = 0,
@@ -160,6 +179,11 @@ namespace dxvk {
     CameraPositionAndDepthFlags
   };
 
+  enum class SkyMode : int {
+    SkyboxRasterization = 0,
+    Numos = 1
+  };
+
   enum class EnableVsync : int {
     Off = 0,
     On = 1,
@@ -170,6 +194,7 @@ namespace dxvk {
     ImportanceSampled = 0,   // Importance sampled integration - provides the noisiest output and used primarily for reference comparisons
     ReSTIRGI = 1,            // Importance Sampled + ReSTIR GI integrations
     NeuralRadianceCache = 2, // Implements a live trained neural network to provide a world space radiance cache and allow the pathtracer to terminate paths earlier into the cache.
+    Sharc = 3,               // Spatially hashed world space radiance cache, filled by a sparse update pass and read by the indirect pass to terminate paths early.
   
     Count
   };
@@ -507,11 +532,18 @@ namespace dxvk {
                    "2: RTX Neural Radiance Cache (NRC). NRC is an AI based world space radiance cache. It is live trained by the path tracer\n"
                    "   and allows paths to terminate early by looking up the cached value and saving performance.\n"
                    "   NRC supports infinite bounces and often provides results closer to that of reference than ReSTIR GI\n"
-                   "   while improving performance in scenarios where ray paths have 2 or more bounces on average.\n",
+                   "   while improving performance in scenarios where ray paths have 2 or more bounces on average.\n"
+                   "3: SHARC. Spatially Hashed Radiance Cache. A world space cache of irradiance held in a hash grid,\n"
+                   "   filled by a sparse update pass that traces one path per screen tile and read by the full resolution\n"
+                   "   indirect pass, which terminates a path into a cell once that cell has converged.\n",
                    args.environment = "RTX_INTEGRATE_INDIRECT_MODE",
                    args.flags = RtxOptionFlags::UserSetting);
     RTX_OPTION_ARGS("rtx", UpscalerType, upscalerType, UpscalerType::DLSS, "Upscaling boosts performance with varying degrees of image quality tradeoff depending on the type of upscaler and the quality mode/preset.",
                     args.environment = "DXVK_UPSCALER_TYPE",
+                    args.flags = RtxOptionFlags::UserSetting);
+    RTX_OPTION_ARGS("rtx", FrameGenerationType, frameGenerationType, FrameGenerationType::None, "Frame Generation technology to use, and the control that enables it. None = disabled, DLSS = NVIDIA DLSS Frame Generation, FSR = AMD FSR 3 Frame Generation. Setting this drives rtx.dlfg.enable / rtx.fsrfg.enable; you do not set those directly.",
+                    args.environment = "DXVK_FRAMEGEN_TYPE",
+                    args.onChangeCallback = &fork_hooks::applyFrameGenerationType,
                     args.flags = RtxOptionFlags::UserSetting);
     RTX_OPTION_ARGS("rtx", bool, enableRayReconstruction, true, "Enables DLSS ray reconstruction, an AI-based denoiser designed for real time ray tracing.",
                     args.environment = "DXVK_RAY_RECONSTRUCTION",
@@ -985,6 +1017,12 @@ namespace dxvk {
     RTX_OPTION_ARGS("rtx", bool, useWhiteMaterialMode, false, "Override all objects' materials by white material",
                     args.environment = "RTX_USE_WHITE_MATERIAL_MODE");
     RTX_OPTION("rtx", bool, useHighlightLegacyMode, false, "");
+    RTX_OPTION("rtx", bool, linearizeSrgbTextures, true,
+               "When true, opaque albedo/emissive textures that use an sRGB VkFormat are detected and the path tracer's software gamma\n"
+               "correction (gammaToLinear/pow(2.2)) is skipped for them, since the sampler hardware already linearized the value on read.\n"
+               "This avoids a double linearization (sampler sRGB curve + shader pow(2.2)) that darkens such textures. Constants and\n"
+               "non-sRGB (UNORM) textures are unaffected and still receive the software gamma correction. Set to false to restore the\n"
+               "legacy behavior where the software conversion is always applied regardless of texture format.");
     RTX_OPTION("rtx", float, nativeMipBias, 0.0f,
                "Specifies a mipmapping level bias to add to all material texture filtering. Stacks with the upscaling mip bias.\n"
                "Mipmaps are determined based on how far away a texture is, using this can bias the desired level in a lower quality direction (positive bias), or a higher quality direction with potentially more aliasing (negative bias).\n"
@@ -1175,16 +1213,6 @@ namespace dxvk {
                "Generally this should be always enabled as it allows for simple parsing of DDS header information without loading the entire texture into memory like GLI does to retrieve similar information.\n"
                "Should only be set to false for debugging purposes if the partial DDS loader's logic is suspected to be incorrect to compare against GLI's implementation.");
 
-    RTX_OPTION("rtx", TonemappingMode, tonemappingMode, TonemappingMode::Local,
-               "The tonemapping type to use, 0 for Global, 1 for Local (Default).\n"
-               "Global tonemapping tonemaps the image with respect to global parameters, usually based on statistics about the rendered image as a whole.\n"
-               "Local tonemapping on the other hand uses more spatially-local parameters determined by regions of the rendered image rather than the whole image.\n"
-               "Local tonemapping can result in better preservation of highlights and shadows in scenes with high amounts of dynamic range whereas global tonemapping may have to comprimise between over or underexposure.");
-    RTX_OPTION("rtx", bool, useLegacyACES, true,
-               "Use a luminance-only approximation of ACES that over-saturates the highlights. If false, use a refined ACES transform that converts between color spaces with more precision.");
-    RTX_OPTION("rtx", bool, showLegacyACESOption, false,
-               "Show \'rtx.useLegacyACES\' in the developer menu. Default is OFF, as the non-legacy ACES is currently experimental and the implementation is a subject to change.");
-
     // Capture Options
     //   General
     RTX_OPTION("rtx", bool, captureShowMenuOnHotkey, true,
@@ -1255,6 +1283,9 @@ namespace dxvk {
                "instead of being rasterized to the sky cubemap. This fixes a class of bugs where auto-detect misclassifies "
                "world geometry as sky (due to shared camera positions), causing that geometry to become invisible. "
                "Only effective when Sky Auto-Detect and Reproject Sky to Main Camera are both enabled.");
+
+    RTX_OPTION("rtx", SkyMode, skyMode, SkyMode::SkyboxRasterization,
+               "Sky rendering mode. SkyboxRasterization uses traditional skybox rasterization, Numos uses Hillaire atmospheric scattering.");
 
     // TODO (REMIX-656): Remove this once we can transition content to new hash
     RTX_OPTION("rtx", bool, logLegacyHashReplacementMatches, false, "");
@@ -1458,6 +1489,7 @@ namespace dxvk {
     static bool isNISEnabled() { return upscalerType() == UpscalerType::NIS; }
     static bool isTAAEnabled() { return upscalerType() == UpscalerType::TAAU; }
     static bool isXeSSEnabled() { return upscalerType() == UpscalerType::XeSS; }
+    static bool isFSREnabled() { return upscalerType() == UpscalerType::FSR; }
     
     static float getUniqueObjectDistanceSqr() { return uniqueObjectDistance() * uniqueObjectDistance(); }
     static uint32_t getNumFramesToPutLightsToSleep() { return numFramesToKeepLights() /2; }

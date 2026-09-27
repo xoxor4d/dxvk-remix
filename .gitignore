@@ -43,8 +43,33 @@
 # ignore build artifacts
 nv-private
 tests
-
+docs/superpowers/
 metrics.txt
 nrc_session_log.txt
 python.dxvk-cache
 *.xml.user
+
+# Fork-maintainability audit outputs (ephemeral).
+audit-output/
+
+# ignore build artifacts
+nv-private
+tests
+
+# Keep this focused source test visible despite the broad local test-artifact rule.
+!tests/
+tests/*
+!tests/rtx/
+tests/rtx/*
+!tests/rtx/unit/
+tests/rtx/unit/*
+!tests/rtx/unit/test_external_effect_manifest.cpp
+!tests/rtx/unit/test_external_effect_image.cpp
+
+# Per-contributor auto-deploy targets, dot-sourced by scripts/build.ps1
+/scripts/auto-deploy.local.ps1
+/scripts/regen-docs.local.ps1
+
+# Pinned DLSS / NGX DLL override, populated by scripts/update-dlss-dlls.ps1.
+# Pulled from RemixProjGroup/dxvk-remix-dlss-bundle releases per scripts/dlss-pins.json.
+/dlss_override/

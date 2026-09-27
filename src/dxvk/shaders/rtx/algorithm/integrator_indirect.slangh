@@ -34,7 +34,12 @@
 #include "rtx/algorithm/integrator.slangh"
 #include "rtx/concept/surface_material/opaque_surface_material_interaction.slangh"
 #include "rtx/pass/nrc/nrc_integrator_utilities.slangh"
+#include "rtx/pass/sharc/sharc_integrator_hooks.slangh"
 #include "rtx/pass/sparse_rendering/sparse_rendering.slangh"
+#include "rtx/pass/atmosphere/atmosphere_common.slangh"
+#ifdef ATMOSPHERE_AVAILABLE
+#include "rtx/pass/atmosphere/atmosphere_sky.slangh"
+#endif
 
 // Input specular signal of low roughness material into restir gi
 static const uint kRestirGIAcceptLowRoughnessInput = false;
@@ -44,6 +49,9 @@ static const uint kRestirGIAcceptLowRoughnessInput = false;
 PathState pathStateCreateEmpty(GeometryFlags geometryFlags)
 {
   PathState pathState;
+#if SHARC_UPDATE
+  pathState.sharcState.count = 0;
+#endif
 
   // Note: Primary linear roughness, origin, cone radius, medium material index, inside medium flag and
   // direction assumed to be set by primary vertex intergation.
@@ -66,6 +74,10 @@ PathState pathStateCreateEmpty(GeometryFlags geometryFlags)
   pathState.restirGiHasFoundRoughSurface = false;
   pathState.restirGiHasHitGeometry = false;
   pathState.restirGiHasHitOpaque = false;
+#if ENABLE_SHARC
+  pathState.sharcDiffuseArrival = false;
+#endif
+  pathState.skyGatherEligible = false;
   pathState.segmentHitDistance = 0.0;
 
   pathState.rayMask = OBJECT_MASK_ALL | (geometryFlags.objectMask & OBJECT_MASK_ALL_DYNAMIC);
@@ -81,6 +93,9 @@ PathState pathStateCreateEmpty(GeometryFlags geometryFlags)
 // Helper function to accumulate attenuation or other throughputs into the Path State throughput.
 void accumulateThroughput(inout PathState pathState, vec3 throughput)
 {
+#if SHARC_UPDATE
+  sharcAccumulateThroughput(pathState.sharcState, throughput);
+#endif
   pathState.throughput = clampedMaximumPositiveMultiply(pathState.throughput, throughput, kThroughputClampedDivisionMaximum);
 }
 
@@ -99,6 +114,9 @@ void accumulateRadiance(inout vec3 accumulatedRadiance, PathState pathState, vec
 // Overload for simpler path state usage when accumulating radiance.
 void accumulateRadiance(inout PathState pathState, vec3 radiance)
 {
+#if SHARC_UPDATE
+  sharcAccumulateRadiance(pathState.sharcState, radiance);
+#endif
   accumulateRadiance(pathState.radiance, pathState, radiance);
 }
 
@@ -261,7 +279,7 @@ void integratePathVertex(
 
     if ((cb.debugView == DEBUG_VIEW_SECONDARY_UNORDERED_INTERACTIONS 
          || cb.debugView == DEBUG_VIEW_SECONDARY_RAY_AND_UNORDERED_INTERACTIONS)
-        && TRUE_OR_CHECK_WHEN_NRC_ENABLED(pathState.isNrcQuery))
+        && (!SHARC_UPDATE && TRUE_OR_CHECK_WHEN_NRC_ENABLED(pathState.isNrcQuery)))
     {
       accumulateInDebugViewAdd(pathState.pixelCoordinate, numUnorderedInteractions);
     }
@@ -271,7 +289,9 @@ void integratePathVertex(
       // Insert new task
       NEECell cell = NEECache.getCell(pathState.neeCacheCellOffset);
       int prefixTask = NEECacheUtils.convertIDToPrefixSumID(unorderedSurfaceIndex, 0, PrimitiveIDPrefixSum);
+#if !SHARC_UPDATE
       cell.insertSlotTask(prefixTask, emissiveRadiance * pathState.calculateFullThroughput(), false);
+#endif
     }
   }
 
@@ -308,7 +328,7 @@ void integratePathVertex(
   //  we must also handle that case and ensure nothing tries to use POM elsewhere.
   pomOpaqueSurfaceEncountered = pomOpaqueSurfaceEncountered && cb.pomEnableIndirectLighting;
   
-#if !ENABLE_NRC
+#if !ENABLE_NRC && !ENABLE_SHARC
   // Output ReSTIR GI geometry information
 
   if (cb.enableReSTIRGI && !pathState.restirGiHasHitGeometry)
@@ -368,8 +388,22 @@ void integratePathVertex(
     {
       skyRadiance = cb.domeLightArgs.radiance * sampleDomeLightTexture(LinearWrapSampler, pathState.direction, cb.domeLightArgs.textureIndex, cb.domeLightArgs.worldToLightTransform);
     }
+#ifdef ATMOSPHERE_AVAILABLE
+    else if (cb.skyMode == 1)
+    {
+      // Physical atmosphere mode. Opt into skyIndirectRadianceScale only when the
+      // ray that missed was a diffuse sky gather (set at the previous bounce);
+      // reflections / refractions / cutouts keep physical sky brightness.
+      skyRadiance = evalSkyRadiance(pathState.direction, cb.atmosphereArgs,
+                                     pathState.pixelCoordinate, cb.frameIdx,
+                                     cb.isZUp != 0,
+                                     /*isPrimaryRay=*/ false,
+                                     /*applySkyIndirectRadianceScale=*/ pathState.skyGatherEligible);
+    }
+#endif
     else
     {
+      // Skybox rasterization mode
       skyRadiance = cb.skyBrightness * SkyProbe.SampleLevel(pathState.direction, 0);
     }
     
@@ -448,7 +482,7 @@ void integratePathVertex(
     pathState.continuePath = true;
     
     if (cb.debugView == DEBUG_VIEW_RAYTRACED_RENDER_TARGET_INDIRECT
-      && TRUE_OR_CHECK_WHEN_NRC_ENABLED(pathState.isNrcQuery))
+      && (!SHARC_UPDATE && TRUE_OR_CHECK_WHEN_NRC_ENABLED(pathState.isNrcQuery)))
     {
       storeInDebugView(pathState.pixelCoordinate, vec4(1.f));
     }
@@ -475,7 +509,9 @@ void integratePathVertex(
       int primitiveIndex = shouldSampleObject ? 0 : rayInteraction.primitiveIndex;
       int surfaceIndex = rayInteraction.surfaceIndex;
       int prefixTask = NEECacheUtils.convertIDToPrefixSumID(surfaceIndex, primitiveIndex, PrimitiveIDPrefixSum);
+#if !SHARC_UPDATE
       cell.insertSlotTask(prefixTask, emissiveLight * pathState.calculateFullThroughput(), false);
+#endif
 
       lightSelectionPDF = cell.searchCandidate(surfaceIndex, primitiveIndex);
       if (lightSelectionPDF > 0.0 && shouldSampleObject)
@@ -487,6 +523,12 @@ void integratePathVertex(
 #if (SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK & SURFACE_MATERIAL_RESOLVE_TYPE_RAY_PORTAL) != 0
   }
 #endif // SURFACE_MATERIAL_RESOLVE_TYPE_RAY_PORTAL
+
+  // Each resolve leg contributes to the length of the segment in flight. Guarded rather than
+  // relying on an empty body: the inout copy-back of an empty call still emits a store.
+#if ENABLE_SHARC
+  sharcOnResolveLeg(pathState);
+#endif
 
   // Check if resolving should continue, and if a surface was hit
 
@@ -517,6 +559,12 @@ void integratePathVertex(
     accumulateRadiance(pathState, emissiveLightRadiance);
   }
 
+  // Emission above this point must already be accumulated: the cache holds reflected lighting.
+  if (sharcOnResolvedVertex(pathState, surfaceInteraction, polymorphicSurfaceMaterialInteraction, materialType, emissiveLight))
+  {
+    return;
+  }
+
   // When boostEmissives is enabled, defer TerminateImmediately until after emissive accumulation
   // so that the hit surface's emissive self-emission is properly MIS-weighted.
   // Without this, emissive lighting is lost on TerminateImmediately paths (includeDirectLighting=true)
@@ -538,7 +586,14 @@ void integratePathVertex(
     
     float restirHitT = kMissHitDistance;
     updateReSTIRGIHitDistance(oldLuminance, calcBt709Luminance(pathState.radiance), restirHitT, pathState.accumulatedHitDistance);
-    
+
+    // Both the continuation sampled below and the NEE evaluated further down decode their
+    // material from this one, so this single point covers both. It sits after the cache's own
+    // eligibility test by design.
+#if ENABLE_SHARC && SHARC_UPDATE
+    sharcClampUpdateRoughness(polymorphicSurfaceMaterialInteraction, materialType);
+#endif
+
     const bool oldInsideMedium = pathState.insideMedium;
     vec3 continuationThroughput = vec3(1.0);
     uint8_t continuationLobe = 0;
@@ -566,6 +621,18 @@ void integratePathVertex(
       pathState.coneRadius = sampledRay.coneRadius;
       pathState.direction = sampledRay.direction;
       pathState.solidAnglePdf = solidAnglePdf;
+
+      // Classify the lobe that generated this ray for skyIndirectRadianceScale.
+      // Computed here, where materialType is known, so the opaque lobe enum is
+      // only trusted for opaque surfaces â€” translucent (glass/water) lobes use a
+      // different enum and are never eligible, and an opaque alpha-cutout
+      // (opacity transmission) is a straight-through view, also not eligible.
+      // Only a genuine diffuse gather (opaque diffuse reflection / transmission)
+      // opts in.
+      pathState.skyGatherEligible =
+        (materialType == surfaceMaterialTypeOpaque) &&
+        (continuationLobe == opaqueLobeTypeDiffuseReflection ||
+         continuationLobe == opaqueLobeTypeDiffuseTransmission);
     }
     
     // Set the material medium index if a medium was entered or exited
@@ -579,7 +646,13 @@ void integratePathVertex(
     const bool isOpaqueMaterial = materialType == surfaceMaterialTypeOpaque;
     const OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteraction = opaqueSurfaceMaterialInteractionCreate(polymorphicSurfaceMaterialInteraction);
     // polymorphicSurfaceMaterialInteraction is no longer live since this point.
-    
+
+    // The query at the next vertex gates on the lobe that launched its segment and cannot see
+    // this vertex, so record it here.
+#if ENABLE_SHARC
+    sharcOnContinuationSampled(pathState, isOpaqueMaterial, continuationLobe, opaqueSurfaceMaterialInteraction.isotropicRoughness);
+#endif
+
     // Perform NEE
     
     if (isOpaqueMaterial)
@@ -624,13 +697,15 @@ void integratePathVertex(
         if (isWithinGbuffer)
         {
           uint8_t sampledTransportPortalIndex = invalidRayPortalIndex;
+
+          // Synthetic customIndex for view-model light filtering (remixapi_LightInfo::ignoreViewModel).
+          uint customIndex = rayInteraction.isViewModel ? CUSTOM_INDEX_IS_VIEW_MODEL : 0;
     
           // Select and sample a light for NEE via RTXDI
-    
           lightSampleValid = sampleLightRTXDI(
             pixelCoordinate,
             surfaceInteraction,
-            lightSample, invSelectionPdf, sampledTransportPortalIndex, lightIdx);
+            lightSample, invSelectionPdf, sampledTransportPortalIndex, lightIdx, customIndex);
         }
       }
 
@@ -652,16 +727,36 @@ void integratePathVertex(
         }
         else
         {
+          // Synthetic customIndex for view-model light filtering (remixapi_LightInfo::ignoreViewModel).
+          uint customIndex = rayInteraction.isViewModel ? CUSTOM_INDEX_IS_VIEW_MODEL : 0;
+
           // Select and sample a light for NEE via RIS
           lightSampleValid = sampleLightRIS(
             randomState,
             surfaceInteraction, opaqueSurfaceMaterialInteraction, rayInteraction.viewDirection,
-            lightSample, invSelectionPdf, lightIdx);
+            lightSample, invSelectionPdf, lightIdx, customIndex);
         }
       }
 
 
       lightSample.solidAnglePdf = invSelectionPdf > 0 ? lightSample.solidAnglePdf / invSelectionPdf : 0.0;
+
+      // Cloud-on-terrain shadow on the atmosphere sun (real distant light) for
+      // secondary bounces â€” mirror of the primary path in integrator_direct.slangh.
+      // fork â€” experiment 2026-06-21.
+      if (lightSampleValid && cb.skyMode == 1 && cb.atmosphereArgs.cloudVoxelShadowsEnable != 0u
+          && lightIdx != kInvalidLightIdx)
+      {
+        const DecodedPolymorphicLight cloudShadowLight = decodePolymorphicLight(lights[lightIdx]);
+        if (cloudShadowLight.atmosphereCloudShadowed)
+        {
+          const vec3 dirToSun = normalize(lightSample.position - surfaceInteraction.position);
+          const float cloudT = sampleCloudGroundShadow_OptionB(
+              surfaceInteraction.position, dirToSun, cb.atmosphereArgs, cb.isZUp != 0);
+          lightSample.radiance *= pow(cloudT, cb.atmosphereArgs.cloudShadowFactorStrength);
+        }
+      }
+
       vec3 diffuseLight, specularLight;
       const bool isDiffusionProfileSss = (cb.sssArgs.enableDiffusionProfile && isSubsurfaceDiffusionProfileMaterial(opaqueSurfaceMaterialInteraction));
       evaluateUnshadowedLight(lightSample, opaqueSurfaceMaterialInteraction, rayInteraction, normalize(lightSample.position - surfaceInteraction.position), diffuseLight, specularLight);
@@ -757,7 +852,9 @@ void integratePathVertex(
               (isLightTask || lightTask != uint(kInvalidLightIdx)))
           {
             NEECell cell = NEECache.getCell(pathState.neeCacheCellOffset);
+#if !SHARC_UPDATE
             cell.insertSlotTask(lightTask, neeLight, isLightTask);
+#endif
           }
       
           float specularPortion = calcBt709Luminance(specularLight) / calcBt709Luminance(neeLight);
@@ -844,7 +941,7 @@ void integratePathVertex(
       }
     }
 
-#if !ENABLE_NRC
+#if !ENABLE_NRC && !ENABLE_SHARC
     // Steal samples from restir gi
     if (cb.enableReSTIRGI
       && cb.enableReSTIRGISampleStealing > 0
@@ -987,7 +1084,7 @@ void integratePathVertex(
 // Update the hit distance when a significant contribution to the final result is found
 void updateReSTIRGIHitDistance(inout float oldLuminance, float newLuminance, inout float restirHitT, float newHitT)
 {
-#if !ENABLE_NRC 
+#if !ENABLE_NRC && !ENABLE_SHARC
   // If both oldLuminance and newLuminance are 0, still update hit distance
   if (newLuminance >= oldLuminance * cb.reSTIRGIVirtualSampleLuminanceThreshold)
   {
@@ -1045,7 +1142,7 @@ vec3 calculateReSTIRGIRadianceFactor(
 // multiple times as the integrator progresses through the scene, and with a texture store it's only spilled once.
 void storeRestirGIRadiance(PathState pathState, GeometryFlags geometryFlags, float gbufferSurfaceHitDistance)
 {
-#if !ENABLE_NRC  
+#if !ENABLE_NRC && !ENABLE_SHARC
   if (!(cb.enableReSTIRGI && geometryFlags.primarySelectedIntegrationSurface))
   {
     return;
@@ -1228,7 +1325,7 @@ void initReSTIRGI(
   float firstSampledLobePdf,
   float firstSampledSolidAnglePdf)
 {
-#if !ENABLE_NRC
+#if !ENABLE_NRC && !ENABLE_SHARC
   if (cb.enableReSTIRGI && geometryFlags.primarySelectedIntegrationSurface)
   {
     // Pre-calculate the radiance factor to reduce live state dragged over the integrator
@@ -1276,6 +1373,16 @@ void integrateIndirectPath(
   pathState.enableNeeCacheAfterFirstBounce =
     (geometryFlags.performPSRR || NEECache.shouldUseHigherBounceNeeCache(geometryFlags.firstSampledLobeIsSpecular, calcRoughness(firstHitPerceptualRoughness)));
   pathState.gbufferPerceptualRoughness = firstHitPerceptualRoughness;
+  // The first indirect ray inherits its sky-scale eligibility from the primary
+  // surface's first sampled lobe: diffuse (non-specular) gather is eligible.
+  // (firstSampledLobeIsSpecular is the only lobe class available here; an
+  // edge-case first-bounce alpha-cutout would read as eligible, accepted.)
+  pathState.skyGatherEligible = !geometryFlags.firstSampledLobeIsSpecular;
+#if ENABLE_SHARC
+  // firstSampledLobeIsSpecular is the only lobe class available here.
+  pathState.sharcDiffuseArrival = !geometryFlags.firstSampledLobeIsSpecular;
+#endif
+
   
   initNrc(pathState, gbufferPixelCoordinate, isNrcUpdate, geometryFlags, firstSampledSolidAnglePdf);
 
@@ -1310,7 +1417,7 @@ void integrateIndirectPath(
     {
       uint primarySurfaceIndex = uint(SharedSurfaceIndex[gbufferPixelCoordinate]);
       
-      if (cb.debugView == DEBUG_VIEW_HEIGHT_MAP && TRUE_OR_CHECK_WHEN_NRC_ENABLED(pathState.isNrcQuery))
+      if (cb.debugView == DEBUG_VIEW_HEIGHT_MAP && (!SHARC_UPDATE && TRUE_OR_CHECK_WHEN_NRC_ENABLED(pathState.isNrcQuery)))
       {
         if (primarySurfaceIndex != SURFACE_INDEX_INVALID)
         {
@@ -1359,6 +1466,16 @@ void integrateIndirectPath(
   }
 
   // Integrate Secondary Vertices
+#if SHARC_UPDATE
+  // The primary deposit needs the launch throughput final, so it follows the POM attenuation
+  // above, and it happens whether or not the path goes on to launch.
+  uint sharcSkyRetries = (cb.sharcArgs.flags >> SHARC_SKY_RETRY_SHIFT) & SHARC_SKY_RETRY_MASK;
+  if (cb.enableSecondaryBounces)
+  {
+    sharcOnPathStart(pathState, gbufferPixelCoordinate, geometryFlags, mediumMaterialIndex, firstHitPerceptualRoughness);
+  }
+#endif
+
 
   if (cb.enableSecondaryBounces)
   for (; pathState.continuePath; ++pathState.bounceIteration)
@@ -1367,6 +1484,9 @@ void integrateIndirectPath(
     // This is done to easily account for the various cases the path vertex function may return on
     // which do not require path extension.
     pathState.continuePath = false;
+#if ENABLE_SHARC
+    sharcOnSegmentBegin(pathState);
+#endif
 
     pathState.decalEncountered = false;
 
@@ -1395,9 +1515,17 @@ void integrateIndirectPath(
       SEGMENT_HIT_DISTANCE_UNUSED,
       DEBUG_VIEW_SECONDARY_RAY_INTERACTIONS, 
       DEBUG_VIEW_SECONDARY_RAY_AND_UNORDERED_INTERACTIONS,
-      TRUE_OR_CHECK_WHEN_NRC_ENABLED(pathState.isNrcQuery));
+      (!SHARC_UPDATE && TRUE_OR_CHECK_WHEN_NRC_ENABLED(pathState.isNrcQuery)));
+#if SHARC_UPDATE
+    sharcOnSegmentEnd(pathState, gbufferPixelCoordinate, geometryFlags, rayOrigin, rayConeRadius, mediumMaterialIndex, sharcSkyRetries);
+#endif
   }
 
+#if SHARC_UPDATE
+  sharcFlushVertices(pathState.sharcState);
+#endif
+
+#if !SHARC_UPDATE
   if (TRUE_OR_CHECK_WHEN_NRC_ENABLED(pathState.isNrcQuery))
   {
     const u16vec2 gbufferPixelCoordinate = pathState.pixelCoordinate;
@@ -1426,6 +1554,7 @@ void integrateIndirectPath(
     indirectPathTextures,
     pathState,
     geometryFlags);
+#endif
 }
 
 void integratorIndirectPathOutputDebugView(
@@ -1433,7 +1562,7 @@ void integratorIndirectPathOutputDebugView(
   PathState pathState,
   GeometryFlags geometryFlags)
 {
-  if (!TRUE_OR_CHECK_WHEN_NRC_ENABLED(pathState.isNrcQuery))
+  if (!(!SHARC_UPDATE && TRUE_OR_CHECK_WHEN_NRC_ENABLED(pathState.isNrcQuery)))
   {
     return;
   }

@@ -23,6 +23,7 @@
 
 #include "rtx/utility/shader_types.h"
 #ifdef __cplusplus
+#include <cstddef>
 #include "rtx/concept/camera/camera.h"
 #include "rtx/concept/ray_portal/ray_portal.h"
 #else
@@ -32,9 +33,11 @@
 
 #include "rtx/pass/nrd_args.h"
 #include "rtx/pass/nrc_args.h"
+#include "rtx/pass/sharc/sharc_args.h"
 #include "rtx/pass/volume_args.h"
 #include "rtx/pass/material_args.h"
 #include "rtx/pass/view_distance_args.h"
+#include "rtx/pass/atmosphere/atmosphere_args.h"
 #include "rtx/concept/light/light_types.h"
 #include "rtx/concept/surface/surface_shared.h"
 #include "rtx/algorithm/nee_cache_data.h"
@@ -160,9 +163,11 @@ struct RaytraceArgs {
   NeeCacheArgs neeCacheArgs;
   DomeLightArgs domeLightArgs;
   NrcArgs nrcArgs;
+  SharcArgs sharcArgs;
   SssArgs sssArgs;
   EyeArgs eyeArgs;
   ShadowTerminatorArgs shadowTerminatorArgs;
+  AtmosphereArgs atmosphereArgs;
 
   Camera renderTargetCamera;
 
@@ -377,6 +382,7 @@ struct RaytraceArgs {
   uint enableHeuristicSingleScatteringTransmission;
 
   float skyBrightness;
+  uint skyMode;  // 0 = skybox rasterization, 1 = physical atmosphere
 
   uint isLastCompositeOutputValid;
   uint isZUp; // Note: Indicates if the Z axis is the "up" axis in world space if true, otherwise the Y axis if false.
@@ -429,6 +435,23 @@ struct RaytraceArgs {
   uint writeSecondaryDenoisingGuides;
   uint writePrimaryVirtualMotionVector;
 
+  // Fork (2026-07-26): scale on the sky-ambient term that the resolver's
+  // opacity lighting approximation adds for sky-lit particle materials
+  // (weather precipitation). 0 disables the term entirely. Appended at the
+  // END of the struct so no existing field offsets move.
+  float particleSkyAmbientScale;
+
   // NOTE: Add structs to the top section of RaytraceArgs, not the bottom.
   // NOTE: bool does not work in debug builds, use uint instead.
 };
+
+#ifdef __cplusplus
+// Every struct in the section above must be a whole number of 16B rows. The shader compiler lays
+// this block out with scalar rules (-fvk-use-scalar-layout) and pads nothing, while the C++ struct
+// the bytes are copied from carries alignas(16) on vec4 and mat4. They describe the same bytes only
+// while no C++ padding appears. renderTargetCamera is the first alignas(16) member after the struct
+// section, so that is where such padding lands, moving every field from there to the end of the
+// block in the C++ view alone -- pathMaxBounces and secondaryRayMaxInteractions among them.
+static_assert(offsetof(RaytraceArgs, renderTargetCamera) % 16 == 0,
+              "A struct above renderTargetCamera in RaytraceArgs is not a multiple of 16 bytes.");
+#endif

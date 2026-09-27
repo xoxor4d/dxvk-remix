@@ -21,6 +21,8 @@
 */
 #pragma once
 
+#include <array>
+
 #include "rtx_utils.h"
 #include "rtx_asset_data.h"
 #include "rtx_constants.h"
@@ -54,6 +56,16 @@ namespace dxvk {
       kVidMem,          // Texture image is in VID memory (either partial, or full mip-chain).
       kFailed           // Texture image to upload or read, or was dropped.
     };
+
+    // Used only by the texture manager's garbage-collection thread.
+    struct MipSizeCache {
+      VkFormat format = VK_FORMAT_UNDEFINED;
+      VkExtent3D extent {};
+      uint32_t layers = 0;
+      uint32_t mipLevels = 0;
+      uint32_t firstMip = 0;
+      std::array<size_t, MAX_MIPS + 1> suffixSizes {};
+    } m_mipSizeCache;
 
     // Stage 1 - Texture initialized, image asset data discovered.
     Rc<AssetData>       m_assetData     = {};
@@ -223,6 +235,30 @@ namespace dxvk {
 
     static inline bool isBC(const VkFormat format) {
       return format >= VK_FORMAT_BC1_RGB_UNORM_BLOCK && format <= VK_FORMAT_BC7_SRGB_BLOCK;
+    }
+
+    // True if the VkFormat is an sRGB-encoded color format, meaning the sampler hardware performs the
+    // sRGB->linear conversion automatically on read. Used to skip the shader's software gamma correction
+    // for such textures (see OPAQUE_SURFACE_MATERIAL_FLAG_ALBEDO_TEXTURE_IS_SRGB). Mirrors the set of
+    // formats produced by toSRGB(), plus the BC1 RGBA and BC2 sRGB blocks.
+    static inline bool isSRGB(const VkFormat format) {
+      switch (format) {
+      case VK_FORMAT_R8_SRGB:
+      case VK_FORMAT_R8G8_SRGB:
+      case VK_FORMAT_R8G8B8_SRGB:
+      case VK_FORMAT_B8G8R8_SRGB:
+      case VK_FORMAT_R8G8B8A8_SRGB:
+      case VK_FORMAT_B8G8R8A8_SRGB:
+      case VK_FORMAT_A8B8G8R8_SRGB_PACK32:
+      case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
+      case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
+      case VK_FORMAT_BC2_SRGB_BLOCK:
+      case VK_FORMAT_BC3_SRGB_BLOCK:
+      case VK_FORMAT_BC7_SRGB_BLOCK:
+        return true;
+      default:
+        return false;
+      }
     }
 
     static inline bool isLDR(const VkFormat format) {

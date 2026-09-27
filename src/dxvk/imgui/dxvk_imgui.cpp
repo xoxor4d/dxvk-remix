@@ -36,6 +36,7 @@
 #include "imgui_impl_dxvk.hpp"
 #include "imgui_impl_win32.h"
 #include "implot.h"
+#include "imgui_remix_exports.h"
 #include "dxvk_imgui.h"
 #include "rtx_render/rtx_imgui.h"
 #include "dxvk_device.h"
@@ -75,6 +76,11 @@
 #include "rtx_render/rtx_particle_system.h"
 #include "rtx_render/rtx_point_instancer_system.h"
 #include "rtx_render/rtx_overlay_window.h"
+#include "rtx_render/rtx_fork_hooks.h"
+// NV-DXVK start: Numos native weather UI
+#include "rtx_render/rtx_weather.h"
+// NV-DXVK end
+#include "../rtx_render/rtx_sharc.h"
 
 
 namespace dxvk {
@@ -273,13 +279,8 @@ namespace dxvk {
       {FusedWorldViewMode::World, "In World Transform"},
   } });
 
-  static auto skyAutoDetectCombo = RemixGui::ComboWithKey<SkyAutoDetectMode>(
-    "Sky Auto-Detect",
-    RemixGui::ComboWithKey<SkyAutoDetectMode>::ComboEntries{ {
-      {SkyAutoDetectMode::None, "Off"},
-      {SkyAutoDetectMode::CameraPosition, "By Camera Position"},
-      {SkyAutoDetectMode::CameraPositionAndDepthFlags, "By Camera Position and Depth Flags"}
-  } });
+  // NV-DXVK start: Sky detection controls live with the sky setup page (RtxAtmosphere::showSkySetup).
+  // NV-DXVK end
 
   static auto upscalerNoDLSSCombo = RemixGui::ComboWithKey<UpscalerType>(
     "Upscaler Type",
@@ -288,6 +289,7 @@ namespace dxvk {
       {UpscalerType::NIS, "NIS"},
       {UpscalerType::TAAU, "TAA-U"},
       {UpscalerType::XeSS, "XeSS"},
+      {UpscalerType::FSR, "FSR"},
   } });
 
   static auto upscalerDLSSCombo = RemixGui::ComboWithKey<UpscalerType>(
@@ -298,6 +300,7 @@ namespace dxvk {
       {UpscalerType::NIS, "NIS"},
       {UpscalerType::TAAU, "TAA-U"},
       {UpscalerType::XeSS, "XeSS"},
+      {UpscalerType::FSR, "FSR"},
   } });
 
   RemixGui::ComboWithKey<DLSSProfile> dlssProfileCombo{
@@ -359,7 +362,11 @@ namespace dxvk {
           "RTX Neural Radiance Cache (NRC). NRC is an AI based world space radiance cache. It is live trained by the path tracer\n"
           "and allows paths to terminate early by looking up the cached value and saving performance.\n"
           "NRC supports infinite bounces and often provides results closer to that of reference than ReSTIR GI\n"
-          "while increasing performance in scenarios where ray paths have 2 or more bounces on average."}
+          "while increasing performance in scenarios where ray paths have 2 or more bounces on average."},
+        {IntegrateIndirectMode::Sharc, "SHARC",
+          "Spatially Hashed Radiance Cache (SHARC). A world space cache of irradiance held in a hash grid,\n"
+          "filled by a sparse update pass that traces one path per screen tile and read by the full resolution\n"
+          "indirect pass, which terminates a path into a cell once that cell has converged."}
     } }
   };
 
@@ -428,6 +435,7 @@ namespace dxvk {
       { RtxFramePassStage::DLSSNR, "DLSSNR" },
       { RtxFramePassStage::NIS, "NIS" },
       { RtxFramePassStage::XeSS, "XeSS" },
+      { RtxFramePassStage::FSR, "FSR" },
       { RtxFramePassStage::TAA, "TAA" },
       { RtxFramePassStage::DustParticles, "DustParticles" },
       { RtxFramePassStage::Bloom, "Bloom" },
@@ -607,6 +615,11 @@ namespace dxvk {
       integrateIndirectModeCombo.removeComboEntry(IntegrateIndirectMode::NeuralRadianceCache);
     }
 
+    if (!RtxSharc::checkIsSupported(device)) {
+      // Remove unsupported option
+      integrateIndirectModeCombo.removeComboEntry(IntegrateIndirectMode::Sharc);
+    }
+
     m_device->vkd()->vkCreateDescriptorPool(m_device->handle(), &pool_info, nullptr, &m_imguiPool);
 
     // Initialize the core structures of ImGui and ImPlot
@@ -686,6 +699,7 @@ namespace dxvk {
   }
 
   void ImGUI::wndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    fork_hooks::imguiContextPin(m_context, m_plotContext);
     if (m_overlayWin.ptr() != nullptr) {
       m_overlayWin->gameWndProcHandler(hWnd, msg, wParam, lParam);
     } else {
@@ -792,6 +806,11 @@ namespace dxvk {
         RemixGui::DragFloat("Roughness", &LegacyMaterialDefaults::roughnessConstantObject(), 0.01f, 0.02f, 1.f, "%.3f", sliderFlags);
         RemixGui::DragFloat("Metallic", &LegacyMaterialDefaults::metallicConstantObject(), 0.01f, 0.0f, 1.f, "%.3f", sliderFlags);
         RemixGui::DragFloat("Anisotropy", &LegacyMaterialDefaults::anisotropyObject(), 0.01f, -1.0f, 1.f, "%.3f", sliderFlags);
+
+        // NV-DXVK start: Fresnel defaults apply only to legacy materials.
+        RemixGui::SliderFloat("Specular Level", &LegacyMaterialDefaults::specularLevelObject(), 0.0f, 1.f, "%.3f", sliderFlags);
+        RemixGui::SliderFloat("Fresnel Grazing (f90)", &LegacyMaterialDefaults::fresnelGrazingObject(), 0.0f, 1.f, "%.3f", sliderFlags);
+        // NV-DXVK end
 
         ImGui::Unindent();
       }
@@ -1060,6 +1079,10 @@ namespace dxvk {
       // Tab Bar
       if (ImGui::BeginTabBar("Developer Tabs", tab_bar_flags)) {
         for (int n = 0; n < kTab_Count; n++) {
+          // Only surface the Plugin tab when an external wrapper has registered a draw callback.
+          if (n == kTab_Wrapper && !remixapi_imgui_HasDrawCallback()) {
+            continue;
+          }
           auto tabItemFlags = tab_item_flags;
           if(n == m_triggerTab) {
             tabItemFlags |= ImGuiTabItemFlags_SetSelected;
@@ -1082,6 +1105,9 @@ namespace dxvk {
               break;
             case kTab_Development:
               showDevelopmentSettings(ctx);
+              break;
+            case kTab_Wrapper:
+              fork_hooks::wrapperTabDraw();
               break;
             case kTab_Count:
               assert(false && "kTab_Count hit in ImGUI::showMainMenu");
@@ -1703,6 +1729,9 @@ namespace dxvk {
     if (RemixGui::CollapsingHeader("Developer Options", collapsingHeaderFlags)) {
       ImGui::Indent();
       RemixGui::Checkbox("Enable Preserve Path", &RtxOptions::enablePreservePathObject());
+      // NV-DXVK start: Optional UV animation cache optimization
+      RemixGui::Checkbox("Optimize Animated Texture Coordinates", &SceneManager::optimizeAnimatedTexcoordsObject());
+      // NV-DXVK end
       RemixGui::Checkbox("Enable Instance Debugging", &RtxOptions::enableInstanceDebuggingToolsObject());
       RemixGui::Checkbox("Disable Draw Calls Post RTX Injection", &RtxOptions::skipDrawCallsPostRTXInjectionObject());
       RemixGui::Checkbox("Break into Debugger On Press of Key 'B'", &RtxOptions::enableBreakIntoDebuggerOnPressingBObject());
@@ -2928,42 +2957,14 @@ namespace dxvk {
         ImGui::Unindent();
       }
 
-      if (RemixGui::CollapsingHeader("Sky Tuning", collapsingHeaderClosedFlags)) {
+      // NV-DXVK start: Sky appearance and game setup UI
+      if (RemixGui::CollapsingHeader("Sky###Sky Tuning", collapsingHeaderClosedFlags)) {
         ImGui::Indent();
-        RemixGui::DragFloat("Sky Brightness", &RtxOptions::skyBrightnessObject(), 0.01f, 0.01f, FLT_MAX, "%.3f", sliderFlags);
-        RemixGui::InputInt("First N Untextured Draw Calls", &RtxOptions::skyDrawcallIdThresholdObject(), 1, 1, 0);
-        RemixGui::SliderFloat("Sky Min Z Threshold", &RtxOptions::skyMinZThresholdObject(), 0.0f, 1.0f);
-        skyAutoDetectCombo.getKey(&RtxOptions::skyAutoDetectObject());
-
-        if (RemixGui::CollapsingHeader("Advanced", collapsingHeaderClosedFlags)) {
-          ImGui::Indent();
-
-          RemixGui::Checkbox("Reproject Sky to Main Camera", &RtxOptions::skyReprojectToMainCameraSpaceObject());
-          {
-            ImGui::BeginDisabled(!RtxOptions::skyReprojectToMainCameraSpace());
-            RemixGui::DragFloat("Reprojected Sky Scale", &RtxOptions::skyReprojectScaleObject(), 1.0f, 0.1f, 1000.0f);
-            RemixGui::Checkbox("Force Auto-Detected Sky to Reproject", &RtxOptions::skyForceAutoDetectedToReprojectObject());
-            ImGui::EndDisabled();
-          }
-          RemixGui::DragFloat("Sky Auto-Detect Unique Camera Search Distance", &RtxOptions::skyAutoDetectUniqueCameraDistanceObject(), 1.0f, 0.1f, 1000.0f);
-
-          RemixGui::Checkbox("Force HDR sky", &RtxOptions::skyForceHDRObject());
-
-          static const char* exts[] = { "256 (1.5MB vidmem)", "512 (6MB vidmem)", "1024 (24MB vidmem)",
-            "2048 (96MB vidmem)", "4096 (384MB vidmem)", "8192 (1.5GB vidmem)" };
-
-          static int extIdx;
-          extIdx = std::clamp(bit::tzcnt(RtxOptions::skyProbeSide()), 8u, 13u) - 8;
-
-          if (RemixGui::Combo("Sky Probe Extent", &extIdx, exts, IM_ARRAYSIZE(exts))) {
-            RemixGui::CheckRtxOptionPopups(&RtxOptions::skyProbeSideObject());
-          }
-          RtxOptions::skyProbeSide.setDeferred(1 << (extIdx + 8));
-
-          ImGui::Unindent();
-        }
+        ctx->getCommonObjects()->metaAtmosphere().showImguiSettings(
+          ctx->getCommonObjects()->getSceneManager().getWeatherBlender());
         ImGui::Unindent();
       }
+      // NV-DXVK end
 
       if (RtxOptions::Eye::showOptions() && RemixGui::CollapsingHeader("Eyes", collapsingHeaderClosedFlags)) {
         ImGui::Indent();
@@ -3321,8 +3322,10 @@ namespace dxvk {
   void ImGUI::showVsyncOptions(bool enableDLFGGuard) {
     // we should never get here without a swapchain, so we must have latched the vsync value already
     assert(RtxOptions::enableVsyncState != EnableVsync::WaitingForImplicitSwapchain);
-    
-    if (enableDLFGGuard && DxvkDLFG::enable()) {
+
+    const bool anyFGActive = enableDLFGGuard && fork_hooks::anyFrameGenerationEnabled();
+
+    if (anyFGActive) {
       ImGui::BeginDisabled();
     }
 
@@ -3341,7 +3344,7 @@ namespace dxvk {
     ImGui::Unindent();
     ImGui::EndDisabled();
     
-    if (enableDLFGGuard && DxvkDLFG::enable()) {
+    if (anyFGActive) {
       ImGui::Indent();
       ImGui::TextWrapped("When Frame Generation is active, V-Sync is automatically disabled.");
       ImGui::Unindent();
@@ -3579,7 +3582,11 @@ namespace dxvk {
         RemixGui::Separator();
       }
 
-      showDLFGOptions(ctx);
+      // NV-DXVK start: fork frame-generation panel (DLSS-G / FSR-FG selector)
+      fork_hooks::showFrameGenerationOptions(ctx,
+        ctx->getCommonObjects()->metaNGXContext().supportsDLFG() &&
+        !ctx->getCommonObjects()->metaDLFG().hasDLFGFailed());
+      // NV-DXVK end
 
       RemixGui::Separator();
 
@@ -3636,20 +3643,28 @@ namespace dxvk {
           ImGui::TextWrapped(str::format("Render Resolution: ", inputWidth, "x", inputHeight).c_str());
         } else if (RtxOptions::upscalerType() == UpscalerType::TAAU) {
         RemixGui::SliderFloat("Resolution scale", &RtxOptions::resolutionScaleObject(), 0.5f, 1.0f);
+      } else if (RtxOptions::upscalerType() == UpscalerType::FSR) {
+        fork_hooks::showFsrUpscalerSettings(ctx);
       }
+
+      fork_hooks::showSharedSharpnessSlider();
 
       RemixGui::Separator();
 
       RemixGui::Checkbox("Allow Full Screen Exclusive?", &RtxOptions::allowFSEObject());
 
-      auto& dlssNeuralRendering = common->metaDlssNeuralRendering();
-      if (dlssNeuralRendering.supportsDlssNeuralRendering()) {
+      // Deliberately not gated on a support query. The driver-core capability parameters are
+      // exactly what is missing on the machines the snippet backend exists to serve, so hiding
+      // the section behind them would hide the fix along with the problem; the panel reports
+      // availability in its own status line instead.
+      {
+        auto& neuralUplift = common->metaNeuralUplift();
         RemixGui::Separator();
 
         if (RemixGui::CollapsingHeader("DLSS 3D-Guided Neural Generation [Experimental]", collapsingHeaderClosedFlags)) {
           ImGui::Indent();
           ImGui::PushID("DLSS 3D-Guided Neural Generation");
-          dlssNeuralRendering.showDlssNeuralRenderingImguiSettings();
+          neuralUplift.showImguiSettings();
           ImGui::PopID();
           ImGui::Unindent();
         }
@@ -3853,6 +3868,14 @@ namespace dxvk {
             ImGui::PopID();
             ImGui::Unindent();
           }
+        } else if (RtxOptions::integrateIndirectMode() == IntegrateIndirectMode::Sharc) {
+          if (RemixGui::CollapsingHeader("SHARC", collapsingHeaderClosedFlags)) {
+            ImGui::Indent();
+            ImGui::PushID("SHARC");
+            common->metaSharc().showImguiSettings();
+            ImGui::PopID();
+            ImGui::Unindent();
+          }
         }
 
         ImGui::Unindent();
@@ -3883,7 +3906,11 @@ namespace dxvk {
     if (RemixGui::CollapsingHeader("RTX Volumetrics (Global)", collapsingHeaderClosedFlags)) {
       ImGui::Indent();
 
-      common->metaGlobalVolumetrics().showImguiSettings();
+      // NV-DXVK start: Numos weather-aware volumetrics UI
+      const WeatherBlender* weatherBlender = common->getSceneManager().getWeatherBlender();
+      common->metaGlobalVolumetrics().showImguiSettings(
+        weatherBlender ? weatherBlender->getBlendedSnapshot() : nullptr);
+      // NV-DXVK end
 
       common->metaDustParticles().showImguiSettings();
 
@@ -4029,39 +4056,7 @@ namespace dxvk {
           common->metaTAA().showImguiSettings();
       }
 
-      if (RemixGui::CollapsingHeader("Bloom", collapsingHeaderClosedFlags))
-        common->metaBloom().showImguiSettings();
-
-      if (RemixGui::CollapsingHeader("Auto Exposure", collapsingHeaderClosedFlags))
-        common->metaAutoExposure().showImguiSettings();
-
-      if (RemixGui::CollapsingHeader("Tonemapping", collapsingHeaderClosedFlags))
-      {
-        RemixGui::SliderInt("User Brightness", &RtxOptions::userBrightnessObject(), 0, 100, "%d");
-        RemixGui::DragFloat("User Brightness EV Range", &RtxOptions::userBrightnessEVRangeObject(), 0.5f, 0.f, 10.f, "%.1f");
-        RemixGui::Separator();
-        RemixGui::Combo("Tonemapping Mode", &RtxOptions::tonemappingModeObject(), "Global\0Local\0");
-        if (RtxOptions::tonemappingMode() == TonemappingMode::Global) {
-          common->metaToneMapping().showImguiSettings();
-        } else {
-          common->metaLocalToneMapping().showImguiSettings();
-        }
-        if (RtxOptions::showLegacyACESOption()) {
-          RemixGui::Separator();
-          RemixGui::Checkbox("Use Legacy ACES", &RtxOptions::useLegacyACESObject());
-          if (!RtxOptions::useLegacyACES()) {
-            ImGui::Indent();
-            ImGui::TextWrapped("WARNING: Non-legacy ACES is currently experimental and the implementation is a subject to change.");
-            ImGui::Unindent();
-          }
-        }
-      }
-
-      if (RemixGui::CollapsingHeader("Post FX", collapsingHeaderClosedFlags))
-        common->metaPostFx().showImguiSettings();
-
-      if (RemixGui::CollapsingHeader("sRGB + Dither", collapsingHeaderClosedFlags))
-        common->metaSRGBDither().showImguiSettings();
+      fork_hooks::showPostProcessingStackSettings(ctx);
 
       ImGui::Unindent();
     }
@@ -4297,6 +4292,8 @@ namespace dxvk {
       ImGui::Indent();
 
       RemixGui::Checkbox("Use White Material Textures", &RtxOptions::useWhiteMaterialModeObject());
+      RemixGui::Separator();
+      RemixGui::Checkbox("Linearize sRGB Textures", &RtxOptions::linearizeSrgbTexturesObject());
       RemixGui::Separator();
       constexpr float kMipBiasRange = 32;
       RemixGui::DragFloat("Mip LOD Bias", &RtxOptions::nativeMipBiasObject(), 0.01f, -kMipBiasRange, kMipBiasRange, "%.2f", sliderFlags);
