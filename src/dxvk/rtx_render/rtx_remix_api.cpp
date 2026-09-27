@@ -1521,14 +1521,14 @@ namespace {
 
     *out_handle = handle;
     // Auto-register for persistent instancing on device
-    {
+    /*{
       auto devLock = remixDevice->LockDevice();
       remixDevice->EmitCs([cHandle = handle](dxvk::DxvkContext* ctx) {
         auto& lightMgr = ctx->getCommonObjects()->getSceneManager().getLightManager();
         lightMgr.registerPersistentExternalLight(cHandle);
       });
     }
-    s_externalLightApiUsed.store(true, std::memory_order_relaxed);
+    s_externalLightApiUsed.store(true, std::memory_order_relaxed);*/
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 
@@ -1590,7 +1590,10 @@ namespace {
     }
     {
       std::lock_guard lock { s_mutex };
-      s_pendingLightDestroys.push_back(handle);
+      remixDevice->EmitCs([cHandle = handle](dxvk::DxvkContext* ctx) {
+        auto& lightMgr = ctx->getCommonObjects()->getSceneManager().getLightManager();
+        lightMgr.removeExternalLight(cHandle);
+      });
     }
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }

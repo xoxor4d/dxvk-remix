@@ -509,7 +509,7 @@ namespace dxvk {
     // This only enqueues into LightManager; the mutations apply at frame start.
     // Covers mixed-path consumers that create lights via the C API but present
     // through the native D3D9 COM path (bypassing remixapi_Present).
-    (void)remixapi_AutoInstancePersistentLights();
+    //(void)remixapi_AutoInstancePersistentLights(); 
     // NV-DXVK end
 
     uint32_t presentInterval = m_presentParams.PresentationInterval;

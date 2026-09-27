@@ -47,7 +47,7 @@ namespace dxvk {
         // Upstream grew the constructor with a DLSS control-mask block after displaceOut.
         // Both materials take identical values here so provenance stays the only difference.
         false, 1.0f, 1.0f, 1.0f,
-        0, false, false, 0, kInvalid, false, false, false, usesLegacyDefaults);
+        0, false, false, 0, 0, 0.0f, 0.0f, kInvalid, false, false, false, usesLegacyDefaults);
     }
 
     void testMaterialProvenance() {
