@@ -612,7 +612,7 @@ struct RtOpaqueSurfaceMaterial {
     float dlssControlMaskStructuralStrength,
     uint32_t subsurfaceMaterialIndex, bool isRaytracedRenderTarget, bool isHairCard,
     uint16_t samplerFeedbackStamp,
-    uint8_t d3dModifierFlags, uint16_t packedParams1, uint16_t packedParams2, float freeFloat01, float freeFloat02,
+    uint8_t d3dModifierFlags, float freeFloat01, float freeFloat02,
     uint32_t secondaryTextureIndex = 0
   ) :
     m_albedoOpacityTextureIndex{ albedoOpacityTextureIndex }, m_secondaryTextureIndex{secondaryTextureIndex}, m_normalTextureIndex{ normalTextureIndex },
@@ -889,7 +889,7 @@ struct RtOpaqueSurfaceMaterial {
 private:
   void updateCachedHash() {
     static_assert(
-      sizeof(*this) == 144,
+      sizeof(*this) == 160,
       "add new member for hashing if needed: add a MEMBER into the struct + add a VALUE into the list-init"
     );
     struct HashStruct {
@@ -957,7 +957,7 @@ private:
       m_freeFloat01,
       m_freeFloat02,
     };
-    m_cachedHash = hashStructByMemory<HashStruct,
+    m_cachedHash = hashStructByMemory < HashStruct,
       &HashStruct::albedoOpacityTextureIndex,
       &HashStruct::normalTextureIndex,
       &HashStruct::tangentTextureIndex,
@@ -984,7 +984,10 @@ private:
       &HashStruct::isRaytracedRenderTarget,
       &HashStruct::isHairCard,
       &HashStruct::samplerFeedbackStamp,
-      &HashStruct::secondaryTextureIndex>(hashData);
+      &HashStruct::secondaryTextureIndex,
+      &HashStruct::m_d3dModifierFlags,
+      &HashStruct::m_freeFloat01,
+      &HashStruct::m_freeFloat02>(hashData);
   }
 
   void updateCachedData() {

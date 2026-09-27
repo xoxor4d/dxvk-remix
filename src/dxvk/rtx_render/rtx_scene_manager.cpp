@@ -1738,8 +1738,6 @@ namespace dxvk {
       bool ignoreAlphaChannel = false;
 
       uint8_t d3dModifierFlags = REMIX_MODIFIER_TO_OPAQUE_SHADER_NONE;
-      uint16_t packedParams1 = 0u;
-      uint16_t packedParams2 = 0u;
       float freeFloat01 = 0.0f;
       float freeFloat02 = 0.0f;
 
@@ -1865,7 +1863,7 @@ namespace dxvk {
         opaqueMaterialData.getDLSSControlMaskStructuralStrength(),
         subsurfaceMaterialIndex, isUsingRaytracedRenderTarget, isHairCard,
         samplerFeedbackStamp,
-        d3dModifierFlags, packedParams1, packedParams2, freeFloat01, freeFloat02,
+        d3dModifierFlags, freeFloat01, freeFloat02,
         secondaryTextureIndex
       };
 
