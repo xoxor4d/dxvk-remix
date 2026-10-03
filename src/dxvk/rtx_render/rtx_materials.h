@@ -85,9 +85,9 @@ static_assert((int)AlphaTestType::kAlways == (int)VkCompareOp::VK_COMPARE_OP_ALW
 enum REMIX_MODIFIER_FROM_D3D : std::uint16_t {
   REMIX_MODIFIER_FROM_D3D_NONE = 0,
   REMIX_MODIFIER_FROM_D3D_EMISSIVE_TWEAK = 1 << 0,
-  REMIX_MODIFIER_FROM_D3D_FREE01 = 1 << 1, // stencil cutter
-  REMIX_MODIFIER_FROM_D3D_FREE02 = 1 << 2, // stencil target (e.g. water)
-  REMIX_MODIFIER_FROM_D3D_FREE03 = 1 << 3,
+  REMIX_MODIFIER_FROM_D3D_STENCIL_CUTTER = 1 << 1, // cutter mesh
+  REMIX_MODIFIER_FROM_D3D_STENCIL_CUTTER_TARGET = 1 << 2, // mesh getting cut by cutter mesh (e.g. water)
+  REMIX_MODIFIER_FROM_D3D_TRANSLUCENT_WORLDPOS_AS_TEXUV = 1 << 3,
   REMIX_MODIFIER_FROM_D3D_FREE04 = 1 << 4,
   REMIX_MODIFIER_FROM_D3D_FREE05 = 1 << 5,
   REMIX_MODIFIER_FROM_D3D_FREE06 = 1 << 6,
@@ -113,6 +113,18 @@ enum REMIX_MODIFIER_TO_OPAQUE_SHADER : std::uint8_t {
   REMIX_MODIFIER_TO_OPAQUE_SHADER_FREE7 = 1 << 6,
   REMIX_MODIFIER_TO_OPAQUE_SHADER_COUNT 
   // no 7th bit since OPAQUE_SURFACE_MATERIAL_FLAG_IS_HAIR_CARD now takes up one of the prev. free ones
+};
+
+enum REMIX_MODIFIER_TO_TRANSLUCENT_SHADER : std::uint8_t {
+  REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_NONE = 0,
+  REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_WORLDPOS_AS_TEXUV = 1 << 0,
+  REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_FREE2 = 1 << 1,
+  REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_FREE3 = 1 << 2,
+  REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_FREE4 = 1 << 3,
+  REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_FREE5 = 1 << 4,
+  REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_FREE6 = 1 << 5,
+  REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_FREE7 = 1 << 6,
+  REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_FREE8 = 1 << 7,
 };
 
 // Note: "Temporary" hacks to get RtxOptions data from this header file as we cannot include rtx_options directly
@@ -1120,6 +1132,7 @@ struct RtTranslucentSurfaceMaterial {
     float transmittanceMeasurementDistance, const Vector3& transmittanceColor,
     bool enableEmission, float emissiveIntensity, const Vector3& emissiveColorConstant,
     bool isThinWalled, float thinWallThickness, bool useDiffuseLayer, uint32_t samplerIndex,
+    uint8_t d3dModifierFlags, float freeFloat01,
     uint16_t samplerFeedbackStamp = SAMPLER_FEEDBACK_INVALID) :
     m_normalTextureIndex(normalTextureIndex),
     m_transmittanceTextureIndex(transmittanceTextureIndex),
@@ -1128,6 +1141,7 @@ struct RtTranslucentSurfaceMaterial {
     m_transmittanceMeasurementDistance(transmittanceMeasurementDistance), m_transmittanceColor(transmittanceColor),
     m_enableEmission(enableEmission), m_emissiveIntensity(emissiveIntensity), m_emissiveColorConstant(emissiveColorConstant),
     m_isThinWalled(isThinWalled), m_thinWallThickness(thinWallThickness), m_useDiffuseLayer(useDiffuseLayer), m_samplerIndex(samplerIndex),
+    m_d3dModifierFlags(d3dModifierFlags), m_freeFloat01(freeFloat01),
     m_samplerFeedbackStamp(samplerFeedbackStamp)
   {
     updateCachedData();
@@ -1145,6 +1159,10 @@ struct RtTranslucentSurfaceMaterial {
     // Note: Respect override flag here to let the GPU do less work in determining if the diffuse layer should be used or not.
     if (m_useDiffuseLayer || getEnableDiffuseLayerOverrideHack()) {
       flags |= TRANSLUCENT_SURFACE_MATERIAL_FLAG_USE_DIFFUSE_LAYER;
+    }
+
+    if (m_d3dModifierFlags & REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_WORLDPOS_AS_TEXUV) {
+      flags |= TRANSLUCENT_SURFACE_MATERIAL_FLAG_D3D_WORLDPOS_INSTEAD_TEXUV;
     }
 
     // data[0- 1]
@@ -1183,8 +1201,11 @@ struct RtTranslucentSurfaceMaterial {
     // data[17]: samplerFeedbackStamp
     writeGPUHelperExplicit<2>(data, offset, m_samplerFeedbackStamp);
 
-    // data[18 - 31]
-    writeGPUPadding<28>(data, offset);
+    // xo
+    writeGPUHelper(data, offset, glm::packHalf1x16(m_freeFloat01));
+
+    // data[17 - 31]
+    writeGPUPadding<26>(data, offset);
 
     assert(offset - oldOffset == kSurfaceMaterialGPUSize);
   }
@@ -1215,7 +1236,7 @@ struct RtTranslucentSurfaceMaterial {
 private:
   void updateCachedHash() {
     static_assert(
-      sizeof(*this) == 96,
+      sizeof(*this) == 104,
       "add new member for hashing if needed: add a MEMBER into the struct + add a VALUE into the list-init"
     );
     struct HashStruct {
@@ -1233,6 +1254,8 @@ private:
       uint32_t useDiffuseLayer; // NOTE: uint32_t to avoid padding
       uint32_t samplerIndex;
       uint32_t samplerFeedbackStamp; // NOTE: uint32_t to avoid padding
+      uint32_t m_d3dModifierFlags;
+      float m_freeFloat01;
       // NOTE: There must be NO padding between members, as the struct is used for hashing
     };
     static_assert(alignof(HashStruct) == 4 && sizeof(HashStruct) % 4 == 0);
@@ -1251,6 +1274,8 @@ private:
       m_useDiffuseLayer,
       m_samplerIndex,
       m_samplerFeedbackStamp,
+      m_d3dModifierFlags,
+      m_freeFloat01
     };
     m_cachedHash = XXH3_64bits(&hashData, sizeof(hashData));
   }
@@ -1291,6 +1316,9 @@ private:
   float m_thinWallThickness;
   bool m_useDiffuseLayer;
   uint16_t m_samplerFeedbackStamp;
+
+  uint8_t m_d3dModifierFlags;
+  float m_freeFloat01;
 
   XXH64_hash_t m_cachedHash;
 

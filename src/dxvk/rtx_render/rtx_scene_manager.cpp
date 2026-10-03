@@ -1931,7 +1931,7 @@ namespace dxvk {
 
       surfaceMaterial.emplace(opaqueSurfaceMaterial);
     } else if (renderMaterialDataType == MaterialDataType::Translucent) {
-      surfaceMaterial.emplace(createTranslucentSurfaceMaterial(renderMaterialData.getTranslucentMaterialData(), samplerIndex, hasTexcoords));
+      surfaceMaterial.emplace(createTranslucentSurfaceMaterial(&drawCallState, renderMaterialData.getTranslucentMaterialData(), samplerIndex, hasTexcoords));
     } else if (renderMaterialDataType == MaterialDataType::RayPortal) {
       const auto& rayPortalMaterialData = renderMaterialData.getRayPortalMaterialData();
 
@@ -1966,7 +1966,8 @@ namespace dxvk {
   }
 
 
-  RtTranslucentSurfaceMaterial SceneManager::createTranslucentSurfaceMaterial(const TranslucentMaterialData& translucentMaterialData,
+  RtTranslucentSurfaceMaterial SceneManager::createTranslucentSurfaceMaterial(const DrawCallState* drawCallState, 
+                                                                              const TranslucentMaterialData& translucentMaterialData,
                                                                               uint32_t samplerIndex,
                                                                               bool hasTexcoords) {
     uint32_t normalTextureIndex = kSurfaceMaterialInvalidTextureIndex;
@@ -1977,6 +1978,16 @@ namespace dxvk {
     trackTexture(translucentMaterialData.getNormalTexture(), normalTextureIndex, hasTexcoords, true, &samplerFeedbackStamp);
     trackTexture(translucentMaterialData.getTransmittanceTexture(), transmittanceTextureIndex, hasTexcoords, true, &samplerFeedbackStamp);
     trackTexture(translucentMaterialData.getEmissiveColorTexture(), emissiveColorTextureIndex, hasTexcoords, true, &samplerFeedbackStamp);
+
+    uint8_t d3dModifierFlags = REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_NONE;
+    float freeFloat01 = 0.0f;
+
+    if (drawCallState) {
+      if (drawCallState->getMaterialData().remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_TRANSLUCENT_WORLDPOS_AS_TEXUV) {
+        d3dModifierFlags |= REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_WORLDPOS_AS_TEXUV;
+        freeFloat01 = drawCallState->getMaterialData().remixFloatRS211FromD3D;
+      }
+    }
 
     return RtTranslucentSurfaceMaterial{
       normalTextureIndex,
@@ -1992,6 +2003,7 @@ namespace dxvk {
       translucentMaterialData.getThinWallThickness(),
       translucentMaterialData.getEnableDiffuseLayer(),
       samplerIndex,
+      d3dModifierFlags, freeFloat01,
       samplerFeedbackStamp
     };
   }
@@ -2027,7 +2039,7 @@ namespace dxvk {
 
     const auto samplerIndex = trackSampler(getOrCreateExternalSampler());
     const auto surfaceMaterial = RtSurfaceMaterial(
-      createTranslucentSurfaceMaterial(translucentMaterial.getTranslucentMaterialData(), samplerIndex, true));
+      createTranslucentSurfaceMaterial(nullptr, translucentMaterial.getTranslucentMaterialData(), samplerIndex, true));
 
     m_externalStartInMediumMaterialIndex_inCache = m_surfaceMaterialCache.track(surfaceMaterial);
   }
@@ -2344,7 +2356,7 @@ namespace dxvk {
         assert(m_persistentStartInMediumMaterial->getType() == MaterialDataType::Translucent);
         const auto samplerIndex = trackSampler(getOrCreateExternalSampler());
         const auto surfaceMaterial = RtSurfaceMaterial(
-          createTranslucentSurfaceMaterial(m_persistentStartInMediumMaterial->getTranslucentMaterialData(), samplerIndex, true));
+          createTranslucentSurfaceMaterial(nullptr, m_persistentStartInMediumMaterial->getTranslucentMaterialData(), samplerIndex, true));
         persistentStartInMediumMaterialIndexInCache = m_surfaceMaterialCache.track(surfaceMaterial);
       }
 

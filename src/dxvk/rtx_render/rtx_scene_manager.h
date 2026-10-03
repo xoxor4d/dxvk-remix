@@ -316,7 +316,8 @@ private:
   void retainSurfaceMaterial(uint32_t matIdx);
   void releaseSurfaceMaterial(uint32_t matIdx);
 
-  RtTranslucentSurfaceMaterial createTranslucentSurfaceMaterial(const TranslucentMaterialData& translucentMaterialData,
+  RtTranslucentSurfaceMaterial createTranslucentSurfaceMaterial(const DrawCallState* drawCallState, 
+                                                                const TranslucentMaterialData& translucentMaterialData,
                                                                 uint32_t samplerIndex,
                                                                 bool hasTexcoords);
   Rc<DxvkSampler> getOrCreateExternalSampler();

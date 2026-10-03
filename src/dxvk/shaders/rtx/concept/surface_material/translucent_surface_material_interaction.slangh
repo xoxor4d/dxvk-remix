@@ -51,6 +51,40 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
 {
   TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteraction;
 
+  const bool d3dUseWorldPos = translucentSurfaceMaterial.flags & TRANSLUCENT_SURFACE_MATERIAL_FLAG_D3D_WORLDPOS_INSTEAD_TEXUV;
+  if (d3dUseWorldPos)
+  {
+    // surfaceInteraction.position = worldpos
+    // surfaceInteraction.textureCoordinates = UVs used by the shader
+    // translucentSurfaceMaterial.m_freeFloat01 = worldpos scalar
+
+    surfaceInteraction.textureCoordinates = surfaceInteraction.position.xy * 0.01f * translucentSurfaceMaterial.m_freeFloat01; //cb.debugKnob.x;
+    if (surface.spriteSheetFPS > 0 && surface.spriteSheetCols > 0 && surface.spriteSheetRows > 0 && surface.spriteSheetCols != surface.spriteSheetRows)
+    {
+      // apply sprite sheet animation if enabled (normally done in calcSpriteSheetAdjustment during surfaceInteractionCreate)
+      if (!surface.isAnimatedWater)
+      {
+          vec2 uvSize, uvBias;
+          calcSpritesheetValues(
+              cb.timeSinceStartSeconds,
+              surface.spriteSheetRows,
+              surface.spriteSheetCols,
+              surface.spriteSheetFPS,
+              uvSize,
+              uvBias);
+          
+          surfaceInteraction.textureCoordinates = uvBias + frac(surfaceInteraction.textureCoordinates) * uvSize;
+          surfaceInteraction.textureGradientX *= uvSize;
+          surfaceInteraction.textureGradientY *= uvSize;
+      }
+      else
+      {
+        surfaceInteraction.textureCoordinates.x /= surface.spriteSheetCols;
+        surfaceInteraction.textureCoordinates.y /= surface.spriteSheetRows;
+      }
+    }
+  }
+
   // Sample from each Translucent Surface Material texture
 
   vec4 normalSample;

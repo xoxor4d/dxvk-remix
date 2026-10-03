@@ -1116,9 +1116,9 @@ namespace dxvk {
         currentInstance.surface.isVertexColorBakedLighting = drawCall.getMaterialData().isVertexColorBakedLighting;
         currentInstance.surface.isMotionBlurMaskOut = currentInstance.testCategoryFlags(InstanceCategories::IgnoreMotionBlur);
         currentInstance.surface.isStencilCutter =
-          (drawCall.getMaterialData().remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_FREE01) != 0;
+          (drawCall.getMaterialData().remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_STENCIL_CUTTER) != 0;
         currentInstance.surface.isStencilTarget =
-          (drawCall.getMaterialData().remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_FREE02) != 0;
+          (drawCall.getMaterialData().remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_STENCIL_CUTTER_TARGET) != 0;
 
         // Note: Skip the spritesheet adjustment logic in the surface interaction when using Ray Portal materials as this logic
         // is done later in the Surface Material Interaction (and doing it in both places will just double up the animation).
