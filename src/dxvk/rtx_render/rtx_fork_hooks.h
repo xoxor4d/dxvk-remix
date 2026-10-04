@@ -34,6 +34,9 @@ namespace lss {
   struct Export;
 } // namespace lss
 
+// Shader-shared constant buffer struct (rtx/pass/raytrace_args.h), global namespace.
+struct RaytraceArgs;
+
 // remixapi_LightHandle for the light-manager hooks. Guard against redefinition
 // when rtx_light_manager.h is also included in the same translation unit.
 #ifndef REMIXAPI_LIGHTHANDLE_DEFINED
@@ -658,6 +661,14 @@ namespace dxvk {
     // "AutoPBR" collapsing header in Game Setup -> Step 1: Categorize Textures.
     // Implementation in rtx_fork_autopbr.cpp.
     void showAutoPbrUI();
+
+    // Fills the rtx.water.* shoreline fade constants.
+    // Implementation in rtx_fork_water.cpp.
+    void fillWaterShaderParams(RaytraceArgs& constants);
+
+    // Shoreline fade settings under Material Options -> PBR Material Modifiers -> Translucent.
+    // Implementation in rtx_fork_water.cpp.
+    void showWaterShoreSettings();
 
   } // namespace fork_hooks
 

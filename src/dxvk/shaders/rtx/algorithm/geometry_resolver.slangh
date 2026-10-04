@@ -2238,8 +2238,9 @@ void geometryResolverVertex(
     {
       // Create a ray from the Transmission PSR material sample
 
-      const Ray sampledRay = rayCreateDirection(
-        rayInteraction, surfaceInteraction, ray, surfaceMaterialInteractionTransmissionPSRSample.inputDirection, pstrPenetrateSurface);
+      const Ray sampledRay = forkClampTransmissionRay(rayCreateDirection(
+        rayInteraction, surfaceInteraction, ray, surfaceMaterialInteractionTransmissionPSRSample.inputDirection, pstrPenetrateSurface),
+        surfaceInteraction, polymorphicSurfaceMaterialInteraction, pstrPenetrateSurface);
 
       vec4 vectorTransform = quaternionMultiply(geometryResolverState.accumulatedRotation, surfaceMaterialInteractionTransmissionPSRSample.vectorTransform, true);
       
@@ -2745,8 +2746,9 @@ void geometryPSRResolverVertex(
   {
     // Set PSR resolver state information from the transmission sample for the next iteration
 
-    const Ray sampledRay = rayCreateDirection(
-      rayInteraction, surfaceInteraction, ray, surfaceMaterialInteractionTransmissionPSRSample.inputDirection, penetrateSurface);
+    const Ray sampledRay = forkClampTransmissionRay(rayCreateDirection(
+      rayInteraction, surfaceInteraction, ray, surfaceMaterialInteractionTransmissionPSRSample.inputDirection, penetrateSurface),
+      surfaceInteraction, polymorphicSurfaceMaterialInteraction, penetrateSurface);
 
     geometryPSRResolverState.origin = sampledRay.origin;
     geometryPSRResolverState.coneRadius = sampledRay.coneRadius;
@@ -3535,9 +3537,10 @@ void geometryPSRPreparePass(ivec2 pixelCoordinate) {
 
   if (performPSTR)
   {
-    const Ray sampledRay = rayCreateDirection(
+    const Ray sampledRay = forkClampTransmissionRay(rayCreateDirection(
       minimalRayInteraction, minimalSurfaceInteraction, primaryRay,
-      transmissionPSRSample.inputDirection, pstrPenetrateSurface);
+      transmissionPSRSample.inputDirection, pstrPenetrateSurface),
+      minimalSurfaceInteraction, polymorphicSurfaceMaterialInteraction, pstrPenetrateSurface);
     const vec4 vectorTransform =
       quaternionMultiply(accumulatedRotation, transmissionPSRSample.vectorTransform, true);
     const GbufferPSRData psrData = packPSRData(

@@ -1,0 +1,117 @@
+#pragma once
+
+// rtx_fork_water_shore.slangh - fork-owned. Soft, animated shoreline for
+// AnimatedWater translucents: fades the water out where the opaque surface
+// below it is shallow or an opaque object is right behind it. See docs/RemixWaterAPI.md.
+
+// Returns floatMax on a miss.
+float forkWaterShoreProbe(vec3 origin, vec3 direction, float tMax)
+{
+  RayDesc probeRay;
+  probeRay.Origin = origin;
+  probeRay.TMin = 0.0f;
+  probeRay.Direction = direction;
+  probeRay.TMax = tMax;
+
+  // Opaque-only: every in-mask candidate is opaque, so one Proceed() completes traversal.
+  RayQuery<RAY_FLAG_CULL_NON_OPAQUE> rayQuery;
+  rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_CULL_NON_OPAQUE, OBJECT_MASK_OPAQUE, probeRay);
+  rayQuery.Proceed();
+
+  return rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? rayQuery.CommittedRayT() : floatMax;
+}
+
+// Like forkWaterShoreProbe, but skips moving or skinned surfaces (characters, props) so the depth
+// reflects static ground only. Objects in the water are faded by the view-ray probe instead.
+float forkWaterShoreGroundProbe(vec3 origin, vec3 direction, float tMax)
+{
+  RayDesc probeRay;
+  probeRay.Origin = origin;
+  probeRay.TMin = 0.0f;
+  probeRay.Direction = direction;
+  probeRay.TMax = tMax;
+
+  RayQuery<RAY_FLAG_FORCE_NON_OPAQUE> rayQuery;
+  rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_FORCE_NON_OPAQUE, OBJECT_MASK_OPAQUE, probeRay);
+
+  while (rayQuery.Proceed())
+  {
+    if (rayQuery.CandidateType() != CANDIDATE_NON_OPAQUE_TRIANGLE)
+    {
+      continue;
+    }
+
+    RayHitInfo rayHitInfo;
+    RAY_HIT_INFO_CREATE_RAY_QUERY_CANDIDATE(rayHitInfo, rayQuery)
+
+    const Surface surface = surfaces[calculateSurfaceIndex(rayHitInfo)];
+
+    if (surface.isStatic && surface.isFullyOpaque)
+    {
+      rayQuery.CommitNonOpaqueTriangleHit();
+    }
+  }
+
+  return rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? rayQuery.CommittedRayT() : floatMax;
+}
+
+// Returns true when the water is fully faded out and the hit should be skipped.
+bool forkWaterShoreFade(
+  SurfaceInteraction surfaceInteraction,
+  RayInteraction rayInteraction,
+  inout TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteraction)
+{
+  const bool zUp = cb.isZUp != 0;
+  const vec3 up = zUp ? vec3(0.0f, 0.0f, 1.0f) : vec3(0.0f, 1.0f, 0.0f);
+  const vec3 horizontalA = vec3(1.0f, 0.0f, 0.0f);
+  const vec3 horizontalB = zUp ? vec3(0.0f, 1.0f, 0.0f) : vec3(0.0f, 0.0f, 1.0f);
+  const vec3 position = surfaceInteraction.position;
+  const vec3 geometryNormal = surfaceInteraction.geometryNormal;
+  const vec3 shadingNormal = translucentSurfaceMaterialInteraction.shadingNormal;
+
+  // Pseudo-height: the signed slope of the animated normal along a horizontal diagonal.
+  // Zero-mean and at the wave frequency, so the waterline wobbles with the normal animation.
+  const vec3 slope = shadingNormal - geometryNormal * dot(shadingNormal, geometryNormal);
+  const float depthOffset = dot(slope, (horizontalA + horizontalB) * 0.70710678f) * cb.waterShoreHeightScale - cb.waterShoreCutDepth;
+
+  // A single probe can slip through cracks and T-junctions between meshes and read as deep water,
+  // so a miss is confirmed by two more non-collinear probes.
+  float depth = forkWaterShoreGroundProbe(position, -up, cb.waterShoreFadeDistance);
+
+  if (depth == floatMax)
+  {
+    const float spread = cb.waterShoreProbeSpread + rayInteraction.coneRadius;
+
+    depth = min(
+      forkWaterShoreGroundProbe(position + horizontalA * spread, -up, cb.waterShoreFadeDistance),
+      forkWaterShoreGroundProbe(position + horizontalB * spread, -up, cb.waterShoreFadeDistance));
+  }
+
+  float fade = saturate((depth + depthOffset) / max(cb.waterShoreFadeWidth, 1e-3f));
+
+  // Soft intersection with objects right behind the surface along the incoming ray.
+  if (fade > 0.0f && cb.waterObjectFadeWidth > 0.0f)
+  {
+    const float objectProbeDistance = cb.waterObjectFadeWidth + cb.waterShoreCutDepth + cb.waterShoreHeightScale;
+    const float objectDistance = forkWaterShoreProbe(position, -rayInteraction.viewDirection, objectProbeDistance);
+
+    fade = min(fade, smoothstep(0.0f, 1.0f, (objectDistance + depthOffset) / cb.waterObjectFadeWidth));
+  }
+
+  if (fade >= 1.0f)
+  {
+    return false;
+  }
+
+  // Blending toward the view direction (not the geometry normal) drives Schlick Fresnel to the
+  // scaled base reflectivity at fade 0, removing the grazing reflection along with the bend.
+  translucentSurfaceMaterialInteraction.shadingNormal = normalize(mix(rayInteraction.viewDirection, shadingNormal, fade));
+  translucentSurfaceMaterialInteraction.normalDetail *= fade;
+  translucentSurfaceMaterialInteraction.baseReflectivity *= fade;
+  translucentSurfaceMaterialInteraction.refractiveIndex = mix(materialIoRVacuum, translucentSurfaceMaterialInteraction.refractiveIndex, fade);
+  translucentSurfaceMaterialInteraction.transmittanceColor = mix(vec3(1.0f), translucentSurfaceMaterialInteraction.transmittanceColor, fade);
+  translucentSurfaceMaterialInteraction.diffuseOpacity *= fade;
+  translucentSurfaceMaterialInteraction.emissiveRadiance *= fade;
+
+  return fade <= 0.0f;
+}
