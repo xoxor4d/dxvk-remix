@@ -73,7 +73,7 @@ namespace dxvk {
   X(float, noiseFieldGain, 0.5f, WK_Scalar, "Volumetric Fog", "Heterogeneous", "Noise Field Gain", 0.0f, 1.0f, 0.01f, "%.2f") \
   X(float, noiseFieldTimeScale, 0.5f, WK_Scalar, "Volumetric Fog", "Heterogeneous", "Noise Field Time Scale", 0.0f, 4.0f, 0.05f, "%.2f") \
   X(float, noiseFieldSubStepSizeMeters, 10.0f, WK_Scalar, "Volumetric Fog", "Heterogeneous", "Noise Field Substep Size", 0.5f, 50.0f, 0.5f, "%.1f") \
-  X(float, froxelMaxDistanceMeters, 20.0f, WK_Scalar, "Volumetric Fog", "Reach", "Froxel Max Distance", 1.0f, 200.0f, 1.0f, "%.0f") \
+  X(float, froxelMaxDistanceMeters, 20.0f, WK_Scalar, "Volumetric Fog", "Reach", "Froxel Max Distance", 1.0f, FLT_MAX, 1.0f, "%.0f") \
   X(bool, enableFogRemap, false, WK_Step, "Volumetric Fog", "Fog Remap", "Enable Legacy Fog Remapping", 0.0f, 1.0f, 1.0f, "%.0f") \
   X(bool, enableFogColorRemap, false, WK_Step, "Volumetric Fog", "Fog Remap", "Enable Fog Color Remapping", 0.0f, 1.0f, 1.0f, "%.0f") \
   X(bool, enableFogMaxDistanceRemap, true, WK_Step, "Volumetric Fog", "Fog Remap", "Enable Fog Max Distance Remapping", 0.0f, 1.0f, 1.0f, "%.0f") \
