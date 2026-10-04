@@ -168,6 +168,28 @@ static void deserializeFromQueue(SerializableT& serializableT) {
   dslz.deserialize();
   serializableT = std::move(dslz);
 }
+
+// Game textures arrive as client D3D object ids, map them to the server-side textures
+static void resolveGameTextures(serialize::MaterialInfoGameTextures& info) {
+  for (uint32_t iTex = 0; iTex < info.textures_count; ++iTex) {
+    auto& tex = const_cast<remixapi_GameTexture&>(info.textures_values[iTex]);
+    const uint32_t textureId = (uint32_t) (uintptr_t) tex.texture;
+    tex.texture = nullptr;
+    if (textureId == 0) {
+      continue;
+    }
+    const auto it = gpD3DResources.find(textureId);
+    if (it != gpD3DResources.end() && it->second && it->second->GetType() == D3DRTYPE_TEXTURE) {
+      tex.texture = (IDirect3DTexture9*) it->second;
+    } else {
+      static bool warned = false;
+      if (!warned) {
+        Logger::warn("[RemixApi] Game texture is not a known 2D texture. Treating as null.");
+        warned = true;
+      }
+    }
+  }
+}
 }
 
 static inline void safeDestroy(IUnknown* obj, uint32_t x86handle) {
@@ -2827,6 +2849,7 @@ void ProcessDeviceCommandQueue() {
           serialize::MaterialInfoOpaqueSubsurface opaqueSubsurface;
           serialize::MaterialInfoTranslucent translucent;
           serialize::MaterialInfoPortal portal;
+          serialize::MaterialInfoGameTextures gameTextures;
         } exts;
         memset(&exts, 0, sizeof(MaterialExtensions));
 
@@ -2872,6 +2895,15 @@ void ProcessDeviceCommandQueue() {
               deserializeFromQueue(exts.portal);
               pInfoProto->pNext = &(exts.portal);
               pInfoProto = &getInfoProto(exts.portal);
+              break;
+            }
+            case REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_GAME_TEXTURES_EXT:
+            {
+              assert(!exts.gameTextures.pNext);
+              deserializeFromQueue(exts.gameTextures);
+              resolveGameTextures(exts.gameTextures);
+              pInfoProto->pNext = &(exts.gameTextures);
+              pInfoProto = &getInfoProto(exts.gameTextures);
               break;
             }
             default:
@@ -3248,6 +3280,31 @@ void ProcessDeviceCommandQueue() {
 
         ServerMessage c(Commands::Bridge_Response, currentUID);
         c.send_data(static_cast<uint32_t>(result));
+        break;
+      }
+
+      case RemixApi_SetDrawGameTextures:
+      {
+        serialize::MaterialInfoGameTextures info;
+        const bool bHasInfo = remixapi::pullBool();
+        if (bHasInfo) {
+          const auto infoSType = remixapi::pullSType();
+          assert(infoSType == REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_GAME_TEXTURES_EXT);
+          deserializeFromQueue(info);
+          resolveGameTextures(info);
+        }
+
+        if (remixapi::g_remix.SetDrawGameTextures) {
+          if (remixapi::g_remix.SetDrawGameTextures(bHasInfo ? &info : nullptr) != REMIXAPI_ERROR_CODE_SUCCESS) {
+            Logger::err("[RemixApi_SetDrawGameTextures] Remix API call failed!");
+          }
+        } else {
+          static bool warned = false;
+          if (!warned) {
+            Logger::err("[RemixApi_SetDrawGameTextures] SetDrawGameTextures function pointer is null in g_remix.");
+            warned = true;
+          }
+        }
         break;
       }
 

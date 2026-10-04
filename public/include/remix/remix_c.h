@@ -67,9 +67,13 @@
 // DLSS control-mask fields. The runtime (and the bridge client) only read those
 // fields from callers reporting >= 0.1000.1, so binaries built against 0.1000.0
 // keep working and receive upstream's defaults.
+//
+// PATCH 2 appends remixapi_Interface::SetDrawGameTextures and adds
+// remixapi_MaterialInfoGameTexturesEXT. Callers reporting < 0.1000.2 receive
+// the interface truncated before SetDrawGameTextures.
 #define REMIXAPI_VERSION_MAJOR 0
 #define REMIXAPI_VERSION_MINOR 1000
-#define REMIXAPI_VERSION_PATCH 1
+#define REMIXAPI_VERSION_PATCH 2
 
 
 // External
@@ -144,6 +148,7 @@ extern "C" {
     REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_PARTICLE_SYSTEM_EXT    = 26,
     REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_GPU_INSTANCING_EXT     = 27,
     REMIXAPI_STRUCT_TYPE_CAMERA_MEDIUM_INFO                   = 28,
+    REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_GAME_TEXTURES_EXT      = 29,
     // NOTE: if adding a new struct, register it in 'rtx_remix_specialization.inl'
     //       and only extend this enum by appending, never adjust the order of these 
     //       as that will break backwards compatibility.
@@ -935,6 +940,38 @@ extern "C" {
     remixapi_Format   format,
     float             opacity);
 
+  // Game texture association API (AutoPBR)
+  typedef enum remixapi_GameTextureUsage {
+    REMIXAPI_GAME_TEXTURE_USAGE_COLOR    = 0,
+    REMIXAPI_GAME_TEXTURE_USAGE_NORMAL   = 1,
+    REMIXAPI_GAME_TEXTURE_USAGE_SPECULAR = 2,
+  } remixapi_GameTextureUsage;
+
+  typedef struct remixapi_GameTexture {
+    remixapi_GameTextureUsage usage;
+    IDirect3DTexture9*        texture;
+    // Optional asset name, may be NULL
+    const char*               name;
+  } remixapi_GameTexture;
+
+  // Chained from remixapi_MaterialInfoOpaqueEXT::pNext, or passed to SetDrawGameTextures.
+  // On a material with an empty albedoTexture, the COLOR entry's D3D9 texture is used as albedo
+  // and its image hash becomes the material's replacement / capture key (same as a D3D9 draw).
+  typedef struct remixapi_MaterialInfoGameTexturesEXT {
+    remixapi_StructType         sType;
+    void*                       pNext;
+    // Optional, may be NULL
+    const char*                 materialName;
+    // Optional, may be NULL
+    const char*                 shaderName;
+    const remixapi_GameTexture* textures_values;
+    uint32_t                    textures_count;
+  } remixapi_MaterialInfoGameTexturesEXT;
+
+  // Attaches game texture info to the following D3D9 draw calls until called with NULL.
+  typedef remixapi_ErrorCode(REMIXAPI_PTR* PFN_remixapi_SetDrawGameTextures)(
+    const remixapi_MaterialInfoGameTexturesEXT* info);
+
 
   typedef struct remixapi_InitializeLibraryInfo {
     remixapi_StructType sType;
@@ -1072,6 +1109,8 @@ extern "C" {
     PFN_remixapi_GetVramStats               GetVramStats;
     PFN_remixapi_RequestTextureVramFree     RequestTextureVramFree;
     PFN_remixapi_GetGameValue               GetGameValue;
+    // Present starting in 0.1000.2
+    PFN_remixapi_SetDrawGameTextures        SetDrawGameTextures;
   } remixapi_Interface;
 
   REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_InitializeLibrary(

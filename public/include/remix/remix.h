@@ -204,6 +204,8 @@ namespace remix {
     Result< void >                    SetConfigVariable(const char* key, const char* value);
     Result< void >                    SetGameValue(const char* key, const char* value);
     remixapi_ErrorCode                GetGameValue(const char* key, char* out_buffer, uint32_t in_buffer_size, uint32_t* out_actual_size);
+    // Applies to the following D3D9 draws until called with nullptr.
+    Result< void >                    SetDrawGameTextures(const remixapi_MaterialInfoGameTexturesEXT* info);
     Result< void >                    AddTextureHash(const char* textureCategory, const char* textureHash);
     Result< void >                    RemoveTextureHash(const char* textureCategory, const char* textureHash);
 
@@ -249,7 +251,7 @@ namespace remix {
         return status;
       }
 
-      static_assert(sizeof(remixapi_Interface) == 328,
+      static_assert(sizeof(remixapi_Interface) == 336,
                     "Change version, update C++ wrapper when adding new functions");
 
       remix::Interface interfaceInCpp = {};
@@ -307,6 +309,13 @@ namespace remix {
       return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
     }
     return m_CInterface.GetGameValue(key, out_buffer, in_buffer_size, out_actual_size);
+  }
+
+  inline Result< void > Interface::SetDrawGameTextures(const remixapi_MaterialInfoGameTexturesEXT* info) {
+    if (!m_CInterface.SetDrawGameTextures) {
+      return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
+    }
+    return m_CInterface.SetDrawGameTextures(info);
   }
 
   inline Result< void > Interface::AddTextureHash(const char* textureCategory, const char* textureHash) {

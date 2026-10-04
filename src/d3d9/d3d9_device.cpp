@@ -47,6 +47,7 @@
 #include "../dxvk/rtx_render/rtx_context.h"
 #include "../dxvk/rtx_render/rtx_options.h"
 #include "../dxvk/rtx_render/rtx_terrain_baker.h"
+#include "../dxvk/rtx_render/rtx_fork_hooks.h"
 
 #include "d3d9_initializer.h"
 
@@ -164,6 +165,7 @@ namespace dxvk {
   D3D9DeviceEx::~D3D9DeviceEx() {
     Flush();
     SynchronizeCsThread();
+    fork_hooks::shutdownGameTextures(this);
 
     delete m_initializer;
     delete m_converter;

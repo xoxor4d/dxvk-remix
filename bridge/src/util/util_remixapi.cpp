@@ -226,6 +226,62 @@ void deserialize(void*& deserializeFrom, remixapi_Path& deserializeTo) {
   }
 }
 
+// const char* (nullable)
+static inline uint32_t strSize(const char* const str) {
+  return str ? (uint32_t) strlen(str) + 1 : 0;
+}
+template<>
+static inline uint32_t sizeOf(const char* const& str) {
+  return sizeOf<bool>() + (str ? sizeOf<uint32_t>() + strSize(str) : 0);
+}
+template<>
+void serialize(const char* const& serializeFrom, void*& pSerialize) {
+  serialize((serializeFrom) ? true : false, pSerialize);
+  if (serializeFrom) {
+    const uint32_t size = strSize(serializeFrom);
+    serialize(size, pSerialize);
+    serialize(serializeFrom, pSerialize, size);
+  }
+}
+template<>
+void deserialize(void*& deserializeFrom, const char*& deserializeTo) {
+  bool bIsValidString = false;
+  deserialize(deserializeFrom, bIsValidString);
+  deserializeTo = nullptr;
+  if (bIsValidString) {
+    uint32_t size = 0;
+    deserialize(deserializeFrom, size);
+    if (size > 0) {
+      auto str = new char[size];
+      deserialize(deserializeFrom, str, size);
+      str[size - 1] = '\0';
+      deserializeTo = str;
+    }
+  }
+}
+
+// remixapi_GameTexture
+// `texture` crosses the bridge as the client's D3D object id: the client translates
+// its texture proxies before serializing and the server resolves the id afterwards
+template<>
+static inline uint32_t sizeOf(const remixapi_GameTexture& tex) {
+  return sizeOf(tex.usage) + sizeOf<uint32_t>() + sizeOf(tex.name);
+}
+template<>
+void serialize(const remixapi_GameTexture& serializeFrom, void*& pSerialize) {
+  serialize(serializeFrom.usage, pSerialize);
+  serialize((uint32_t) (uintptr_t) serializeFrom.texture, pSerialize);
+  serialize(serializeFrom.name, pSerialize);
+}
+template<>
+void deserialize(void*& deserializeFrom, remixapi_GameTexture& deserializeTo) {
+  deserialize(deserializeFrom, deserializeTo.usage);
+  uint32_t textureId = 0;
+  deserialize(deserializeFrom, textureId);
+  deserializeTo.texture = reinterpret_cast<IDirect3DTexture9*>((uintptr_t) textureId);
+  deserialize(deserializeFrom, deserializeTo.name);
+}
+
 // remixapi_HardcodedVertex
 template<>
 static inline constexpr uint32_t sizeOf<remixapi_HardcodedVertex>() {
@@ -409,6 +465,34 @@ void MaterialInfoPortal::_deserialize(void*& pDeserialize) {
   fold_helper::deserialize(pDeserialize, MaterialInfoPortalVars);
 }
 void MaterialInfoPortal::_dtor() {
+}
+
+
+uint32_t MaterialInfoGameTextures::_calcSize() const {
+  uint32_t size = fold_helper::calcSize(sType, materialName, shaderName, textures_count);
+  for(size_t iTex = 0; iTex < textures_count; ++iTex) {
+    size += sizeOf(textures_values[iTex]);
+  }
+  return size;
+}
+void MaterialInfoGameTextures::_serialize(void*& pSerialize) const {
+  fold_helper::serialize(pSerialize, sType, materialName, shaderName, textures_count);
+  for(size_t iTex = 0; iTex < textures_count; ++iTex) {
+    bridge_util::serialize(textures_values[iTex], pSerialize);
+  }
+}
+void MaterialInfoGameTextures::_deserialize(void*& pDeserialize) {
+  pNext = nullptr;
+  fold_helper::deserialize(pDeserialize, sType, materialName, shaderName, textures_count);
+  deserialize_const_p_for_each(pDeserialize, textures_values, textures_count);
+}
+void MaterialInfoGameTextures::_dtor() {
+  delete[] materialName;
+  delete[] shaderName;
+  for(size_t iTex = 0; iTex < textures_count; ++iTex) {
+    delete[] textures_values[iTex].name;
+  }
+  delete[] textures_values;
 }
 
 //////////////
