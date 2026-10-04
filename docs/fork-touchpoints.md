@@ -4348,3 +4348,13 @@ sampling error averages out under the upsample instead of shimmering.
 - **The resolve writes `m_postFxIntermediateTexture` and copies back**, as
   `dispatchLensEffects` does, because it now reads `m_finalOutput` as well as
   writing it and a single `AliasedResource` cannot be both.
+
+---
+
+## Workstream - DoF options are regular options (fork - 2026-10-04)
+
+The `rtx.dof.*` options no longer carry `RtxOptionFlags::UserSetting`, so they
+are saved to `rtx.conf` like any other Remix option instead of `user.conf`.
+
+- **`src/dxvk/rtx_render/rtx_postFx.h`** - drop the `UserSetting` flag from
+  every `rtx.dof.*` option.
