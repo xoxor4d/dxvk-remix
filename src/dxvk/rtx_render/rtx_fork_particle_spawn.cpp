@@ -16,7 +16,7 @@
 
 #include "rtx_fork_hooks.h"
 
-#include "rtx_constants.h"        // kInvalidInstanceId
+#include "rtx_constants.h"        // kInvalidInstanceId, kInvalidFrameIndex
 #include "rtx_instance_manager.h" // RtInstance::getId
 
 #include "../../util/log/log.h"
@@ -91,6 +91,29 @@ namespace fork_hooks {
   // ---------------------------------------------------------------------------
   uint32_t constantRateSpawnCount(uint32_t recordedSpawnCount, uint32_t maxNumParticles) {
     return recordedSpawnCount > 0 ? maxNumParticles : 0u;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Opaque TLAS freshness for spawn-time traces
+  //
+  // simulate() runs before this frame's TLAS build, so the bound TLAS is the last
+  // one built. BLAS GC keeps everything that TLAS referenced for one more frame,
+  // but nothing older, and SceneManager::clear frees every BLAS without touching
+  // the TLAS. Trace only when the TLAS was built on the immediately preceding
+  // frame and no clear has happened since. All calls are on the CS thread.
+  // ---------------------------------------------------------------------------
+  static uint32_t s_opaqueTlasBuiltFrame = kInvalidFrameIndex;
+
+  void onOpaqueTlasBuilt(uint32_t frameId) {
+    s_opaqueTlasBuiltFrame = frameId;
+  }
+
+  void onAccelStructuresCleared() {
+    s_opaqueTlasBuiltFrame = kInvalidFrameIndex;
+  }
+
+  bool isPreviousOpaqueTlasTraceable(uint32_t currentFrameId) {
+    return s_opaqueTlasBuiltFrame != kInvalidFrameIndex && s_opaqueTlasBuiltFrame + 1 == currentFrameId;
   }
 
 }  // namespace fork_hooks

@@ -4445,3 +4445,22 @@ slots, so the new map's smaller buffers sat behind the old indices while
 - **`src/dxvk/rtx_render/rtx_fork_particle_spawn.cpp`** - fork-owned file. *`fork_hooks::constantRateSpawnCount()`: full respawn only when this frame's contexts registered and resolved, otherwise 0 (existing particles keep evolving).*
 - **`src/dxvk/rtx_render/rtx_fork_hooks.h`** - fork-owned change. *Declares `constantRateSpawnCount`.*
 - **`src/dxvk/rtx_render/rtx_particle_system.cpp`** - fork-touchpoint hook. *One line in `simulate`'s constant-rate branch dispatches into the hook.*
+
+---
+
+## Workstream - Spawn occlusion traces only a fresh TLAS (fork - 2026-10-04)
+
+Fixes the remaining `particle_system_spawn` page fault on map reload, seen only
+with precipitation (the one system with `traceSpawnOcclusion`). The spawn kernel
+traces `getTLAS(Opaque).accelStructure`, which at `simulate()` time is whatever
+TLAS was built last, and `sceneTlasValid` only checked it was non-null.
+`SceneManager::clear` (camera cut on the respawn teleport, asset reload,
+last-external-mesh teardown) and the BLAS GC free the BLASes without touching
+the TLAS. Frames without instances skip the TLAS build entirely. The next frame
+the precipitation emitter is drawn, the kernel traverses a TLAS whose instance
+descriptors point at freed BLAS memory.
+
+- **`src/dxvk/rtx_render/rtx_fork_particle_spawn.cpp`** - fork-owned file. *`onOpaqueTlasBuilt` / `onAccelStructuresCleared` / `isPreviousOpaqueTlasTraceable`: tracing is allowed only when the Opaque TLAS was built on the previous frame and no clear has happened since.*
+- **`src/dxvk/rtx_render/rtx_fork_hooks.h`** - fork-owned change. *Declares the three hooks.*
+- **`src/dxvk/rtx_render/rtx_accel_manager.cpp`** - fork-touchpoint hooks. *`rtx_fork_hooks.h` include; `onOpaqueTlasBuilt` after `internalBuildTlas<Tlas::Opaque>` in `buildTlas`; `onAccelStructuresCleared` at the end of `AccelManager::clear`.*
+- **`src/dxvk/rtx_render/rtx_particle_system.cpp`** - fork-touchpoint inline tweak. *`setupConstants`'s `sceneTlasValid` and the `s_spawnTraceTlasValid` diagnostic also require `isPreviousOpaqueTlasTraceable`.*

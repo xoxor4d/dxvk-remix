@@ -390,7 +390,8 @@ namespace dxvk {
     // "is there a roof over this raindrop". It is null for the first frames of
     // a scene though, so gate on it.
     constants.sceneTlasValid =
-      ctx->getResourceManager().getTLAS(Tlas::Opaque).accelStructure.ptr() != nullptr ? 1u : 0u;
+      ctx->getResourceManager().getTLAS(Tlas::Opaque).accelStructure.ptr() != nullptr &&
+      fork_hooks::isPreviousOpaqueTlasTraceable(constants.frameIdx) ? 1u : 0u;
   }
 
   // Please re-profile performance if any of these structures change in size.  As a minimum performance requirement, always preserve a 16 byte alignment.
@@ -660,7 +661,7 @@ namespace dxvk {
         ctx->bindAccelerationStructure(BINDING_ACCELERATION_STRUCTURE,
                                        ctx->getResourceManager().getTLAS(Tlas::Opaque).accelStructure);
       }
-      s_spawnTraceTlasValid.store(tlasBound, std::memory_order_relaxed);
+      s_spawnTraceTlasValid.store(tlasBound && fork_hooks::isPreviousOpaqueTlasTraceable(ctx->getDevice()->getCurrentFrameId()), std::memory_order_relaxed);
 
       // Fork (2026-07-25): spawn-occlusion diagnostics ring (see the header).
       // Mirrors ConservativeCounter's clear -> shader-atomics -> copy pattern

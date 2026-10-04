@@ -30,6 +30,7 @@
 #include "rtx_scene_manager.h"
 #include "rtx_accel_manager.h"
 #include "rtx_point_instancer_system.h"
+#include "rtx_fork_hooks.h"
 
 #include "../d3d9/d3d9_state.h"
 #include "rtx_matrix_helpers.h"
@@ -72,6 +73,7 @@ namespace dxvk {
     resetUniqueDynamicBlasGroups();
     m_lastProcessedGeneration = UINT64_MAX;
     m_ommBindPending = false;
+    fork_hooks::onAccelStructuresCleared();
   }
 
   void AccelManager::resetUniqueDynamicBlasGroups() {
@@ -1878,6 +1880,7 @@ namespace dxvk {
 
     size_t totalScratchSize = 0;
     internalBuildTlas<Tlas::Opaque>(ctx, totalScratchSize);
+    fork_hooks::onOpaqueTlasBuilt(m_device->getCurrentFrameId());
     internalBuildTlas<Tlas::Unordered>(ctx, totalScratchSize);
     // Only build TLAS for SSS when necessary
     const bool isBuildSssTlas = RtxOptions::SubsurfaceScattering::enableDiffusionProfile() && (m_mergedInstances[Tlas::SSS].size() + m_pointInstancerSlotsPerType[Tlas::SSS]) > 0;

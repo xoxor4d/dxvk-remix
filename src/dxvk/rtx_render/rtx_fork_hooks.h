@@ -578,6 +578,16 @@ namespace dxvk {
     // Implementation in rtx_fork_particle_spawn.cpp.
     uint32_t constantRateSpawnCount(uint32_t recordedSpawnCount, uint32_t maxNumParticles);
 
+    // Spawn-time occlusion traces (precipitation) read the Opaque TLAS left over from the
+    // previous frame. Only that TLAS is guaranteed to reference live BLASes: one from an
+    // older frame (no instances -> no TLAS build) or from before a scene clear (camera cut,
+    // asset reload, last-external-mesh teardown) points at freed BLAS memory.
+    // AccelManager::buildTlas / AccelManager::clear record, the particle manager queries.
+    // Implementation in rtx_fork_particle_spawn.cpp.
+    void onOpaqueTlasBuilt(uint32_t frameId);
+    void onAccelStructuresCleared();
+    bool isPreviousOpaqueTlasTraceable(uint32_t currentFrameId);
+
     // -----------------------------------------------------------------------
     // Game textures (remixapi_MaterialInfoGameTexturesEXT) + AutoPBR
     // -----------------------------------------------------------------------
