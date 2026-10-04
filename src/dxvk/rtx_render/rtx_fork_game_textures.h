@@ -60,6 +60,9 @@ namespace dxvk {
     // their COLOR texture; this has the next API-thread entry (D3D9 end of
     // frame, SetDrawGameTextures) resolve their NORMAL / SPECULAR textures.
     void requestDeferredResolve();
+    bool hasDeferredResolve();
+    // Returns and clears the request.
+    bool consumeDeferredResolve();
 
     // Render thread. Colormap key of an API material, kEmptyHash when it has none.
     XXH64_hash_t findMaterialKey(remixapi_MaterialHandle handle);
@@ -71,6 +74,9 @@ namespace dxvk {
     std::shared_ptr<MaterialData> keyedDrawMaterial(
       remixapi_MaterialHandle handle,
       const std::shared_ptr<MaterialData>& replacement);
+
+    // Render thread, with the CS thread idle (teardown).
+    void clearKeyedMaterials();
 
   } // namespace game_textures
 } // namespace dxvk
