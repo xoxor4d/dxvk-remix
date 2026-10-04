@@ -63,8 +63,8 @@ namespace dxvk {
   X(float,   transmittanceMeasurementDistanceMeters, 200.0f,                      WK_Extinction, "Volumetric Fog", "Medium",           "Transmittance Measurement Distance", 1.0f, 2000.0f, 5.0f,  "%.0f") \
   X(Vector3, singleScatteringAlbedo,             Vector3(0.999f, 0.999f, 0.999f), WK_Color,      "Volumetric Fog", "Medium",           "Single Scattering Albedo",   0.0f,    1.0f,    0.005f,  "%.3f") \
   /* Volumetric appearance (full set) */ \
-  X(float, fogSunVisibilityGain, 1.0f, WK_Scalar, "Volumetric Fog", "Medium", "Fog Sun Visibility Gain", 0.0f, 4.0f, 0.05f, "%.2f") \
-  X(float, volumetricConsumerGain, 0.008f, WK_Scalar, "Volumetric Fog", "Medium", "Fog Brightness Gain", 0.0f, 0.05f, 0.0005f, "%.4f") \
+  X(float, fogSunVisibilityGain, 1.0f, WK_Scalar, "Volumetric Fog", "Medium", "Fog Sun Visibility Gain", 0.0f, 50.0f, 0.05f, "%.2f") \
+  X(float, volumetricConsumerGain, 0.008f, WK_Scalar, "Volumetric Fog", "Medium", "Fog Brightness Gain", 0.0f, 1.0f, 0.0005f, "%.4f") \
   X(bool, enableHeterogeneousFog, false, WK_Step, "Volumetric Fog", "Heterogeneous", "Enable Heterogeneous Fog", 0.0f, 1.0f, 1.0f, "%.0f") \
   X(float, noiseFieldDensityScale, 1.0f, WK_Scalar, "Volumetric Fog", "Heterogeneous", "Noise Field Density Scale", 0.0f, 5.0f, 0.05f, "%.2f") \
   X(float, noiseFieldDensityExponent, 2.0f, WK_Scalar, "Volumetric Fog", "Heterogeneous", "Noise Field Density Exponent", 0.1f, 8.0f, 0.05f, "%.2f") \
