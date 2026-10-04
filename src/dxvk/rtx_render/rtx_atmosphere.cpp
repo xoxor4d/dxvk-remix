@@ -4025,6 +4025,20 @@ void RtxAtmosphere::bindResources(RtxContext& ctx) {
     ctx.bindResourceView(BINDING_ATMOSPHERE_CLOUD_SECONDARY_LUT, m_cloudSecondaryLut.view, nullptr);
   }
 
+  // Azimuth is on U for every LUT read through this sampler, so U wraps to avoid a seam at azimuth 0.
+  if (m_skyViewSampler.ptr() == nullptr) {
+    DxvkSamplerCreateInfo samplerInfo = {};
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.mipmapLodMax = VK_LOD_CLAMP_NONE;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    m_skyViewSampler = m_device->createSampler(samplerInfo);
+  }
+  ctx.bindResourceSampler(BINDING_ATMOSPHERE_SKY_VIEW_SAMPLER, m_skyViewSampler);
+
 
 }
 
