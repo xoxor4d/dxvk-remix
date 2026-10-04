@@ -546,3 +546,14 @@ and the game's `.trex` copy of `nvngx_dlssnr.dll` must be the new one.
 - **`src/dxvk/rtx_render/rtx_context.cpp`** - cherry-pick resolution. *`enableDlssNrControlMask` no longer gated on Auto Mask, reading `metaNeuralUplift()`.*
 - **`src/dxvk/rtx_render/rtx_neural_uplift.cpp` / `.h`** - fork-owned files. *`useAutoMask` defaults to true and combines with the control mask; `preset` defaults to 2 (Preset B); `showVramUsage` option and readout; Volumetric Improvement no longer disabled under Auto Mask.*
 - **`RtxOptions.md`** - frozen, kept as is (the upstream hunk was dropped).
+
+## Workstream - Weather volumetrics only under Numos (fork - 2026-10-04, picked 2026-10-18)
+
+Cherry-pick of `367e50df5` from the cod_plus branches. The WeatherBlender snapshot only drives (and locks the UI
+of) the global volumetrics while `rtx.skyMode` is Numos. With the raster sky the authored `rtx.volumetrics.*`
+options are used and editable again. Picked together with `dffa2ff1a` (U-wrapping sampler for the sky-view and
+cloud dome LUTs, bound in `RtxAtmosphere::bindResources`), which on this branch is also the first thing that
+binds `BINDING_ATMOSPHERE_SKY_VIEW_SAMPLER` at all.
+
+- **`src/dxvk/rtx_render/rtx_context.cpp`** - fork-touchpoint inline tweak. *Weather snapshot passed to `applyWeatherOverride` only when `skyMode` is Numos.*
+- **`src/dxvk/imgui/dxvk_imgui.cpp`** - fork-touchpoint inline tweak. *Same gate on the snapshot handed to the RTX Volumetrics (Global) settings panel.*
