@@ -302,7 +302,7 @@ for additional behavior:
 | :-- | :-- |
 | `remixapi_InstanceInfoBoneTransformsEXT` | Per-bone world transforms for skinned mesh playback. |
 | `remixapi_InstanceInfoBlendEXT` | D3D9-style alpha test/blend state, used when the material has `useDrawCallAlphaState=true`. |
-| `remixapi_InstanceInfoObjectPickingEXT` | Tags the instance with a 32-bit ID readable via the picking API. |
+| `remixapi_InstanceInfoObjectPickingEXT` | Tags the instance with a 32-bit ID readable via the picking API. Use non-zero values below `0x80000000`; without it, the runtime assigns per-submesh values from `0x80000000` up while picking is active (dev-menu texture selection). |
 | `remixapi_InstanceInfoParticleSystemEXT` | Spawns a GPU particle system bound to this instance. |
 | `remixapi_InstanceInfoGpuInstancingEXT` | Submits N GPU-instanced copies in one call. |
 
