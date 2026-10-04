@@ -935,6 +935,9 @@ namespace dxvk {
 
   WeatherBlender::WeatherBlender() {
     m_inputBlendSeconds = blendDurationSeconds();
+    // Seed the default here (not in update()) so game values replayed on API registration still win.
+    m_inputTarget = m_targetPresetName = m_appliedDefaultPreset = defaultPreset();
+    m_blendStartTimeSec = -m_blendDurationSec;
   }
 
   WeatherBlender::~WeatherBlender() {
@@ -986,6 +989,14 @@ namespace dxvk {
       m_driftSpeedSmoothed     = std::min(std::max(m_driftSpeedSmoothed,     0.0f), 100.0f);
       m_driftIntensitySmoothed = std::min(std::max(m_driftIntensitySmoothed, 0.0f), 100.0f);
       m_driftPhaseSeconds += deltaTimeSeconds * m_driftSpeedSmoothed;
+    }
+
+    // A changed default preset snaps fully transitioned; otherwise it never touches the target.
+    if (defaultPreset() != m_appliedDefaultPreset) {
+      m_appliedDefaultPreset = defaultPreset();
+      setTargetPreset(m_appliedDefaultPreset);
+      m_targetPresetName = m_appliedDefaultPreset;
+      m_blendStartTimeSec = m_currentTimeSec - m_blendDurationSec;
     }
 
     std::string newTarget;
@@ -1059,6 +1070,15 @@ namespace dxvk {
       const char* targetName = (m_uiSelectedPresetIndex == 0) ? "" : kPresetNamesUI[m_uiSelectedPresetIndex];
       setTargetPreset(targetName);
     }
+
+    int defaultPresetIndex = 0;
+    for (int i = 1; i < kPresetCountUI; ++i) {
+      if (defaultPreset() == kPresetNamesUI[i]) { defaultPresetIndex = i; }
+    }
+    if (ImGui::Combo("Default Preset", &defaultPresetIndex, kPresetNamesUI, kPresetCountUI)) {
+      defaultPresetObject().setDeferred(defaultPresetIndex == 0 ? "" : kPresetNamesUI[defaultPresetIndex]);
+    }
+    RemixGui::SetTooltipToLastWidgetOnHover(defaultPresetObject().getDescription());
 
     ImGui::Checkbox("Pause Weather Blender", &m_paused);
 

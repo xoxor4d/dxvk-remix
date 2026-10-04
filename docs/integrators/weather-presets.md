@@ -44,6 +44,12 @@ The system is dormant by default. If the plugin never writes `__weather.target`,
 the blender does not run and all existing `rtx.atmosphere.*` and
 `rtx.volumetrics.*` RTX_OPTION values apply unchanged.
 
+`rtx.weather.defaultPreset` (default empty = dormant) names a preset to start
+in instead. It is applied fully transitioned (no blend from dormant) at startup
+and again, instantly, whenever the option itself changes. It is only a starting
+state: any `__weather.target` write retargets as usual, and the default is never
+re-applied per frame.
+
 ---
 
 ## 2. Trigger Contract

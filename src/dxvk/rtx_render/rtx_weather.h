@@ -976,6 +976,11 @@ namespace dxvk {
                "Allows weather presets to control global volumetric fog and enables its preset editor controls. "
                "Disabled by default; use Numos distance haze and the preset Air/Dust settings for atmospheric weather.");
 
+    RTX_OPTION("rtx.weather", std::string, defaultPreset, "",
+               "Weather preset applied fully transitioned (no blend) at startup and whenever this option changes. "
+               "Empty means none (dormant). Valid names: clear, partlyCloudy, overcast, hazy, foggy, drizzle, "
+               "rainstorm, thunderstorm, snow, blizzard, sandstorm, smoggy. Game-driven __weather.target writes still take over.");
+
     void update(float deltaTimeSeconds);
     void showImguiSettings();
     void renderEditorWindow();  // no-op while closed; call once per frame
@@ -1023,6 +1028,7 @@ namespace dxvk {
   private:
     std::string m_previousPresetName;
     std::string m_targetPresetName;
+    std::string m_appliedDefaultPreset;
 
     // Double precision so sub-frame accuracy survives multi-hour sessions.
     double m_blendStartTimeSec = 0.0;
