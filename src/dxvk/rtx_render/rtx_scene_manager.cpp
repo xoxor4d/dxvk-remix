@@ -2695,11 +2695,11 @@ namespace dxvk {
       // Keeps a USD replacement material alive for the rest of this iteration when one is found.
       std::shared_ptr<MaterialData> replacementMaterialKeepAlive;
       if (material != nullptr) {
-        replacementMaterialKeepAlive = fork_hooks::externalDrawMaterialReplacement(*m_pReplacer, material);
+        replacementMaterialKeepAlive = fork_hooks::externalDrawMaterialReplacement(*m_pReplacer, submeshes[i].externalMaterial, material);
 
-        state.drawCall.modifyMaterialData().setHashOverride(material->getHash());
+        state.drawCall.modifyMaterialData().setHashOverride(fork_hooks::externalMaterialKey(submeshes[i].externalMaterial, *material));
 
-        fork_hooks::externalDrawTextureCategories(material, state.drawCall, textureHash);
+        fork_hooks::externalDrawTextureCategories(submeshes[i].externalMaterial, material, state.drawCall, textureHash);
       }
 
       const RtxParticleSystemDesc* pParticles = nullptr;

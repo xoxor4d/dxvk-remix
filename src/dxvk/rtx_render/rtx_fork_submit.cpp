@@ -15,6 +15,7 @@
 #include "rtx_fork_hooks.h"
 
 #include "rtx_asset_replacer.h"   // AssetReplacer, AssetReplacement
+#include "rtx_fork_game_textures.h" // game_textures::findMaterialKey, keyedDrawMaterial
 #include "rtx_options.h"          // RtxOptions::*, fast_unordered_set, InstanceCategories
 #include "rtx_scene_manager.h"    // SceneManager, DrawCallMetaInfo
 
@@ -43,10 +44,21 @@ namespace fork_hooks {
   // externalDrawMaterialReplacement
   //
   // Checks for a USD material replacement via getReplacementMaterial() and
-  // updates the caller's material pointer in-place if one is found.
+  // updates the caller's material pointer in-place if one is found. Materials
+  // keyed by a game colormap look up by that key and draw like D3D9 draws (see
+  // rtx_fork_game_textures.cpp).
   // ---------------------------------------------------------------------------
   std::shared_ptr<MaterialData> externalDrawMaterialReplacement(
-      AssetReplacer& replacer, const MaterialData*& material) {
+      AssetReplacer& replacer, remixapi_MaterialHandle handle, const MaterialData*& material) {
+    const XXH64_hash_t key = game_textures::findMaterialKey(handle);
+    if (key != kEmptyHash) {
+      std::shared_ptr<MaterialData> keyed = game_textures::keyedDrawMaterial(handle, replacer.getReplacementMaterial(key));
+      if (keyed != nullptr) {
+        material = keyed.get();
+      }
+      return keyed;
+    }
+
     // Check for material replacement (matches the D3D9 draw path behavior).
     // Upstream hands replacement materials out by shared_ptr so a hot reload
     // cannot free them under a live draw; return the owner to the caller so
@@ -65,15 +77,18 @@ namespace fork_hooks {
   // Resolves the albedo texture hash from the material's opaque data and writes
   // it to outTextureHash (so subsequent hooks — e.g. object-picking — can use
   // it). Then looks the hash up against every RtxOption category set.
+  // Colormap-keyed materials use their key, which a replacement cannot change.
   // ---------------------------------------------------------------------------
   void externalDrawTextureCategories(
+      remixapi_MaterialHandle handle,
       const MaterialData* material,
       DrawCallState& drawCall,
       XXH64_hash_t& outTextureHash) {
     // Auto-apply texture categories for API-submitted content (matches D3D9 behavior).
     // For API materials, the albedo texture hash is what D3D9's setupCategoriesForTexture()
     // pattern normally keys off, so look it up directly from the material's opaque data.
-    if (material->getType() == MaterialDataType::Opaque) {
+    outTextureHash = game_textures::findMaterialKey(handle);
+    if (outTextureHash == kEmptyHash && material->getType() == MaterialDataType::Opaque) {
       const auto& opaqueMat = material->getOpaqueMaterialData();
       if (opaqueMat.getAlbedoOpacityTexture().isValid()) {
         outTextureHash = opaqueMat.getAlbedoOpacityTexture().getImageHash();
