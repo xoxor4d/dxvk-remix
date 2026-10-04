@@ -247,6 +247,7 @@ dxvk_src = files([
   'rtx_render/rtx_fork_fsr_framegen.h',
   'rtx_render/rtx_fork_game_state.h',
   'rtx_render/rtx_fork_game_textures.cpp',
+  'rtx_render/rtx_fork_game_textures_keyed.cpp',
   'rtx_render/rtx_fork_game_textures.h',
   'rtx_render/rtx_fork_hooks.h',
   'rtx_render/rtx_fork_light.cpp',

@@ -4413,7 +4413,7 @@ colormap-keyed API materials, teardown) and `rtx_fork_autopbr.{h,cpp}`
 - **`src/d3d9/d3d9_device.cpp`** - hook. *`fork_hooks::shutdownGameTextures(this)` in `D3D9DeviceEx::~D3D9DeviceEx` after `SynchronizeCsThread()`, plus the `rtx_fork_hooks.h` include.*
 - **`src/dxvk/rtx_render/rtx_context.cpp`** - hook. *`fork_hooks::autoPbrEndFrame` in `RtxContext::endFrame` (throttled exports, autosave).*
 - **`src/dxvk/imgui/dxvk_imgui.cpp`** - hook. *`fork_hooks::showAutoPbrUI` in `ImGUI::showSetupWindow`, "Step 1: Categorize Textures" tab.*
-- **`src/dxvk/meson.build`** - inline. *Registers the four new fork files.*
+- **`src/dxvk/meson.build`** - inline. *Registers the five new fork files (`rtx_fork_game_textures_keyed.cpp` holds the render-thread, D3D9-free half so unit tests link).*
 - **`src/dxvk/rtx_render/rtx_fork_hooks.h`, `rtx_fork_submit.cpp`** - fork-owned. *New hook declarations; the submit hooks draw colormap-keyed materials like D3D9 draws (replacement merged over the game state, or the legacy-defaults material) and use the key for categories.*
 - **`bridge/src/{client/remix_api.cpp, server/main.cpp, util/util_remixapi.{h,cpp}, util/util_commands.h}`** - inline. *`MaterialInfoGameTexturesEXT` serialization (texture proxies sent as D3D object ids, resolved via `gpD3DResources`), `RemixApi_SetDrawGameTextures` command, interface truncation for < `0.1000.2`, `CreateMesh` pNext loop fix.*
 - **`RtxOptions.md`** - REGEN PENDING (`rtx.autopbr.exportsPerFrame`, `rtx.autopbr.autosaveInterval`). **`RemixApiSurface.md`** - REGEN PENDING.
