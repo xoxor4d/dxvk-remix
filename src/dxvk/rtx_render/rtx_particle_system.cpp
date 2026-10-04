@@ -719,7 +719,7 @@ namespace dxvk {
         if (isNumParticlesConstant) {
           particleSystem.simulateParticleCount = particleSystem.desc.maxNumParticles;
           particleSystem.particleCount = particleSystem.desc.maxNumParticles;
-          particleSystem.spawnParticleCount = particleSystem.desc.maxNumParticles;
+          particleSystem.spawnParticleCount = fork_hooks::constantRateSpawnCount(particleSystem.spawnParticleCount, particleSystem.desc.maxNumParticles);
           particleSystem.particleHeadOffset = particleSystem.desc.maxNumParticles;
           particleSystem.particleTailOffset = 0;
           particleSystem.spawnParticleOffset = 0;

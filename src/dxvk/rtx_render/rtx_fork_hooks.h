@@ -571,6 +571,13 @@ namespace dxvk {
       uint32_t recordedVectorIdx,
       uint64_t recordedInstanceUid);
 
+    // Spawn count for a constant-rate system (spawnRatePerSecond >= maxNumParticles),
+    // which upstream forces to maxNumParticles every frame. Without a resolved emitter
+    // this frame the spawn kernel would read a stale context map and stale GpuSpawnContexts
+    // whose bindless buffer slots may since have been recycled for other (smaller) buffers.
+    // Implementation in rtx_fork_particle_spawn.cpp.
+    uint32_t constantRateSpawnCount(uint32_t recordedSpawnCount, uint32_t maxNumParticles);
+
     // -----------------------------------------------------------------------
     // Game textures (remixapi_MaterialInfoGameTexturesEXT) + AutoPBR
     // -----------------------------------------------------------------------
