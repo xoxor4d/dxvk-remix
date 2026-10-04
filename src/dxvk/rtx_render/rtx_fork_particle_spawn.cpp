@@ -80,5 +80,18 @@ namespace fork_hooks {
     return nullptr;
   }
 
+  // ---------------------------------------------------------------------------
+  // constantRateSpawnCount
+  //
+  // recordedSpawnCount is non-zero only when spawnParticles registered contexts
+  // for this system this frame and writeSpawnContextsToGpu resolved all of their
+  // emitters (it zeroes the count otherwise). Only then are the context map and
+  // the GpuSpawnContexts it points at current; respawn the full pool in that case
+  // and let the existing particles evolve otherwise.
+  // ---------------------------------------------------------------------------
+  uint32_t constantRateSpawnCount(uint32_t recordedSpawnCount, uint32_t maxNumParticles) {
+    return recordedSpawnCount > 0 ? maxNumParticles : 0u;
+  }
+
 }  // namespace fork_hooks
 }  // namespace dxvk
