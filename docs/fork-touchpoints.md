@@ -4375,3 +4375,16 @@ tap is view model (or sky) the current focus is held.
 - **`src/dxvk/rtx_render/rtx_postFx.cpp` / `.h`** - add the option, its
   checkbox under the Auto Focus controls, and bind the surface flags to the
   auto-focus dispatch.
+
+---
+
+## Workstream - Weather volumetrics only under Numos (fork - 2026-10-04)
+
+The WeatherBlender snapshot only drives (and locks the UI of) the global
+volumetrics while `rtx.skyMode` is Numos. With the raster sky the authored
+`rtx.volumetrics.*` options are used and editable again.
+
+- **`src/dxvk/rtx_render/rtx_context.cpp`** - pass the weather snapshot to
+  `applyWeatherOverride` only when `skyMode` is Numos.
+- **`src/dxvk/imgui/dxvk_imgui.cpp`** - same gate on the snapshot handed to the
+  RTX Volumetrics (Global) settings panel.

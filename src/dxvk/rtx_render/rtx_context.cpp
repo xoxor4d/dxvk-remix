@@ -1439,7 +1439,7 @@ namespace dxvk {
     RtxGlobalVolumetrics& globalVolumetrics = getCommonObjects()->metaGlobalVolumetrics();
     // Weather is transient frame state. Volumetrics and atmosphere consume the
     // same immutable snapshot; authored RtxOptions remain untouched.
-    globalVolumetrics.applyWeatherOverride(weatherSnapshot);
+    globalVolumetrics.applyWeatherOverride(RtxOptions::skyMode() == SkyMode::Numos ? weatherSnapshot : nullptr);
     constants.volumeArgs = globalVolumetrics.getVolumeArgs(cameraManager, getSceneManager().getFogState(), enablePortalVolumes);
     constants.startInMediumMaterialIndex = getSceneManager().getStartInMediumMaterialIndex();
     OpaqueMaterialOptions::fillShaderParams(constants.opaqueMaterialArgs);

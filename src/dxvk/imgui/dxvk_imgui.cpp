@@ -3909,7 +3909,7 @@ namespace dxvk {
       // NV-DXVK start: Numos weather-aware volumetrics UI
       const WeatherBlender* weatherBlender = common->getSceneManager().getWeatherBlender();
       common->metaGlobalVolumetrics().showImguiSettings(
-        weatherBlender ? weatherBlender->getBlendedSnapshot() : nullptr);
+        weatherBlender && RtxOptions::skyMode() == SkyMode::Numos ? weatherBlender->getBlendedSnapshot() : nullptr);
       // NV-DXVK end
 
       common->metaDustParticles().showImguiSettings();
