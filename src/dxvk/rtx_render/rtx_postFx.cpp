@@ -103,6 +103,7 @@ namespace dxvk {
       BEGIN_PARAMETER()
         TEXTURE2D(POST_FX_DOF_AF_PRIMARY_LINEAR_VIEW_Z_INPUT)
         RW_TEXTURE1D(POST_FX_DOF_AF_FOCUS_STATE_INPUT_OUTPUT)
+        TEXTURE2D(POST_FX_DOF_AF_PRIMARY_SURFACE_FLAGS_INPUT)
       END_PARAMETER()
     };
 
@@ -286,6 +287,7 @@ namespace dxvk {
       RemixGui::DragFloat("Auto Focus Point X", &autoFocusPointXObject(), 0.01f, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
       RemixGui::DragFloat("Auto Focus Point Y", &autoFocusPointYObject(), 0.01f, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
       RemixGui::DragFloat("Auto Focus Offset (world units)", &autoFocusOffsetObject(), 0.1f, -10000.0f, 10000.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+      RemixGui::Checkbox("Auto Focus Ignore View Model", &autoFocusIgnoreViewModelObject());
       ImGui::Unindent();
     } else {
       RemixGui::DragFloat("Focus Distance (world units)", &focusDistanceObject(), 0.1f, 0.0f, 10000.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
@@ -730,10 +732,12 @@ namespace dxvk {
       autoFocusArgs.regionRadius = autoFocusRegionRadius();
       autoFocusArgs.deadZone = autoFocusDeadZone();
       autoFocusArgs.farTauScale = autoFocusFarTauScale();
+      autoFocusArgs.ignoreViewModel = autoFocusIgnoreViewModel() ? 1u : 0u;
 
       ctx->pushConstants(0, sizeof(autoFocusArgs), &autoFocusArgs);
       ctx->bindResourceView(POST_FX_DOF_AF_PRIMARY_LINEAR_VIEW_Z_INPUT, rtOutput.m_primaryLinearViewZ.view, nullptr);
       ctx->bindResourceView(POST_FX_DOF_AF_FOCUS_STATE_INPUT_OUTPUT, m_dofFocusState.view, nullptr);
+      ctx->bindResourceView(POST_FX_DOF_AF_PRIMARY_SURFACE_FLAGS_INPUT, rtOutput.m_primarySurfaceFlags.view, nullptr);
       ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDofAutoFocusShader::getShader());
       ctx->dispatch(1, 1, 1);
     }

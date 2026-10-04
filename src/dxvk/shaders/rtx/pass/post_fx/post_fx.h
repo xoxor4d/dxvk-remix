@@ -67,6 +67,7 @@
 
 #define POST_FX_DOF_AF_PRIMARY_LINEAR_VIEW_Z_INPUT             0
 #define POST_FX_DOF_AF_FOCUS_STATE_INPUT_OUTPUT                1
+#define POST_FX_DOF_AF_PRIMARY_SURFACE_FLAGS_INPUT             2
 
 #define POST_FX_INPUT  0
 #define POST_FX_OUTPUT 1
@@ -229,7 +230,7 @@ struct PostFxDofAutoFocusArgs {
   float  deadZone;
 
   float  farTauScale;
-  float  pad0;
+  uint   ignoreViewModel;
   float  pad1;
   float  pad2;
 };

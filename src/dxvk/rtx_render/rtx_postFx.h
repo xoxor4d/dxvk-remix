@@ -140,6 +140,8 @@ namespace dxvk {
                     "Normalized vertical screen position used for auto-focus.");
     RTX_OPTION("rtx.dof", float, autoFocusOffset, 0.0f,
                     "World-unit offset added to the measured auto-focus distance.");
+    RTX_OPTION("rtx.dof", bool, autoFocusIgnoreViewModel, true,
+                    "Ignore the view model - the player's weapon and hands - when auto-focus measures the focus distance. If only the view model is under the auto-focus region, the current focus is held.");
     RTX_OPTION("rtx.dof", float, focusDistance, 5.0f,
                     "Manual depth-of-field focus distance in world units.");
     RTX_OPTION("rtx.dof", float, focalLength, 100.0f,

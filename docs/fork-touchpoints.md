@@ -4358,3 +4358,20 @@ are saved to `rtx.conf` like any other Remix option instead of `user.conf`.
 
 - **`src/dxvk/rtx_render/rtx_postFx.h`** - drop the `UserSetting` flag from
   every `rtx.dof.*` option.
+
+---
+
+## Workstream - DoF auto-focus ignores the view model (fork - 2026-10-04)
+
+New regular option `rtx.dof.autoFocusIgnoreViewModel` (default on): auto-focus
+taps that land on the view model are dropped before the median, and if every
+tap is view model (or sky) the current focus is held.
+
+- **`src/dxvk/shaders/rtx/pass/post_fx/post_fx.h`** - add
+  `POST_FX_DOF_AF_PRIMARY_SURFACE_FLAGS_INPUT` and replace `pad0` in
+  `PostFxDofAutoFocusArgs` with `ignoreViewModel` (size unchanged).
+- **`src/dxvk/shaders/rtx/pass/post_fx/post_fx_dof_auto_focus.comp.slang`** -
+  bind the primary surface flags and skip taps whose `isViewModel` flag is set.
+- **`src/dxvk/rtx_render/rtx_postFx.cpp` / `.h`** - add the option, its
+  checkbox under the Auto Focus controls, and bind the surface flags to the
+  auto-focus dispatch.

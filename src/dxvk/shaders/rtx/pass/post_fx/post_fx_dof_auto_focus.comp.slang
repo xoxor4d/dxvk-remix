@@ -20,12 +20,16 @@
 * DEALINGS IN THE SOFTWARE.
 */
 #include "rtx/pass/post_fx/post_fx.h"
+#include "rtx/pass/post_fx/post_fx_motion_blur_geometry_flags.slangh"
 
 [[vk::binding(POST_FX_DOF_AF_PRIMARY_LINEAR_VIEW_Z_INPUT)]]
 Texture2D<float> PrimaryLinearViewZ;
 
 [[vk::binding(POST_FX_DOF_AF_FOCUS_STATE_INPUT_OUTPUT)]]
 RWTexture1D<float> FocusState;
+
+[[vk::binding(POST_FX_DOF_AF_PRIMARY_SURFACE_FLAGS_INPUT)]]
+Texture2D<uint> PrimarySurfaceFlags;
 
 layout(push_constant)
 ConstantBuffer<PostFxDofAutoFocusArgs> cb;
@@ -74,6 +78,12 @@ void main(uint3 threadId : SV_DispatchThreadID)
   for (int tapIndex = 0; tapIndex < kTapCount; ++tapIndex)
   {
     const int2 tapPixel = clamp(int2(focusPoint + kTapOffsets[tapIndex] * radius), int2(0, 0), maxPixel);
+    if (cb.ignoreViewModel != 0u
+        && motionBlurSurfaceFlagsReadFromGBuffer(PrimarySurfaceFlags[tapPixel]).isViewModel)
+    {
+      continue;
+    }
+
     float viewDepth;
     if (isValidDepth(PrimaryLinearViewZ[tapPixel], viewDepth))
     {
