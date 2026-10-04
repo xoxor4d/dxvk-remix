@@ -73,3 +73,4 @@ tests/rtx/unit/*
 # Pinned DLSS / NGX DLL override, populated by scripts/update-dlss-dlls.ps1.
 # Pulled from RemixProjGroup/dxvk-remix-dlss-bundle releases per scripts/dlss-pins.json.
 /dlss_override/
+/.claude/worktrees/
