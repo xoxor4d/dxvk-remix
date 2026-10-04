@@ -77,3 +77,9 @@ Replacement instances of API meshes, object picking of API draws.
   - after the replacement branch, before the submesh loop → `fork_hooks::externalDrawReleaseReplacementInstance`. *Clears the RI when it still holds a replacement bucket that no longer applies (override removed, replacements disabled), releasing the replacement prims.*
   - `fork_hooks::externalDrawObjectPicking` (existing Remix Plus hook, fork-owned body changed): *draws without `remixapi_InstanceInfoObjectPickingEXT` get a per-submesh `drawCallID` from `0x80000000` up (above D3D9 draw IDs) while picking is active, so dev-menu texture picking / highlighting resolves them; they kept id 0 before.*
 - **`src/dxvk/rtx_render/rtx_fork_hooks.h`, `rtx_fork_submit.cpp`** - fork-owned. *The three hooks above.*
+---
+
+## src/dxvk/rtx_render/rtx_texture_manager.cpp / rtx_texture_manager.h (fork - 2026-10-04)
+
+- **Inline tweak** at `SamplerFeedback::fetchNoisyMipCounts` (+ `m_cachedAssetMipShift` member, alloc/free in ctor/dtor) — ~20 LOC.
+  *Sampler feedback reports the accessed mip of a 4096-wide texture (`calcMipLevelAccessedForSamplerFeedback`), but upstream subtracted it from each asset's own mip count, so a 512px replacement streamed 3 levels too low (64px). The accessed level is now shifted by `ceil(log2(4096 / maxDim))` per texture, for the stamp's own texture and for every related (normal/roughness/...) texture, instead of copying the stamp texture's mip count to related textures. Fixes blurry normal/roughness on partial replacements without a replacement albedo. Upstream bugfix candidate.*

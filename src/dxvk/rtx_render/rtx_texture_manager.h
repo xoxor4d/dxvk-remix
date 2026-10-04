@@ -49,6 +49,7 @@ namespace dxvk {
     // Variables needed for optimization
     std::atomic_uint16_t  m_idToTexture_count{ 0 };
     uint8_t*              m_cachedAssetMipcount{};
+    uint8_t*              m_cachedAssetMipShift{};
     uint32_t              m_cachedAssetMipcount_length{ 0 };
     uint32_t*             m_cachedGpubuf{ 0 };
 
