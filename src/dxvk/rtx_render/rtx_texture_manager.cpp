@@ -893,6 +893,7 @@ namespace dxvk {
     m_sf.m_noisyMipcount = new uint8_t[SAMPLER_FEEDBACK_MAX_TEXTURE_COUNT]{ /* zero-init */ };
     m_sf.m_accumulatedMipcount = new FeedbackAccum[SAMPLER_FEEDBACK_MAX_TEXTURE_COUNT]{ /* zero-init */ };
     m_sf.m_cachedAssetMipcount = new uint8_t[SAMPLER_FEEDBACK_MAX_TEXTURE_COUNT]{ /* zero-init */ };
+    m_sf.m_cachedAssetMipShift = new uint8_t[SAMPLER_FEEDBACK_MAX_TEXTURE_COUNT]{ /* zero-init */ };
     m_sf.m_cachedGpubuf = new uint32_t[SAMPLER_FEEDBACK_MAX_TEXTURE_COUNT]; // NO zero-init
 
     // SAMPLER_FEEDBACK_INVALID must be 0xFFFF (all-0xFF bytes) for memset to fill
@@ -916,6 +917,7 @@ namespace dxvk {
 
     delete m_sf.m_cachedGpubuf;
     delete m_sf.m_cachedAssetMipcount;
+    delete[] m_sf.m_cachedAssetMipShift;
     delete m_sf.m_accumulatedMipcount;
     delete m_sf.m_noisyMipcount;
     delete m_sf.m_related;
@@ -1303,12 +1305,20 @@ namespace dxvk {
       // improves cache efficiency
       if (m_cachedAssetMipcount_length != textureCount) {
         memset(m_cachedAssetMipcount, 0, textureCount * sizeof(m_cachedAssetMipcount[0]));
+        memset(m_cachedAssetMipShift, 0, textureCount * sizeof(m_cachedAssetMipShift[0]));
         m_cachedAssetMipcount_length = uint32_t(textureCount);
         for (uint32_t stamp = 0; stamp < textureCount; stamp++) {
           const Rc<ManagedTexture>& tex = m_idToTexture[stamp];
           assert(stamp == tex->m_samplerFeedbackStamp);
           if (tex.ptr()) {
             m_cachedAssetMipcount[stamp] = uint8_t(std::min(tex->m_assetData->info().mipLevels, uint32_t(MAX_MIPS)));
+            // Feedback reports the accessed mip of a 4096 texture (calcMipLevelAccessedForSamplerFeedback),
+            // so smaller textures need that many fewer levels skipped
+            const VkExtent3D& extent = tex->m_assetData->info().extent;
+            const uint32_t maxDim = std::max({ extent.width, extent.height, 1u });
+            while ((maxDim << m_cachedAssetMipShift[stamp]) < 4096u) {
+              m_cachedAssetMipShift[stamp]++;
+            }
           }
         }
       }
@@ -1319,15 +1329,14 @@ namespace dxvk {
 
     // Reset to zero to find a max value for each texture in 'src_gpubuf'
     memset(m_noisyMipcount, 0, textureCount * sizeof(m_noisyMipcount[0]));
-    for (uint32_t stamp = 0; stamp < textureCount; stamp++) {
-      uint8_t newMipCount;
-      {
-        const uint32_t assetMipCount = m_cachedAssetMipcount[stamp];
+    auto calcMipCount = [this](uint32_t stamp, uint32_t mipAccessedAt4k) {
+      const uint32_t assetMipCount = m_cachedAssetMipcount[stamp];
 
-        const uint32_t mipAccessed = std::min(m_cachedGpubuf[stamp], assetMipCount);
-        newMipCount = uint8_t(assetMipCount - mipAccessed);
-      }
-      m_noisyMipcount[stamp] = std::max(m_noisyMipcount[stamp], newMipCount);
+      const uint32_t mipAccessed = std::min(mipAccessedAt4k - std::min(mipAccessedAt4k, uint32_t(m_cachedAssetMipShift[stamp])), assetMipCount);
+      return uint8_t(assetMipCount - mipAccessed);
+    };
+    for (uint32_t stamp = 0; stamp < textureCount; stamp++) {
+      m_noisyMipcount[stamp] = std::max(m_noisyMipcount[stamp], calcMipCount(stamp, m_cachedGpubuf[stamp]));
     }
 
     // A single stamp can be associated with many other stamps (SAMPLER_FEEDBACK_RELATED_PER_TEX).
@@ -1338,14 +1347,14 @@ namespace dxvk {
       if (listOfRelatedStamps[0] == SAMPLER_FEEDBACK_INVALID) {
         continue;
       }
-      const auto newMipCount = m_noisyMipcount[stamp];
+      const uint32_t mipAccessedAt4k = m_cachedGpubuf[stamp];
 
       for (uint8_t i = 0; i < SAMPLER_FEEDBACK_RELATED_PER_TEX; i++) {
         uint16_t stampOfRelated = listOfRelatedStamps[i];
         if (stampOfRelated == SAMPLER_FEEDBACK_INVALID) {
           break; // end of list
         }
-        m_noisyMipcount[stampOfRelated] = std::max(m_noisyMipcount[stampOfRelated], newMipCount);
+        m_noisyMipcount[stampOfRelated] = std::max(m_noisyMipcount[stampOfRelated], calcMipCount(stampOfRelated, mipAccessedAt4k));
       }
     }
 
