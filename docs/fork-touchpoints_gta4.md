@@ -83,3 +83,23 @@ Replacement instances of API meshes, object picking of API draws.
 
 - **Inline tweak** at `SamplerFeedback::fetchNoisyMipCounts` (+ `m_cachedAssetMipShift` member, alloc/free in ctor/dtor) — ~20 LOC.
   *Sampler feedback reports the accessed mip of a 4096-wide texture (`calcMipLevelAccessedForSamplerFeedback`), but upstream subtracted it from each asset's own mip count, so a 512px replacement streamed 3 levels too low (64px). The accessed level is now shifted by `ceil(log2(4096 / maxDim))` per texture, for the stamp's own texture and for every related (normal/roughness/...) texture, instead of copying the stamp texture's mip count to related textures. Fixes blurry normal/roughness on partial replacements without a replacement albedo. Upstream bugfix candidate.*
+---
+
+## Workstream - Constant-rate particle spawn needs a live emitter (fork - 2026-10-04)
+
+Fixes a GPU page fault in `particle_system_spawn` (Aftermath read translation
+error -> `VK_ERROR_DEVICE_LOST`) when an API client destroys its meshes and
+recreates the same map a few frames later. `RtxParticleSystemManager::simulate`
+forced `spawnParticleCount = maxNumParticles` every frame for constant-rate
+systems (`spawnRatePerSecond >= maxNumParticles`), whether or not an emitter
+spawned this frame. The system outlives its emitters for
+`spawnBurstDuration + maxTimeToLive`, and during that window the kernel read the
+last-written context map and stale `GpuSpawnContext`s (`writeSpawnContextsToGpu`
+returns early when nothing spawned). Their bindless buffer slots belonged to
+BLAS entries that GC had unregistered; `RetainedBufferTable` recycles freed
+slots, so the new map's smaller buffers sat behind the old indices while
+`numTriangles` / offsets still described the old mesh.
+
+- **`src/dxvk/rtx_render/rtx_fork_particle_spawn.cpp`** - fork-owned file. *`fork_hooks::constantRateSpawnCount()`: full respawn only when this frame's contexts registered and resolved, otherwise 0 (existing particles keep evolving).*
+- **`src/dxvk/rtx_render/rtx_fork_hooks.h`** - fork-owned change. *Declares `constantRateSpawnCount`.*
+- **`src/dxvk/rtx_render/rtx_particle_system.cpp`** - fork-touchpoint hook. *One line in `simulate`'s constant-rate branch dispatches into the hook.*
