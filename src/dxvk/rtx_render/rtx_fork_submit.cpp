@@ -22,6 +22,18 @@
 #include "dxvk_device.h"          // DxvkDevice::getCommon()->getResources()
 
 namespace dxvk {
+namespace {
+
+  // Picking values for API draws without remixapi_InstanceInfoObjectPickingEXT:
+  // above the D3D9 draw call IDs (0, 1, ... per frame) and below the default
+  // picking clear value (UINT32_MAX). Render thread only.
+  constexpr ObjectPickingValue kFirstAutoPickingValue = 0x80000000u;
+  ObjectPickingValue s_nextAutoPickingValue = kFirstAutoPickingValue;
+  ObjectPickingValue s_lastAutoPickingValue = 0;
+  uint32_t s_autoPickingFrameId = kInvalidFrameIndex;
+
+} // anonymous namespace
+
 namespace fork_hooks {
 
   // ---------------------------------------------------------------------------
@@ -124,7 +136,8 @@ namespace fork_hooks {
   // Stores per-draw texture hash metadata in SceneManager::m_drawCallMeta when
   // object picking is active, mirroring the D3D9 draw path which populates
   // m_drawCallMeta in processDrawCallState. API draws supply their own
-  // drawCallID via remixapi_InstanceInfoObjectPickingEXT, so we store it here.
+  // drawCallID via remixapi_InstanceInfoObjectPickingEXT; draws without it get
+  // a per-submesh value (kFirstAutoPickingValue and up) while picking is active.
   //
   // ACCESS NOTE: this function uses SceneManager::m_drawCallMeta (private) and
   // SceneManager::DrawCallMetaInfo (private nested type). A friend declaration
@@ -137,13 +150,27 @@ namespace fork_hooks {
       XXH64_hash_t textureHash,
       SceneManager& scene) {
     // Store texture hash metadata for object picking (mirrors the D3D9 draw
-    // path which populates m_drawCallMeta in processDrawCallState). API draws
-    // supply their own drawCallID via remixapi_InstanceInfoObjectPickingEXT,
-    // so we hash it in directly here.
+    // path which populates m_drawCallMeta in processDrawCallState).
     const bool objectPickingActive = device.getCommon()->getResources().getRaytracingOutput()
       .m_primaryObjectPicking.isValid();
-    if (objectPickingActive && drawCall.drawCallID != 0 &&
-        textureHash != 0 && textureHash != kEmptyHash) {
+    if (!objectPickingActive) {
+      return;
+    }
+
+    // No client value: a unique one per submesh, so picking resolves this
+    // draw's texture instead of D3D9 draw 0's. The previous submesh of the same
+    // draw left its auto value in drawCall.
+    if (drawCall.drawCallID == 0 || drawCall.drawCallID == s_lastAutoPickingValue) {
+      const uint32_t frameId = device.getCurrentFrameId();
+      if (frameId != s_autoPickingFrameId) {
+        s_autoPickingFrameId = frameId;
+        s_nextAutoPickingValue = kFirstAutoPickingValue;
+      }
+      drawCall.drawCallID = s_nextAutoPickingValue++;
+      s_lastAutoPickingValue = drawCall.drawCallID;
+    }
+
+    if (textureHash != 0 && textureHash != kEmptyHash) {
       auto meta = SceneManager::DrawCallMetaInfo {};
       meta.legacyTextureHash = textureHash;
 

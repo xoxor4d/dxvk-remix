@@ -23,6 +23,13 @@ game's D3D9 colormap (2026-10-04).
   reporting a version below `0.1000.2` receive the interface truncated before
   `SetDrawGameTextures`, so `0.1000.1` binaries keep working.
 
+### Fixed
+- Instances submitted without `remixapi_InstanceInfoObjectPickingEXT` all
+  shared picking value 0 (the first D3D9 draw's ID), so dev-menu texture
+  picking / highlighting could not resolve their textures. While picking is
+  active they now get per-submesh values from `0x80000000` up; explicit
+  values are unchanged.
+
 ## [0.1000.1]
 
 Remix Plus rebased onto NVIDIA dxvk-remix `0.6.5`, which grew
