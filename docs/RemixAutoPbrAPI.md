@@ -45,11 +45,16 @@ it otherwise.
 
 Fixed folder `<game directory>/rtx-remix/imgdump/`:
 
-- `color/`, `normal/`, `specular/` — `<HASH>.dds` (16 uppercase hex digits),
-  one per image hash, mips included. Files already present are skipped.
-  Formats with a D3D9 view swizzle (L8, A8L8, A8, X8R8G8B8) are written as
-  RGBA8 the way the shader sees them; other formats are written as stored.
-  Normal maps are not reconstructed or re-swizzled.
+- `dump/<category>/<folder>/` — `color.dds`, `normal.dds`, `specular.dds`
+  of one material, mips included. The game sends the material name as
+  `wc/<name>` (world) or `mc/<name>` (mesh); the prefix is the category and
+  `<name>` the folder, with characters illegal in Windows file names, path
+  separators and `@` replaced by `_`. Without a prefix the material goes to
+  `wc/` under its colormap name, else its colormap hash. A texture shared by
+  several materials is written into each folder; files already present are
+  skipped. Formats with a D3D9 view swizzle (L8, A8L8, A8, X8R8G8B8) are
+  written as RGBA8 the way the shader sees them; other formats are written as
+  stored. Normal maps are not reconstructed or re-swizzled.
 - `associations.json` — schema version 1 (GTAIV AutoPBR layout) plus
   `material_name` and `material_hash`. Written atomically off the render
   thread. Starting a collection merges an existing file first, so a crashed
@@ -58,6 +63,7 @@ Fixed folder `<game directory>/rtx-remix/imgdump/`:
   not start if that rename fails. Unsaved associations are saved when the
   device or the API shuts down. Reading the file and scanning the dump folders
   on Start / Load happens on the UI thread and can cause a short hitch.
-- `comp_autoconvert.usda` — one `over "mat_<MATERIAL_HASH>"` per material with
-  a normal and/or specular texture, pointing at
-  `./assets/autoconv/<HASH>_normal_oth.dds` / `<HASH>_rough.dds`, with the game material name as `nickname`.
+- `comp_world_autopbr.usda` (`wc`) / `comp_mesh_autopbr.usda` (`mc`) — one
+  `over "mat_<MATERIAL_HASH>"` per material with a normal and/or specular
+  texture, pointing at `./assets/<category>/<folder>/normal_oth.dds` /
+  `roughness.dds`, with the full game material name as `nickname`.

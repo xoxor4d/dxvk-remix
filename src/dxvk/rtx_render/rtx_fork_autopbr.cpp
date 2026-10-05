@@ -4,9 +4,9 @@
 // (fed by rtx_fork_game_textures.cpp), dumps the textures and writes the files
 // the offline conversion scripts consume, all under the fixed folder
 // <game>/rtx-remix/imgdump/:
-//   color|normal|specular/<HASH>.dds   one dump per image hash
-//   associations.json                  GTAIV AutoPBR schema, version 1
-//   comp_autoconvert.usda              normal / roughness overrides per mat_<hash>
+//   dump/<wc|mc>/<folder>/{color,normal,specular}.dds   one folder per material
+//   associations.json                                   GTAIV AutoPBR schema, version 1
+//   comp_world_autopbr.usda / comp_mesh_autopbr.usda    normal / roughness overrides per mat_<hash>
 //
 // Thread model: all state sits behind one mutex. Associations arrive from the
 // API thread (D3D9 draws) and the render thread (API materials); exports are
@@ -36,7 +36,6 @@
 #include <gli/gli.hpp>
 
 #include <algorithm>
-#include <array>
 #include <atomic>
 #include <cctype>
 #include <cstdio>
@@ -58,10 +57,14 @@ namespace {
 
   using game_textures::Usage;
 
-  constexpr const char* kUsageDirs[Usage::Count] = { "color", "normal", "specular" };
+  constexpr const char* kUsageFiles[Usage::Count] = { "color.dds", "normal.dds", "specular.dds" };
   constexpr const char* kCollectingKey = "__autopbr.collecting";
   constexpr const char* kAssociationsFile = "associations.json";
-  constexpr const char* kUsdaFile = "comp_autoconvert.usda";
+  constexpr const char* kDumpDir = "dump";
+  constexpr const char* kWorldCategory = "wc";
+  constexpr const char* kMeshCategory = "mc";
+  constexpr const char* kWorldUsdaFile = "comp_world_autopbr.usda";
+  constexpr const char* kMeshUsdaFile = "comp_mesh_autopbr.usda";
 
   struct Association {
     XXH64_hash_t material = kEmptyHash;
@@ -74,8 +77,7 @@ namespace {
   };
 
   struct ExportJob {
-    Usage usage;
-    XXH64_hash_t hash;
+    std::filesystem::path path;
     Rc<DxvkImageView> view;
   };
 
@@ -88,8 +90,8 @@ namespace {
     std::mutex mutex;
     std::vector<Association> associations;
     std::unordered_map<XXH64_hash_t, size_t> index;
-    // Image hashes on disk or queued, per usage.
-    std::array<std::unordered_set<XXH64_hash_t>, Usage::Count> known;
+    // Dump file paths on disk or queued.
+    std::unordered_set<std::string> known;
     std::deque<ExportJob> queue;
     std::unordered_map<remixapi_MaterialHandle, LiveMaterial> liveMaterials;
     uint32_t unsaved = 0;
@@ -142,6 +144,61 @@ namespace {
     }
     out = value;
     return true;
+  }
+
+  // Replaces characters illegal in Windows file names, path separators and the
+  // usda asset delimiter '@'.
+  std::string sanitizeFolderName(const std::string& name) {
+    std::string out = name;
+    for (char& c : out) {
+      if (static_cast<unsigned char>(c) < 0x20 || std::strchr("<>:\"/\\|?*@", c) != nullptr) {
+        c = '_';
+      }
+    }
+    // Windows strips trailing dots and spaces.
+    for (auto it = out.rbegin(); it != out.rend() && (*it == '.' || *it == ' '); ++it) {
+      *it = '_';
+    }
+
+    std::string stem = out.substr(0, out.find('.'));
+    std::transform(stem.begin(), stem.end(), stem.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    const bool reserved = stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL" ||
+      (stem.size() == 4 && (stem.compare(0, 3, "COM") == 0 || stem.compare(0, 3, "LPT") == 0) && stem[3] >= '1' && stem[3] <= '9');
+    if (out.empty() || reserved) {
+      out += '_';
+    }
+    return out;
+  }
+
+  struct MaterialLocation {
+    const char* category;
+    std::string folder;
+  };
+
+  const char* categoryPrefix(const std::string& name) {
+    for (const char* category : { kWorldCategory, kMeshCategory }) {
+      if (name.size() > 3 && name.compare(0, 2, category) == 0 && name[2] == '/') {
+        return category;
+      }
+    }
+    return nullptr;
+  }
+
+  bool hasCategoryPrefix(const std::string& name) {
+    return categoryPrefix(name) != nullptr;
+  }
+
+  // material_name is "wc/<name>" (world) or "mc/<name>" (mesh). Without a
+  // prefix the material is filed as world under its colormap name or hash.
+  MaterialLocation materialLocation(const Association& a) {
+    if (const char* category = categoryPrefix(a.materialName)) {
+      return { category, sanitizeFolderName(a.materialName.substr(3)) };
+    }
+    if (!a.names[Usage::Color].empty()) {
+      return { kWorldCategory, sanitizeFolderName(a.names[Usage::Color]) };
+    }
+    const XXH64_hash_t hash = a.hashes[Usage::Color] != kEmptyHash ? a.hashes[Usage::Color] : a.material;
+    return { kWorldCategory, toHex(hash) };
   }
 
   bool writeFileAtomic(const std::filesystem::path& path, const std::string& contents) {
@@ -540,7 +597,7 @@ namespace {
   };
 
   // ---------------------------------------------------------------------------
-  // comp_autoconvert.usda
+  // comp_world_autopbr.usda / comp_mesh_autopbr.usda
 
   std::string escapeUsdaString(const std::string& value) {
     std::string out;
@@ -554,7 +611,7 @@ namespace {
     return out;
   }
 
-  std::string serializeUsda(const std::vector<Association>& associations) {
+  std::string serializeUsda(const std::vector<Association>& associations, const char* category) {
     std::string out =
       "#usda 1.0\n"
       "(\n"
@@ -573,6 +630,11 @@ namespace {
       if (normal == kEmptyHash && specular == kEmptyHash) {
         continue;
       }
+      const MaterialLocation location = materialLocation(a);
+      if (std::strcmp(location.category, category) != 0) {
+        continue;
+      }
+      const std::string assetDir = std::string("./assets/") + category + "/" + location.folder + "/";
       if (!first) {
         out += "\n";
       }
@@ -586,10 +648,10 @@ namespace {
       out += "            over \"Shader\"\n";
       out += "            {\n";
       if (normal != kEmptyHash) {
-        out += "                asset inputs:normalmap_texture = @./assets/autoconv/" + toHex(normal) + "_normal_oth.dds@\n";
+        out += "                asset inputs:normalmap_texture = @" + assetDir + "normal_oth.dds@\n";
       }
       if (specular != kEmptyHash) {
-        out += "                asset inputs:reflectionroughness_texture = @./assets/autoconv/" + toHex(specular) + "_rough.dds@\n";
+        out += "                asset inputs:reflectionroughness_texture = @" + assetDir + "roughness.dds@\n";
       }
       out += "            }\n";
       out += "        }\n";
@@ -621,7 +683,9 @@ namespace {
       dst.shaderName = src.shaderName;
       changed = true;
     }
-    if (dst.materialName.empty() && !src.materialName.empty()) {
+    // Names from older files lack the category prefix; the first prefixed name replaces them.
+    if (!src.materialName.empty() && dst.materialName != src.materialName &&
+        (dst.materialName.empty() || (!hasCategoryPrefix(dst.materialName) && hasCategoryPrefix(src.materialName)))) {
       dst.materialName = src.materialName;
       changed = true;
     }
@@ -638,34 +702,40 @@ namespace {
     return mergeAssociation(s.associations[it->second], a);
   }
 
-  void queueExport(State& s, Usage usage, const game_textures::Texture& texture) {
-    if (texture.isValid() && s.known[usage].insert(texture.hash).second) {
-      s.queue.push_back(ExportJob { usage, texture.hash, texture.view });
+  void queueExport(State& s, std::filesystem::path path, const game_textures::Texture& texture) {
+    if (texture.isValid() && s.known.insert(path.generic_string()).second) {
+      s.queue.push_back(ExportJob { std::move(path), texture.view });
       s_hasWork = true;
     }
   }
 
-  // Dumps already on disk, e.g. from a run that crashed.
+  // Known dumps = files on disk (dump/<category>/<folder>/*.dds) + queued exports,
+  // so deleting the dump folder makes the next collection write everything again.
   void seedKnownFromDisk() {
-    const std::filesystem::path root = imgdumpDir();
-    std::array<std::vector<XXH64_hash_t>, Usage::Count> found;
-
-    for (uint32_t u = 0; u < Usage::Count; ++u) {
+    std::vector<std::string> found;
+    auto forEachDir = [](const std::filesystem::path& dir, auto&& callback) {
       std::error_code ec;
-      std::filesystem::directory_iterator it(root / kUsageDirs[u], ec);
+      std::filesystem::directory_iterator it(dir, ec);
       for (; !ec && it != std::filesystem::directory_iterator(); it.increment(ec)) {
-        const std::filesystem::path& path = it->path();
-        XXH64_hash_t hash = 0;
-        if (path.extension() == ".dds" && path.stem().string().size() == 16 && parseHex(path.stem().string(), hash)) {
-          found[u].push_back(hash);
-        }
+        callback(it->path());
       }
-    }
+    };
+    forEachDir(imgdumpDir() / kDumpDir, [&](const std::filesystem::path& category) {
+      forEachDir(category, [&](const std::filesystem::path& folder) {
+        forEachDir(folder, [&](const std::filesystem::path& file) {
+          if (file.extension() == ".dds") {
+            found.push_back(file.generic_string());
+          }
+        });
+      });
+    });
 
     State& s = state();
     std::lock_guard lock { s.mutex };
-    for (uint32_t u = 0; u < Usage::Count; ++u) {
-      s.known[u].insert(found[u].begin(), found[u].end());
+    s.known.clear();
+    s.known.insert(found.begin(), found.end());
+    for (const ExportJob& job : s.queue) {
+      s.known.insert(job.path.generic_string());
     }
   }
 
@@ -687,13 +757,14 @@ namespace {
   // by a newer one for the same file. flush() drains the queue and joins.
   class FileWriter {
   public:
-    void write(std::filesystem::path path, std::vector<Association> snapshot, bool usda) {
+    // usdaCategory selects the usda for that category; nullptr writes associations.json.
+    void write(std::filesystem::path path, std::vector<Association> snapshot, const char* usdaCategory) {
       std::lock_guard lock { m_mutex };
       auto it = std::find_if(m_jobs.begin(), m_jobs.end(), [&path](const Job& job) { return job.path == path; });
       if (it != m_jobs.end()) {
         it->snapshot = std::move(snapshot);
       } else {
-        m_jobs.push_back(Job { std::move(path), std::move(snapshot), usda });
+        m_jobs.push_back(Job { std::move(path), std::move(snapshot), usdaCategory });
       }
       if (!m_thread.joinable()) {
         m_stop = false;
@@ -719,7 +790,7 @@ namespace {
     struct Job {
       std::filesystem::path path;
       std::vector<Association> snapshot;
-      bool usda = false;
+      const char* usdaCategory = nullptr;
     };
 
     std::mutex m_mutex;
@@ -741,7 +812,9 @@ namespace {
           m_jobs.pop_front();
         }
 
-        const std::string contents = job.usda ? serializeUsda(job.snapshot) : serializeAssociations(job.snapshot);
+        const std::string contents = job.usdaCategory != nullptr
+          ? serializeUsda(job.snapshot, job.usdaCategory)
+          : serializeAssociations(job.snapshot);
         bool written;
         {
           std::lock_guard fileLock { s_fileMutex };
@@ -749,7 +822,7 @@ namespace {
         }
         if (!written) {
           setStatus("Writing " + job.path.string() + " failed.");
-        } else if (job.usda) {
+        } else if (job.usdaCategory != nullptr) {
           setStatus("Wrote " + job.path.string() + ".");
         } else {
           setStatus(str::format("Saved ", job.snapshot.size(), " associations."));
@@ -765,8 +838,8 @@ namespace {
     return *s_writer;
   }
 
-  void writeFileAsync(std::filesystem::path path, std::vector<Association> snapshot, bool usda) {
-    fileWriter().write(std::move(path), std::move(snapshot), usda);
+  void writeFileAsync(std::filesystem::path path, std::vector<Association> snapshot, const char* usdaCategory) {
+    fileWriter().write(std::move(path), std::move(snapshot), usdaCategory);
   }
 
   void saveAssociations() {
@@ -777,7 +850,7 @@ namespace {
       snapshot = s.associations;
       s.unsaved = 0;
     }
-    writeFileAsync(imgdumpDir() / kAssociationsFile, std::move(snapshot), false);
+    writeFileAsync(imgdumpDir() / kAssociationsFile, std::move(snapshot), nullptr);
   }
 
   void writeUsda() {
@@ -787,7 +860,8 @@ namespace {
       std::lock_guard lock { s.mutex };
       snapshot = s.associations;
     }
-    writeFileAsync(imgdumpDir() / kUsdaFile, std::move(snapshot), true);
+    writeFileAsync(imgdumpDir() / kWorldUsdaFile, snapshot, kWorldCategory);
+    writeFileAsync(imgdumpDir() / kMeshUsdaFile, std::move(snapshot), kMeshCategory);
   }
 
   enum class LoadResult {
@@ -860,6 +934,9 @@ namespace {
     std::lock_guard lock { s.mutex };
     s.associations.clear();
     s.index.clear();
+    s.known.clear();
+    s.queue.clear();
+    s_hasWork = false;
     s.unsaved = 0;
     s.loaded = true;
     s.status = "Cleared associations.";
@@ -987,11 +1064,11 @@ namespace {
 
   // Returns true when an export was issued.
   bool exportTexture(const Rc<DxvkContext>& ctx, const ExportJob& job) {
-    const std::filesystem::path dir = imgdumpDir() / kUsageDirs[job.usage];
-    const std::string fileName = toHex(job.hash) + ".dds";
+    const std::filesystem::path dir = job.path.parent_path();
+    const std::string fileName = job.path.filename().string();
 
     std::error_code ec;
-    if (std::filesystem::exists(dir / fileName, ec)) {
+    if (std::filesystem::exists(job.path, ec)) {
       return false;
     }
     std::filesystem::create_directories(dir, ec);
@@ -1003,7 +1080,7 @@ namespace {
 
     if (hasSwizzle(job.view->info().swizzle)) {
       if (supportsSwizzledReadback(image->info().format)) {
-        exportSwizzled(ctx, job.view, (dir / fileName).string());
+        exportSwizzled(ctx, job.view, job.path.string());
         return true;
       }
       const int format = static_cast<int>(image->info().format);
@@ -1105,15 +1182,21 @@ namespace {
       }
     }
 
+    const std::filesystem::path dumpRoot = imgdumpDir() / kDumpDir;
     State& s = state();
     std::lock_guard lock { s.mutex };
     if (upsertAssociation(s, a)) {
       ++s.unsaved;
       s_hasWork = true;
     }
+
+    // Dump into the stored association's folder, only textures it recorded.
+    const Association& stored = s.associations[s.index.at(materialHash)];
+    const MaterialLocation location = materialLocation(stored);
+    const std::filesystem::path dir = dumpRoot / location.category / location.folder;
     for (uint32_t u = 0; u < Usage::Count; ++u) {
-      if (slots[u] != nullptr) {
-        queueExport(s, static_cast<Usage>(u), *slots[u]);
+      if (slots[u] != nullptr && slots[u]->isValid() && slots[u]->hash == stored.hashes[u]) {
+        queueExport(s, dir / kUsageFiles[u], *slots[u]);
       }
     }
   }
@@ -1221,8 +1304,9 @@ namespace {
     }
     ImGui::Indent();
 
-    ImGui::TextWrapped("Collects the game normal / specular textures of every material, dumps them and writes "
-                       "associations.json + comp_autoconvert.usda for the conversion scripts.");
+    ImGui::TextWrapped("Collects the game normal / specular textures of every material, dumps them to "
+                       "dump/<wc|mc>/<material>/ and writes associations.json + comp_world_autopbr.usda / "
+                       "comp_mesh_autopbr.usda for the conversion scripts.");
     ImGui::TextWrapped("Output: %s", imgdumpDir().string().c_str());
 
     const bool collecting = isCollecting();
@@ -1247,7 +1331,8 @@ namespace {
       clearAssociations();
     }
     if (IMGUI_ADD_TOOLTIP(ImGui::Button("Write USDA"),
-                          "Writes comp_autoconvert.usda for every material with a normal or specular texture.")) {
+                          "Writes comp_world_autopbr.usda (wc/) and comp_mesh_autopbr.usda (mc/) for every material "
+                          "with a normal or specular texture.")) {
       writeUsda();
     }
 
@@ -1264,10 +1349,7 @@ namespace {
         }
       }
       queued = s.queue.size();
-      for (const auto& known : s.known) {
-        onDisk += known.size();
-      }
-      onDisk -= std::min(onDisk, queued);
+      onDisk = s.known.size() - std::min(s.known.size(), queued);
       exported = s.exported;
       status = s.status;
     }

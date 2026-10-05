@@ -2,9 +2,9 @@
 
 // rtx_fork_autopbr.h — fork-owned. AutoPBR collects which game normal /
 // specular textures belong to which material (keyed by the material's
-// replacement hash), dumps the textures to <game>/rtx-remix/imgdump/ and
-// writes associations.json + comp_autoconvert.usda for the offline
-// conversion scripts. Fed by rtx_fork_game_textures.cpp; plugin-facing
+// replacement hash), dumps the textures to <game>/rtx-remix/imgdump/dump/ and
+// writes associations.json + comp_world_autopbr.usda / comp_mesh_autopbr.usda
+// for the offline conversion scripts. Fed by rtx_fork_game_textures.cpp; plugin-facing
 // surface documented in docs/RemixAutoPbrAPI.md.
 
 #include "rtx_fork_game_textures.h"
@@ -28,7 +28,7 @@ namespace dxvk {
     static void setCollecting(bool collecting);
 
     // Records textures for the material with replacement key materialHash and
-    // queues dumps for images not on disk yet. Thread-safe; no-op while not
+    // queues dumps into its folder for files not on disk yet. Thread-safe; no-op while not
     // collecting. fallbackColor is used when the set has no COLOR entry.
     static void addAssociation(
       XXH64_hash_t materialHash,
