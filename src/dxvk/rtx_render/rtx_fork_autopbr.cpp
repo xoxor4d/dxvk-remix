@@ -709,7 +709,8 @@ namespace {
     }
   }
 
-  // Dumps already on disk (dump/<category>/<folder>/*.dds), e.g. from a run that crashed.
+  // Known dumps = files on disk (dump/<category>/<folder>/*.dds) + queued exports,
+  // so deleting the dump folder makes the next collection write everything again.
   void seedKnownFromDisk() {
     std::vector<std::string> found;
     auto forEachDir = [](const std::filesystem::path& dir, auto&& callback) {
@@ -731,7 +732,11 @@ namespace {
 
     State& s = state();
     std::lock_guard lock { s.mutex };
+    s.known.clear();
     s.known.insert(found.begin(), found.end());
+    for (const ExportJob& job : s.queue) {
+      s.known.insert(job.path.generic_string());
+    }
   }
 
   void setStatus(std::string status) {
@@ -929,6 +934,9 @@ namespace {
     std::lock_guard lock { s.mutex };
     s.associations.clear();
     s.index.clear();
+    s.known.clear();
+    s.queue.clear();
+    s_hasWork = false;
     s.unsaved = 0;
     s.loaded = true;
     s.status = "Cleared associations.";
