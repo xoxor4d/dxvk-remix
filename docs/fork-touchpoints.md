@@ -811,7 +811,7 @@ initializer list and can't be lifted into a separate TU.
   *Resolves albedo texture hash from the API material's opaque data and auto-applies all texture-based instance categories (Sky, Ignore, WorldUI, WorldMatte, Particle, Beam, DecalStatic, Terrain, AnimatedWater, IgnoreLights, IgnoreAntiCulling, IgnoreMotionBlur, Hidden).*
 
 - **Hook** at `SceneManager::submitExternalDraw` (after particle setup, before `processDrawCallState`) → `fork_hooks::externalDrawObjectPicking` in `rtx_fork_submit.cpp`
-  *Stores per-draw texture hash metadata in `m_drawCallMeta` when object picking is active. Access to the private `m_drawCallMeta` member is granted via a `friend` declaration — see the `rtx_scene_manager.h` entry below.*
+  *Stores per-draw texture hash metadata in `m_drawCallMeta` when object picking is active; draws without `remixapi_InstanceInfoObjectPickingEXT` get a per-submesh `drawCallID` from `0x80000000` up (above D3D9 draw IDs) so dev-menu texture picking / highlighting resolves them. Access to the private `m_drawCallMeta` member is granted via a `friend` declaration — see the `rtx_scene_manager.h` entry below.*
 
 ---
 
@@ -837,6 +837,13 @@ initializer list and can't be lifted into a separate TU.
 
 - **Inline tweak** at `tryHandleSky` (~line 145) — 6-line addition for physical atmosphere sky skip.
   *Returns `TryHandleSkyResult::SkipSubmit` early for any draw with `cameraType == CameraType::Sky` when Numos mode is active, preventing rasterized skybox geometry from being submitted.*
+
+---
+
+## src/dxvk/rtx_render/rtx_texture_manager.cpp / rtx_texture_manager.h
+
+- **Inline tweak** at `SamplerFeedback::fetchNoisyMipCounts` (+ `m_cachedAssetMipShift` member, alloc/free in ctor/dtor) — ~20 LOC.
+  *Sampler feedback reports the accessed mip of a 4096-wide texture (`calcMipLevelAccessedForSamplerFeedback`), but upstream subtracted it from each asset's own mip count, so a 512px replacement streamed 3 levels too low (64px). The accessed level is now shifted by `ceil(log2(4096 / maxDim))` per texture, for the stamp's own texture and for every related (normal/roughness/...) texture, instead of copying the stamp texture's mip count to related textures. Fixes blurry normal/roughness on partial replacements without a replacement albedo. Upstream bugfix candidate.*
 
 ---
 
@@ -4388,3 +4395,137 @@ volumetrics while `rtx.skyMode` is Numos. With the raster sky the authored
   `applyWeatherOverride` only when `skyMode` is Numos.
 - **`src/dxvk/imgui/dxvk_imgui.cpp`** - same gate on the snapshot handed to the
   RTX Volumetrics (Global) settings panel.
+
+---
+
+## Workstream - Game texture API + AutoPBR (fork - 2026-10-04)
+
+API `0.1000.2`: `remixapi_MaterialInfoGameTexturesEXT` + `SetDrawGameTextures`
+(see [`RemixAutoPbrAPI.md`](RemixAutoPbrAPI.md)). Fork-owned logic lives in
+`rtx_fork_game_textures.{h,cpp}` (texture resolution, pending draw record,
+colormap-keyed API materials, teardown) and `rtx_fork_autopbr.{h,cpp}`
+(collection, dumps, associations.json / usda, UI, `rtx.autopbr.*`).
+
+- **`public/include/remix/remix_c.h`** - inline. *`REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_GAME_TEXTURES_EXT`, `remixapi_GameTextureUsage`, `remixapi_GameTexture`, `remixapi_MaterialInfoGameTexturesEXT`, `PFN_remixapi_SetDrawGameTextures`, interface slot `SetDrawGameTextures`, version `0.1000.2`.*
+- **`public/include/remix/remix.h`** - inline. *`Interface::SetDrawGameTextures` wrapper; `sizeof(remixapi_Interface)` assert 328 -> 336.*
+- **`src/dxvk/rtx_render/rtx_remix_specialization.inl`** - inline, 3 LOC. *Registers `remixapi_MaterialInfoGameTexturesEXT` (AllTypes / ToEnum / Root = `remixapi_MaterialInfo`).*
+- **`src/dxvk/rtx_render/rtx_remix_api.cpp`** - hooks + inline.
+  - `remixapi_CreateMaterial`: `fork_hooks::resolveMaterialGameTextures` on the API thread; the finalized material passes through `fork_hooks::applyMaterialGameTextures` in the CS lambda.
+  - `remixapi_DestroyMaterial`: `fork_hooks::releaseMaterialGameTextures` on the API thread and `fork_hooks::forgetMaterialGameTextures` in the CS lambda.
+  - `remixapi_Shutdown`: `fork_hooks::shutdownGameTextures(s_dxvkDevice)` next to `shutdownCallbacks()`.
+  - `remixapi_SetDrawGameTextures`: one-line delegate to `fork_hooks::setDrawGameTextures(tryAsDxvk(), info)` in the file's `extern "C"` block (non-exported, like `remixapi_SetGameValue`), assigned in the inline vtable block. Kept here rather than in `remixApiVtableInit` because the registered D3D9 device (`tryAsDxvk`) is private to this file.
+  - `remixapi_InitializeLibrary`: size sentinel 328 -> 336; callers reporting < `0.1000.2` get the interface copied only up to `offsetof(remixapi_Interface, SetDrawGameTextures)`. Adds `#include <cstddef>`.
+- **`src/dxvk/rtx_render/rtx_scene_manager.cpp`** - hook call sites changed in `SceneManager::submitExternalDraw`: `externalDrawMaterialReplacement` and `externalDrawTextureCategories` now take the submesh's material handle, and `setHashOverride` uses `fork_hooks::externalMaterialKey(handle, *material)` (equals `material->getHash()` for materials without the extension).
+- **`src/d3d9/d3d9_rtx.cpp`** - hooks. *`fork_hooks::onD3D9DrawMaterial` after `materialData.updateCachedHash()` in `D3D9Rtx::internalPrepareDraw`, `fork_hooks::onD3D9EndFrame(m_parent, callInjectRtx)` at the top of `D3D9Rtx::EndFrame` (API thread; the window-proc end of frame with `callInjectRtx == false` is ignored), plus the `rtx_fork_hooks.h` include.*
+- **`src/d3d9/d3d9_device.cpp`** - hook. *`fork_hooks::shutdownGameTextures(this)` in `D3D9DeviceEx::~D3D9DeviceEx` after `SynchronizeCsThread()`, plus the `rtx_fork_hooks.h` include.*
+- **`src/dxvk/rtx_render/rtx_context.cpp`** - hook. *`fork_hooks::autoPbrEndFrame` in `RtxContext::endFrame` (throttled exports, autosave).*
+- **`src/dxvk/imgui/dxvk_imgui.cpp`** - hook. *`fork_hooks::showAutoPbrUI` in `ImGUI::showSetupWindow`, "Step 1: Categorize Textures" tab.*
+- **`src/dxvk/meson.build`** - inline. *Registers the five new fork files (`rtx_fork_game_textures_keyed.cpp` holds the render-thread, D3D9-free half so unit tests link).*
+- **`src/dxvk/rtx_render/rtx_fork_hooks.h`, `rtx_fork_submit.cpp`** - fork-owned. *New hook declarations; the submit hooks draw colormap-keyed materials like D3D9 draws (replacement merged over the game state, or the legacy-defaults material) and use the key for categories.*
+- **`bridge/src/{client/remix_api.cpp, server/main.cpp, util/util_remixapi.{h,cpp}, util/util_commands.h}`** - inline. *`MaterialInfoGameTexturesEXT` serialization (texture proxies sent as D3D object ids, resolved via `gpD3DResources`), `RemixApi_SetDrawGameTextures` command, interface truncation for < `0.1000.2`, `CreateMesh` pNext loop fix.*
+- **`RtxOptions.md`** - REGEN PENDING (`rtx.autopbr.exportsPerFrame`, `rtx.autopbr.autosaveInterval`). **`RemixApiSurface.md`** - REGEN PENDING.
+
+---
+
+## Workstream - Constant-rate particle spawn needs a live emitter (fork - 2026-10-04)
+
+Fixes a GPU page fault in `particle_system_spawn` (Aftermath read translation
+error -> `VK_ERROR_DEVICE_LOST`) when an API client destroys its meshes and
+recreates the same map a few frames later. `RtxParticleSystemManager::simulate`
+forced `spawnParticleCount = maxNumParticles` every frame for constant-rate
+systems (`spawnRatePerSecond >= maxNumParticles`), whether or not an emitter
+spawned this frame. The system outlives its emitters for
+`spawnBurstDuration + maxTimeToLive`, and during that window the kernel read the
+last-written context map and stale `GpuSpawnContext`s (`writeSpawnContextsToGpu`
+returns early when nothing spawned). Their bindless buffer slots belonged to
+BLAS entries that GC had unregistered; `RetainedBufferTable` recycles freed
+slots, so the new map's smaller buffers sat behind the old indices while
+`numTriangles` / offsets still described the old mesh.
+
+- **`src/dxvk/rtx_render/rtx_fork_particle_spawn.cpp`** - fork-owned file. *`fork_hooks::constantRateSpawnCount()`: full respawn only when this frame's contexts registered and resolved, otherwise 0 (existing particles keep evolving).*
+- **`src/dxvk/rtx_render/rtx_fork_hooks.h`** - fork-owned change. *Declares `constantRateSpawnCount`.*
+- **`src/dxvk/rtx_render/rtx_particle_system.cpp`** - fork-touchpoint hook. *One line in `simulate`'s constant-rate branch dispatches into the hook.*
+
+---
+
+## Workstream - Spawn occlusion traces only a fresh TLAS (fork - 2026-10-04)
+
+Fixes the remaining `particle_system_spawn` page fault on map reload, seen only
+with precipitation (the one system with `traceSpawnOcclusion`). The spawn kernel
+traces `getTLAS(Opaque).accelStructure`, which at `simulate()` time is whatever
+TLAS was built last, and `sceneTlasValid` only checked it was non-null.
+`SceneManager::clear` (camera cut on the respawn teleport, asset reload,
+last-external-mesh teardown) and the BLAS GC free the BLASes without touching
+the TLAS. Frames without instances skip the TLAS build entirely. The next frame
+the precipitation emitter is drawn, the kernel traverses a TLAS whose instance
+descriptors point at freed BLAS memory.
+
+- **`src/dxvk/rtx_render/rtx_fork_particle_spawn.cpp`** - fork-owned file. *`onOpaqueTlasBuilt` / `onAccelStructuresCleared` / `isPreviousOpaqueTlasTraceable`: tracing is allowed only when the Opaque TLAS was built on the previous frame and no clear has happened since.*
+- **`src/dxvk/rtx_render/rtx_fork_hooks.h`** - fork-owned change. *Declares the three hooks.*
+- **`src/dxvk/rtx_render/rtx_accel_manager.cpp`** - fork-touchpoint hooks. *`rtx_fork_hooks.h` include; `onOpaqueTlasBuilt` after `internalBuildTlas<Tlas::Opaque>` in `buildTlas`; `onAccelStructuresCleared` at the end of `AccelManager::clear`.*
+- **`src/dxvk/rtx_render/rtx_particle_system.cpp`** - fork-touchpoint inline tweak. *`setupConstants`'s `sceneTlasValid` and the `s_spawnTraceTlasValid` diagnostic also require `isPreviousOpaqueTlasTraceable`.*
+
+---
+
+## Workstream - AnimatedWater shoreline fade (fork - 2026-10-04)
+
+Removes the bright seam and the hard edge where translucent water meets
+opaque geometry. Near the shore, PSTR shows the terrain under shallow water
+with almost no absorption, and the water's Fresnel reflection is added on
+top. That makes the shallow strip brighter than both dry ground and deep
+water, and DLSS-RR / NRD smear the reflection onto the dry side, because
+the guide buffers describe the continuous terrain. At each resolved
+AnimatedWater translucent hit, `forkWaterShoreFade` traces a short
+opaque-only probe straight down for the water depth and offsets it by a
+pseudo-height (the signed slope of the animated normal). The resulting
+fade drives base reflectivity, normal perturbation (blended toward the
+view direction so grazing Schlick Fresnel vanishes too), IOR, thin-wall
+absorption, diffuse layer and emission to zero toward the shore.
+Plugin-facing options: `rtx.water.*`, see docs/RemixWaterAPI.md.
+
+- **`src/dxvk/shaders/rtx/algorithm/rtx_fork_water_shore.slangh`** - fork-owned file. *`forkWaterShoreFade`: depth probe + pseudo-height fade applied to the TranslucentSurfaceMaterialInteraction.*
+- **`src/dxvk/shaders/rtx/algorithm/resolve.slangh`** - fork-touchpoint hook. *Includes the fork header; in `resolveVertex`'s translucent branch, dispatches `forkWaterShoreFade` guarded by `cb.waterShoreFadeEnable && surface.isAnimatedWater`.*
+- **`src/dxvk/shaders/rtx/pass/raytrace_args.h`** - fork-touchpoint inline tweak. *`waterShoreFadeEnable`, `waterShoreFadeDistance`, `waterShoreCutDepth`, `waterShoreFadeWidth`, `waterShoreHeightScale`, `waterShoreProbeSpread`, `waterObjectFadeWidth` appended at the END of RaytraceArgs (no existing offsets move).*
+- **`src/dxvk/rtx_render/rtx_fork_water.h` / `.cpp`** - fork-owned files. *`WaterOptions` (`rtx.water.*`), constant fill (probe range raised to cover the full fade band) and ImGui widgets.*
+- **`src/dxvk/rtx_render/rtx_fork_hooks.h`** - fork-owned change. *Declares `fillWaterShaderParams` and `showWaterShoreSettings`; forward-declares `RaytraceArgs`.*
+- **`src/dxvk/rtx_render/rtx_context.cpp`** - fork-touchpoint hook. *One line after `TranslucentMaterialOptions::fillShaderParams` dispatches `fillWaterShaderParams`.*
+- **`src/dxvk/imgui/dxvk_imgui.cpp`** - fork-touchpoint hook. *One line at the end of Material Options -> PBR Material Modifiers -> Translucent dispatches `showWaterShoreSettings`.*
+- **`src/dxvk/meson.build`** - fork-touchpoint inline tweak. *Registers `rtx_fork_water.cpp/.h`.*
+- **`docs/RemixWaterAPI.md`**, **`docs/RemixApi.md`** - spoke page + Convention namespaces row for `rtx.water.*`.
+- **`RtxOptions.md`** - REGEN PENDING.
+
+FOLLOW-UP (same day): a single depth probe slipped through cracks / T-junctions between
+merged API chunks and read as deep water, leaving a bright zig-zag line. Unless the center
+probe already fades fully, two more probes offset horizontally by `rtx.water.shoreProbeSpread`
+plus the pixel footprint are traced and the shallowest hit is used. A soft-intersection probe
+along the incoming ray (`rtx.water.objectFadeWidth`) removes the hard edge around objects that
+intersect the water over deep ground.
+
+FOLLOW-UP 2 (same day): the hard edge around bodies came from the downward depth probes
+hitting submerged legs, which reads as shallow ground directly above the body. Depth probes now
+force non-opaque traversal and commit only `isStatic && isFullyOpaque` surfaces, so moving and
+skinned objects are skipped and faded only by the view-ray probe, now a smoothstep. The crack
+probes run only when the center probe misses.
+
+---
+
+## Workstream - Transmission origin clamp at translucent/opaque contact (fork - 2026-10-04)
+
+Fixes a sawtooth of bright pixels exactly where a translucent surface intersects opaque geometry
+(water meeting the shore, also in stock Remix). Rays that penetrate a surface are offset along the
+flipped triangle normal (`rayOffsetSurfaceOriginHelper`, ray.slangh). In the thin wedge next to the
+contact line, the opaque surface lies closer behind the hit than that offset, so the transmission
+origin lands behind it. With thin-walled translucents the ray stays outside the medium and culls
+back faces, so it passes under the terrain and picks up sky. With thick ones it hits the terrain
+from below. The wedge is sub-pixel, but the leaked radiance is high-dynamic-range, so it survives
+anti-aliasing as a line. `forkClampTransmissionRay` traces an opaque-only probe across the offset
+for translucent penetration; if it hits, the origin is moved to half the hit distance, in front
+of the opaque surface. The shore fade also skips fully faded water hits outright, continuing the
+ray from a clamped origin.
+
+- **`src/dxvk/shaders/rtx/algorithm/rtx_fork_transmission_origin.slangh`** - fork-owned file. *`forkClampPenetratingOrigin`, `forkClampTransmissionRay`.*
+- **`src/dxvk/shaders/rtx/algorithm/resolve.slangh`** - fork-touchpoint hook. *Includes the header; the shore fade dispatch now continues the ray (`resolveVertexFinalContinue` + clamped origin) when `forkWaterShoreFade` reports the water fully faded.*
+- **`src/dxvk/shaders/rtx/algorithm/geometry_resolver.slangh`** - fork-touchpoint hooks. *The three transmission PSR spawns (first hit, PSR continuation, PSR prepare) wrap `rayCreateDirection` in `forkClampTransmissionRay`.*
+- **`src/dxvk/shaders/rtx/algorithm/integrator.slangh`** - fork-touchpoint hook. *`sampleDirection` wraps `rayCreateDirection` in `forkClampTransmissionRay`.*
+- **`src/dxvk/shaders/rtx/algorithm/rtx_fork_water_shore.slangh`** - fork-owned file. *`forkWaterShoreFade` returns true when fully faded.*
+

@@ -914,6 +914,8 @@ namespace dxvk {
     clearResourceAliasingCache();
 #endif
 
+    fork_hooks::autoPbrEndFrame(*this);
+
     // Update time on the frame end so all other systems can benefit from a global time
     GlobalTime::get().update();
   }
@@ -1446,6 +1448,7 @@ namespace dxvk {
     constants.opaqueMaterialArgs.legacySpecularLevel = std::clamp(LegacyMaterialDefaults::specularLevel(), 0.0f, 1.0f);
     constants.opaqueMaterialArgs.legacyFresnelGrazing = std::clamp(LegacyMaterialDefaults::fresnelGrazing(), 0.0f, 1.0f);
     TranslucentMaterialOptions::fillShaderParams(constants.translucentMaterialArgs);
+    fork_hooks::fillWaterShaderParams(constants);
     ViewDistanceOptions::fillShaderParams(constants.viewDistanceArgs, RtxOptions::getMeterToWorldUnitScale());
     constants.alphaBlendSurfacePackMult = RtxOptions::getMeterToWorldUnitScale();
 

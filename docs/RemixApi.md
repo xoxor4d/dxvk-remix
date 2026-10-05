@@ -205,9 +205,49 @@ is the base; attach exactly one of the type-specific extensions:
 | `remixapi_MaterialInfoTranslucentEXT` | Glass, water, refractive media. |
 | `remixapi_MaterialInfoPortalEXT` | Ray portals. |
 
+`remixapi_MaterialInfoGameTexturesEXT` can be chained in addition (any
+position in the chain). It hands the runtime the game's own D3D9 textures
+(`IDirect3DTexture9*`) with a usage (`COLOR`, `NORMAL`, `SPECULAR`) and
+optional names:
+
+```c
+typedef struct remixapi_MaterialInfoGameTexturesEXT {
+  remixapi_StructType         sType;          // ..._MATERIAL_INFO_GAME_TEXTURES_EXT
+  void*                       pNext;
+  const char*                 materialName;   // optional
+  const char*                 shaderName;     // optional
+  const remixapi_GameTexture* textures_values;
+  uint32_t                    textures_count;
+} remixapi_MaterialInfoGameTexturesEXT;
+```
+
+If the material is opaque, its `albedoTexture` is empty and a `COLOR`
+texture is given, the material renders like a non-replaced D3D9 draw of that
+texture: the D3D9 texture is the albedo (no second upload),
+`rtx.legacyMaterial.*` defaults replace the `OpaqueEXT` constants (only
+alpha test / blend and the sampler filter / wrap are kept), and the material's
+replacement, capture and texture-category key is the texture's image hash, so
+it shares `mat_<hash>` with D3D9 draws. A matching replacement is merged over
+it like on the D3D9 path; changes to `rtx.legacyMaterial.*` and
+`rtx.ignoreAlphaOnTextures` apply live. The `COLOR` texture must be filled
+before `CreateMaterial`. `NORMAL` / `SPECULAR` are not bound; they only feed
+AutoPBR ([`RemixAutoPbrAPI.md`](RemixAutoPbrAPI.md)). Materials without the
+extension are unchanged.
+
 The runtime uses `info->hash` to dedupe and to bind replacement assets
 from your USD captures; pick a stable hash that survives content
 reloads.
+
+### `SetDrawGameTextures`
+
+```c
+remixapi_ErrorCode SetDrawGameTextures(const remixapi_MaterialInfoGameTexturesEXT* info);
+```
+
+Attaches game texture info to the following D3D9 draw calls until it is
+called with `NULL`. Call it on the thread that issues the D3D9 draws. The
+info is associated with each draw's material hash for AutoPBR and is ignored
+(cheaply) while AutoPBR is not collecting. Added in `0.1000.2`.
 
 ---
 
@@ -262,7 +302,7 @@ for additional behavior:
 | :-- | :-- |
 | `remixapi_InstanceInfoBoneTransformsEXT` | Per-bone world transforms for skinned mesh playback. |
 | `remixapi_InstanceInfoBlendEXT` | D3D9-style alpha test/blend state, used when the material has `useDrawCallAlphaState=true`. |
-| `remixapi_InstanceInfoObjectPickingEXT` | Tags the instance with a 32-bit ID readable via the picking API. |
+| `remixapi_InstanceInfoObjectPickingEXT` | Tags the instance with a 32-bit ID readable via the picking API. Use non-zero values below `0x80000000`; without it, the runtime assigns per-submesh values from `0x80000000` up while picking is active (dev-menu texture selection). |
 | `remixapi_InstanceInfoParticleSystemEXT` | Spawns a GPU particle system bound to this instance. |
 | `remixapi_InstanceInfoGpuInstancingEXT` | Submits N GPU-instanced copies in one call. |
 
@@ -527,6 +567,8 @@ independently of the typed C API.
 | :-- | :-- | :-- |
 | `__weather.*`, `__sky.*` | `SetGameValue` / `GetGameValue` | [`RemixSkyAPI.md`](RemixSkyAPI.md) |
 | `rtx.weather.preset.*` | `SetConfigVariable` | [`RemixSkyAPI.md`](RemixSkyAPI.md) |
+| `__autopbr.*`, `rtx.autopbr.*` | `GetGameValue`, `SetConfigVariable` | [`RemixAutoPbrAPI.md`](RemixAutoPbrAPI.md) |
+| `rtx.water.*` | `SetConfigVariable` | [`RemixWaterAPI.md`](RemixWaterAPI.md) |
 
 When a new fork-side subsystem starts publishing a `__<ns>.*`
 GameStateStore convention or a `rtx.<ns>.*` ConfigVariable namespace
@@ -547,6 +589,10 @@ The runtime exports `REMIXAPI_VERSION_MAJOR`, `REMIXAPI_VERSION_MINOR`,
 `remixapi_StructType` values are append-only — never reorder. Adding
 new EXT structs is a minor-version event; changing the layout of an
 existing struct is a major-version event.
+
+Callers that report a version older than the one that appended an
+interface slot receive `remixapi_Interface` truncated before that slot
+(e.g. `0.1000.1` callers get everything before `SetDrawGameTextures`).
 
 For the dated change log, see
 [`RemixApiChangelog.md`](RemixApiChangelog.md).

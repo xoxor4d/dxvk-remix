@@ -1,0 +1,49 @@
+#pragma once
+
+// rtx_fork_transmission_origin.slangh - fork-owned. Where a translucent surface intersects opaque
+// geometry, the opaque surface can be closer behind the hit than the self-intersection offset. The
+// offset origin then lands behind it and the transmission ray misses it (back-face culled or no
+// geometry beyond), leaking sky or unrelated radiance along the contact line. Pull such origins
+// back in front of the opaque surface.
+
+vec3 forkClampPenetratingOrigin(vec3 position, vec3 offsetOrigin)
+{
+  const vec3 offset = offsetOrigin - position;
+  const float offsetLength = length(offset);
+
+  if (offsetLength <= 0.0f)
+  {
+    return offsetOrigin;
+  }
+
+  RayDesc probeRay;
+  probeRay.Origin = position;
+  probeRay.TMin = 0.0f;
+  probeRay.Direction = offset / offsetLength;
+  probeRay.TMax = offsetLength;
+
+  // Opaque-only: every in-mask candidate is opaque, so one Proceed() completes traversal.
+  RayQuery<RAY_FLAG_CULL_NON_OPAQUE> rayQuery;
+  rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_CULL_NON_OPAQUE, OBJECT_MASK_OPAQUE, probeRay);
+  rayQuery.Proceed();
+
+  if (rayQuery.CommittedStatus() != COMMITTED_TRIANGLE_HIT)
+  {
+    return offsetOrigin;
+  }
+
+  return position + probeRay.Direction * (rayQuery.CommittedRayT() * 0.5f);
+}
+
+Ray forkClampTransmissionRay(
+  Ray ray, MinimalSurfaceInteraction minimalSurfaceInteraction,
+  PolymorphicSurfaceMaterialInteraction polymorphicSurfaceMaterialInteraction, bool penetrateSurface)
+{
+  // Opaque materials are in the opaque mask themselves, so only translucent penetration is clamped.
+  if (penetrateSurface && polymorphicSurfaceMaterialInteractionGetTypeHelper(polymorphicSurfaceMaterialInteraction) == surfaceMaterialTypeTranslucent)
+  {
+    ray.origin = forkClampPenetratingOrigin(minimalSurfaceInteraction.position, ray.origin);
+  }
+
+  return ray;
+}

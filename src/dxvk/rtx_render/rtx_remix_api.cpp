@@ -64,6 +64,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -1073,16 +1074,19 @@ namespace {
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
     }
 
+    auto gameTextures = dxvk::fork_hooks::resolveMaterialGameTextures(remixDevice, *info, pnext::find<remixapi_MaterialInfoGameTexturesEXT>(info));
+
     // async load
     std::lock_guard lock { s_mutex };
     remixDevice->EmitCs([cHandle = handle,
                          cMaterialData = convert::toRtMaterialWithoutTexturePreload(*info),
-                         cPreloadSrc = convert::makePreloadSource(*info)](dxvk::DxvkContext* ctx) {
+                         cPreloadSrc = convert::makePreloadSource(*info),
+                         cGameTextures = std::move(gameTextures)](dxvk::DxvkContext* ctx) {
       auto& assets = ctx->getCommonObjects()->getSceneManager().getAssetReplacer();
       assets->makeMaterialWithTexturePreload(
         *ctx,
         cHandle,
-        convert::toRtMaterialFinalized(*ctx, cMaterialData, cPreloadSrc));
+        dxvk::fork_hooks::applyMaterialGameTextures(cHandle, convert::toRtMaterialFinalized(*ctx, cMaterialData, cPreloadSrc), cGameTextures));
     });
 
     *out_handle = handle;
@@ -1092,10 +1096,12 @@ namespace {
   remixapi_ErrorCode REMIXAPI_CALL remixapi_DestroyMaterial(
     remixapi_MaterialHandle handle) {
     if (auto remixDevice = tryAsDxvk()) {
+      dxvk::fork_hooks::releaseMaterialGameTextures(remixDevice, handle);
       std::lock_guard lock { s_mutex };
       remixDevice->EmitCs([cHandle = handle](dxvk::DxvkContext* ctx) {
         auto& assets = ctx->getCommonObjects()->getSceneManager().getAssetReplacer();
         assets->destroyExternalMaterial(cHandle);
+        dxvk::fork_hooks::forgetMaterialGameTextures(cHandle);
       });
       return REMIXAPI_ERROR_CODE_SUCCESS;
     }
@@ -2202,6 +2208,7 @@ namespace {
   remixapi_ErrorCode REMIXAPI_CALL remixapi_Shutdown(void) {
     // Clear fork-owned callback state (lives in rtx_fork_api_entry.cpp)
     dxvk::fork_hooks::shutdownCallbacks();
+    dxvk::fork_hooks::shutdownGameTextures(s_dxvkDevice);
     if (s_dxvkDevice) {
       dxvk::g_dxvkDeviceNative = nullptr;
       while (true) {
@@ -2669,6 +2676,11 @@ extern "C"
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 
+  remixapi_ErrorCode REMIXAPI_CALL remixapi_SetDrawGameTextures(
+    const remixapi_MaterialInfoGameTexturesEXT* info) {
+    return dxvk::fork_hooks::setDrawGameTextures(tryAsDxvk(), info);
+  }
+
   REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_InitializeLibrary(const remixapi_InitializeLibraryInfo* info,
                                                                        remixapi_Interface* out_result) {
     if (!info || info->sType != REMIXAPI_STRUCT_TYPE_INITIALIZE_LIBRARY_INFO) {
@@ -2724,12 +2736,18 @@ extern "C"
       interf.GetVramStats = remixapi_GetVramStats;
       interf.RequestTextureVramFree = remixapi_RequestTextureVramFree;
       interf.GetGameValue = remixapi_GetGameValue;
+      interf.SetDrawGameTextures = remixapi_SetDrawGameTextures;
       // Fork-added vtable slots (extern-C exported; delegated to fork hook)
       dxvk::fork_hooks::remixApiVtableInit(interf);
     }
-    static_assert(sizeof(interf) == 328, "Add/remove function registration");
+    static_assert(sizeof(interf) == 336, "Add/remove function registration");
 
-    *out_result = interf;
+    // Callers built against < 0.1000.2 have a remixapi_Interface that ends before SetDrawGameTextures.
+    if (s_apiVersion < REMIXAPI_VERSION_MAKE(0, 1000, 2)) {
+      std::memcpy(out_result, &interf, offsetof(remixapi_Interface, SetDrawGameTextures));
+    } else {
+      *out_result = interf;
+    }
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 

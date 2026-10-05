@@ -15,12 +15,25 @@
 #include "rtx_fork_hooks.h"
 
 #include "rtx_asset_replacer.h"   // AssetReplacer, AssetReplacement
+#include "rtx_fork_game_textures.h" // game_textures::findMaterialKey, keyedDrawMaterial
 #include "rtx_options.h"          // RtxOptions::*, fast_unordered_set, InstanceCategories
 #include "rtx_scene_manager.h"    // SceneManager, DrawCallMetaInfo
 
 #include "dxvk_device.h"          // DxvkDevice::getCommon()->getResources()
 
 namespace dxvk {
+namespace {
+
+  // Picking values for API draws without remixapi_InstanceInfoObjectPickingEXT:
+  // above the D3D9 draw call IDs (0, 1, ... per frame) and below the default
+  // picking clear value (UINT32_MAX). Render thread only.
+  constexpr ObjectPickingValue kFirstAutoPickingValue = 0x80000000u;
+  ObjectPickingValue s_nextAutoPickingValue = kFirstAutoPickingValue;
+  ObjectPickingValue s_lastAutoPickingValue = 0;
+  uint32_t s_autoPickingFrameId = kInvalidFrameIndex;
+
+} // anonymous namespace
+
 namespace fork_hooks {
 
   // ---------------------------------------------------------------------------
@@ -43,10 +56,21 @@ namespace fork_hooks {
   // externalDrawMaterialReplacement
   //
   // Checks for a USD material replacement via getReplacementMaterial() and
-  // updates the caller's material pointer in-place if one is found.
+  // updates the caller's material pointer in-place if one is found. Materials
+  // keyed by a game colormap look up by that key and draw like D3D9 draws (see
+  // rtx_fork_game_textures.cpp).
   // ---------------------------------------------------------------------------
   std::shared_ptr<MaterialData> externalDrawMaterialReplacement(
-      AssetReplacer& replacer, const MaterialData*& material) {
+      AssetReplacer& replacer, remixapi_MaterialHandle handle, const MaterialData*& material) {
+    const XXH64_hash_t key = game_textures::findMaterialKey(handle);
+    if (key != kEmptyHash) {
+      std::shared_ptr<MaterialData> keyed = game_textures::keyedDrawMaterial(handle, replacer.getReplacementMaterial(key));
+      if (keyed != nullptr) {
+        material = keyed.get();
+      }
+      return keyed;
+    }
+
     // Check for material replacement (matches the D3D9 draw path behavior).
     // Upstream hands replacement materials out by shared_ptr so a hot reload
     // cannot free them under a live draw; return the owner to the caller so
@@ -65,15 +89,18 @@ namespace fork_hooks {
   // Resolves the albedo texture hash from the material's opaque data and writes
   // it to outTextureHash (so subsequent hooks — e.g. object-picking — can use
   // it). Then looks the hash up against every RtxOption category set.
+  // Colormap-keyed materials use their key, which a replacement cannot change.
   // ---------------------------------------------------------------------------
   void externalDrawTextureCategories(
+      remixapi_MaterialHandle handle,
       const MaterialData* material,
       DrawCallState& drawCall,
       XXH64_hash_t& outTextureHash) {
     // Auto-apply texture categories for API-submitted content (matches D3D9 behavior).
     // For API materials, the albedo texture hash is what D3D9's setupCategoriesForTexture()
     // pattern normally keys off, so look it up directly from the material's opaque data.
-    if (material->getType() == MaterialDataType::Opaque) {
+    outTextureHash = game_textures::findMaterialKey(handle);
+    if (outTextureHash == kEmptyHash && material->getType() == MaterialDataType::Opaque) {
       const auto& opaqueMat = material->getOpaqueMaterialData();
       if (opaqueMat.getAlbedoOpacityTexture().isValid()) {
         outTextureHash = opaqueMat.getAlbedoOpacityTexture().getImageHash();
@@ -83,7 +110,7 @@ namespace fork_hooks {
     if (outTextureHash != 0 && outTextureHash != kEmptyHash) {
       auto applyCategory = [&](const fast_unordered_set& hashSet, InstanceCategories cat) {
         if (hashSet.find(outTextureHash) != hashSet.end()) {
-          drawCall.setCategory(cat, true);
+          drawCall.modifyCategoryFlags().set(cat);
         }
       };
 
@@ -109,7 +136,8 @@ namespace fork_hooks {
   // Stores per-draw texture hash metadata in SceneManager::m_drawCallMeta when
   // object picking is active, mirroring the D3D9 draw path which populates
   // m_drawCallMeta in processDrawCallState. API draws supply their own
-  // drawCallID via remixapi_InstanceInfoObjectPickingEXT, so we store it here.
+  // drawCallID via remixapi_InstanceInfoObjectPickingEXT; draws without it get
+  // a per-submesh value (kFirstAutoPickingValue and up) while picking is active.
   //
   // ACCESS NOTE: this function uses SceneManager::m_drawCallMeta (private) and
   // SceneManager::DrawCallMetaInfo (private nested type). A friend declaration
@@ -122,13 +150,27 @@ namespace fork_hooks {
       XXH64_hash_t textureHash,
       SceneManager& scene) {
     // Store texture hash metadata for object picking (mirrors the D3D9 draw
-    // path which populates m_drawCallMeta in processDrawCallState). API draws
-    // supply their own drawCallID via remixapi_InstanceInfoObjectPickingEXT,
-    // so we hash it in directly here.
+    // path which populates m_drawCallMeta in processDrawCallState).
     const bool objectPickingActive = device.getCommon()->getResources().getRaytracingOutput()
       .m_primaryObjectPicking.isValid();
-    if (objectPickingActive && drawCall.drawCallID != 0 &&
-        textureHash != 0 && textureHash != kEmptyHash) {
+    if (!objectPickingActive) {
+      return;
+    }
+
+    // No client value: a unique one per submesh, so picking resolves this
+    // draw's texture instead of D3D9 draw 0's. The previous submesh of the same
+    // draw left its auto value in drawCall.
+    if (drawCall.drawCallID == 0 || drawCall.drawCallID == s_lastAutoPickingValue) {
+      const uint32_t frameId = device.getCurrentFrameId();
+      if (frameId != s_autoPickingFrameId) {
+        s_autoPickingFrameId = frameId;
+        s_nextAutoPickingValue = kFirstAutoPickingValue;
+      }
+      drawCall.drawCallID = s_nextAutoPickingValue++;
+      s_lastAutoPickingValue = drawCall.drawCallID;
+    }
+
+    if (textureHash != 0 && textureHash != kEmptyHash) {
       auto meta = SceneManager::DrawCallMetaInfo {};
       meta.legacyTextureHash = textureHash;
 

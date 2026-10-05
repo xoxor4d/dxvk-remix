@@ -20,12 +20,15 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+#include <cstddef>
 #include <cstring>
+#include <vector>
 
 #include "log/log.h"
 #include "util_bridgecommand.h"
 #include "util_devicecommand.h"
 #include "util_remixapi.h"
+#include "d3d9_texture.h"
 
 using namespace remixapi::util;
 
@@ -106,6 +109,36 @@ auto serializeAndSend(ClientMessage& msg, const SerializableT& serializable) {
   delete pSlzd;
 }
 
+// Game texture pointers are client-side proxies, so send the D3D object id the
+// server keys its resources by instead (0 == null)
+uint32_t toGameTextureId(IDirect3DTexture9* const pTexture) {
+  if (!pTexture) {
+    return 0;
+  }
+  if (pTexture->GetType() != D3DRTYPE_TEXTURE) {
+    static bool warned = false;
+    if (!warned) {
+      Logger::warn("[remixapi] Game texture is not a 2D texture. Treating as null.");
+      warned = true;
+    }
+    return 0;
+  }
+  auto* const pLssTexture = bridge_cast<Direct3DTexture9_LSS*>(pTexture);
+  return (uint32_t) pLssTexture->D3D<IDirect3DBaseTexture9>();
+}
+
+void sendGameTextures(ClientMessage& msg, const remixapi_MaterialInfoGameTexturesEXT& info) {
+  const uint32_t count = info.textures_values ? info.textures_count : 0;
+  std::vector<remixapi_GameTexture> textures(info.textures_values, info.textures_values + count);
+  for (auto& tex : textures) {
+    tex.texture = reinterpret_cast<IDirect3DTexture9*>((uintptr_t) toGameTextureId(tex.texture));
+  }
+  auto translated = info;
+  translated.textures_values = textures.data();
+  translated.textures_count = count;
+  serializeAndSend<serialize::MaterialInfoGameTextures>(msg, translated);
+}
+
 
 remixapi_ErrorCode REMIXAPI_CALL remixapi_CreateMaterial(
   const remixapi_MaterialInfo* info,
@@ -168,6 +201,13 @@ remixapi_ErrorCode REMIXAPI_CALL remixapi_CreateMaterial(
           auto* pPortalMat = static_cast<const remixapi_MaterialInfoPortalEXT* const>(infoItr);
           send(c, Bool::True);
           serializeAndSend<serialize::MaterialInfoPortal>(c, *pPortalMat);
+          break;
+        }
+        case REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_GAME_TEXTURES_EXT:
+        {
+          auto* pGameTextures = static_cast<const remixapi_MaterialInfoGameTexturesEXT* const>(infoItr);
+          send(c, Bool::True);
+          sendGameTextures(c, *pGameTextures);
           break;
         }
         default:
@@ -260,6 +300,7 @@ remixapi_ErrorCode REMIXAPI_CALL remixapi_CreateMesh(
 
     const void* infoItr = info;
     while (auto* const pNext = getPNext(infoItr)) {
+      infoItr = pNext;
       switch (getSType(pNext)) {
         default:
         {
@@ -471,6 +512,23 @@ remixapi_ErrorCode REMIXAPI_CALL remixapi_SetConfigVariable(const char* var, con
   return REMIXAPI_ERROR_CODE_SUCCESS;
 }
 
+remixapi_ErrorCode REMIXAPI_CALL remixapi_SetDrawGameTextures(const remixapi_MaterialInfoGameTexturesEXT* info) {
+  ASSERT_REMIXAPI_PFN_TYPE(remixapi_SetDrawGameTextures);
+  if (info && info->sType != REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_GAME_TEXTURES_EXT) {
+    return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+  }
+  {
+    ClientMessage c(Commands::RemixApi_SetDrawGameTextures);
+    if (info) {
+      send(c, Bool::True);
+      sendGameTextures(c, *info);
+    } else {
+      send(c, Bool::False);
+    }
+  }
+  return REMIXAPI_ERROR_CODE_SUCCESS;
+}
+
 remixapi_ErrorCode REMIXAPI_CALL remixapi_dxvk_CreateD3D9(
   remixapi_Bool       editorModeEnabled,
   IDirect3D9Ex**      out_pD3D9) {
@@ -553,6 +611,7 @@ extern "C" {
       interf.UpdateLightDefinition        = remixapi_UpdateLightDefinition;
       interf.SetGameValue                 = remixapi_SetGameValue;
       interf.GetGameValue                 = remixapi_GetGameValue;
+      interf.SetDrawGameTextures          = remixapi_SetDrawGameTextures;
       // interf.dxvk_GetExternalSwapchain = remixapi_dxvk_GetExternalSwapchain;
       // interf.dxvk_GetVkImage = remixapi_dxvk_GetVkImage;
       // interf.dxvk_CopyRenderingOutput = remixapi_dxvk_CopyRenderingOutput;
@@ -561,7 +620,12 @@ extern "C" {
       // interf.pick_HighlightObjects = remixapi_pick_HighlightObjects;
     }
 
-    *out_result = interf;
+    // Callers built against < 0.1000.2 have a remixapi_Interface ending before SetDrawGameTextures
+    if (info->version < REMIXAPI_VERSION_MAKE(0, 1000, 2)) {
+      std::memcpy(out_result, &interf, offsetof(remixapi_Interface, SetDrawGameTextures));
+    } else {
+      *out_result = interf;
+    }
     remixapi::g_appRemixApiVersion = info->version;
     remixapi::g_bInterfaceInitialized = true;
 

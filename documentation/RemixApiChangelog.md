@@ -3,6 +3,33 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1000.2]
+
+Game texture association for AutoPBR and for API materials that reuse the
+game's D3D9 colormap (2026-10-04).
+
+### Added
+- `remixapi_Interface.SetDrawGameTextures` (`PFN_remixapi_SetDrawGameTextures`):
+  attaches game texture info to the following D3D9 draws until called with NULL.
+- `remixapi_MaterialInfoGameTexturesEXT` (`REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_GAME_TEXTURES_EXT`),
+  chainable into `remixapi_MaterialInfo`. An opaque material with an empty
+  `albedoTexture` and a COLOR entry renders like a non-replaced D3D9 draw of
+  that texture and uses its image hash as replacement / capture key.
+- `remixapi_GameTexture`, `remixapi_GameTextureUsage` (`COLOR`, `NORMAL`, `SPECULAR`).
+
+### Changed
+- `REMIXAPI_VERSION` is now `0.1000.2` (was `0.1000.1`).
+- `remixapi_Interface` grew by one slot (328 -> 336 bytes on x64). Callers
+  reporting a version below `0.1000.2` receive the interface truncated before
+  `SetDrawGameTextures`, so `0.1000.1` binaries keep working.
+
+### Fixed
+- Instances submitted without `remixapi_InstanceInfoObjectPickingEXT` all
+  shared picking value 0 (the first D3D9 draw's ID), so dev-menu texture
+  picking / highlighting could not resolve their textures. While picking is
+  active they now get per-submesh values from `0x80000000` up; explicit
+  values are unchanged.
+
 ## [0.1000.1]
 
 Remix Plus rebased onto NVIDIA dxvk-remix `0.6.5`, which grew

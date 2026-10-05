@@ -35,6 +35,8 @@
 #include "rtx/concept/ray_portal/ray_portal.slangh"
 #include "rtx/algorithm/view_distance.slangh"
 #include "rtx/algorithm/volume_lighting.slangh"
+#include "rtx/algorithm/rtx_fork_water_shore.slangh"
+#include "rtx/algorithm/rtx_fork_transmission_origin.slangh"
 
 #ifndef GBUFFER_FEATURE_OBJECT_PICKING
 #define GBUFFER_FEATURE_OBJECT_PICKING 1
@@ -628,6 +630,15 @@ void resolveVertex<T: IBasePayloadState>(
 
     TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteraction =
       translucentSurfaceMaterialInteractionCreate(translucentSurfaceMaterial, surface, surfaceInteraction, rayInteraction);
+
+    if (cb.waterShoreFadeEnable != 0 && surface.isAnimatedWater &&
+        forkWaterShoreFade(surfaceInteraction, rayInteraction, translucentSurfaceMaterialInteraction) &&
+        resolveVertexState.continueResolving)
+    {
+      resolveVertexFinalContinue(ray, surfaceInteraction, teleport, teleportMatrix, resolveVertexState);
+      resolveVertexState.origin = forkClampPenetratingOrigin(surfaceInteraction.position, resolveVertexState.origin);
+      return;
+    }
 
     // Blend any decal(s) that happened before this interaction
     if (decalMaterialBlending && resolveVertexState.decalEncountered)

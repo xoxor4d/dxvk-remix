@@ -441,6 +441,15 @@ struct RaytraceArgs {
   // END of the struct so no existing field offsets move.
   float particleSkyAmbientScale;
 
+  // Fork: AnimatedWater shoreline fade (rtx.water.*), filled by rtx_fork_water.cpp.
+  uint waterShoreFadeEnable;
+  float waterShoreFadeDistance;
+  float waterShoreCutDepth;
+  float waterShoreFadeWidth;
+  float waterShoreHeightScale;
+  float waterShoreProbeSpread;
+  float waterObjectFadeWidth;
+
   // NOTE: Add structs to the top section of RaytraceArgs, not the bottom.
   // NOTE: bool does not work in debug builds, use uint instead.
 };
