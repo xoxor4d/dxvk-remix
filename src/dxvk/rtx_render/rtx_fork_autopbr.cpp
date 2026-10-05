@@ -175,14 +175,24 @@ namespace {
     std::string folder;
   };
 
+  const char* categoryPrefix(const std::string& name) {
+    for (const char* category : { kWorldCategory, kMeshCategory }) {
+      if (name.size() > 3 && name.compare(0, 2, category) == 0 && name[2] == '/') {
+        return category;
+      }
+    }
+    return nullptr;
+  }
+
+  bool hasCategoryPrefix(const std::string& name) {
+    return categoryPrefix(name) != nullptr;
+  }
+
   // material_name is "wc/<name>" (world) or "mc/<name>" (mesh). Without a
   // prefix the material is filed as world under its colormap name or hash.
   MaterialLocation materialLocation(const Association& a) {
-    const std::string& name = a.materialName;
-    for (const char* category : { kWorldCategory, kMeshCategory }) {
-      if (name.size() > 3 && name.compare(0, 2, category) == 0 && name[2] == '/') {
-        return { category, sanitizeFolderName(name.substr(3)) };
-      }
+    if (const char* category = categoryPrefix(a.materialName)) {
+      return { category, sanitizeFolderName(a.materialName.substr(3)) };
     }
     if (!a.names[Usage::Color].empty()) {
       return { kWorldCategory, sanitizeFolderName(a.names[Usage::Color]) };
@@ -673,7 +683,9 @@ namespace {
       dst.shaderName = src.shaderName;
       changed = true;
     }
-    if (dst.materialName.empty() && !src.materialName.empty()) {
+    // Names from older files lack the category prefix; the first prefixed name replaces them.
+    if (!src.materialName.empty() && dst.materialName != src.materialName &&
+        (dst.materialName.empty() || (!hasCategoryPrefix(dst.materialName) && hasCategoryPrefix(src.materialName)))) {
       dst.materialName = src.materialName;
       changed = true;
     }
