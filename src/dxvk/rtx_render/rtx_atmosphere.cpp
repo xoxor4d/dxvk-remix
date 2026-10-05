@@ -4223,7 +4223,7 @@ void RtxAtmosphere::syncDistantLights(LightManager& lm, const AtmosphereArgs& ar
                                                      : args.sunAngularRadius;
     const Vector3 toSun = toWorld(sunDirYUp);
     const Vector3 propDir = (sunDirYUp.y > 0.0f) ? Vector3(-toSun.x, -toSun.y, -toSun.z)
-                                                  : Vector3(0.0f, -1.0f, 0.0f);
+                                                  : toWorld(Vector3(0.0f, -1.0f, 0.0f));
     ensureLight(m_sunLight, propDir, sunHalfAngle, radiance, /*cloudShadowed=*/true);
   }
 
@@ -4255,7 +4255,7 @@ void RtxAtmosphere::syncDistantLights(LightManager& lm, const AtmosphereArgs& ar
       radiance = sample * (radScale / kFhPi);
     }
     const Vector3 toMoon = toWorld(dirN);
-    const Vector3 propDir = lit ? Vector3(-toMoon.x, -toMoon.y, -toMoon.z) : Vector3(0.0f, -1.0f, 0.0f);
+    const Vector3 propDir = lit ? Vector3(-toMoon.x, -toMoon.y, -toMoon.z) : toWorld(Vector3(0.0f, -1.0f, 0.0f));
     ensureLight(m_moonLights[i], propDir, m.angularRadius, radiance, /*cloudShadowed=*/false);
   }
 
