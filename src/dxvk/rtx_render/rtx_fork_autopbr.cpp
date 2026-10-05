@@ -542,6 +542,18 @@ namespace {
   // ---------------------------------------------------------------------------
   // comp_autoconvert.usda
 
+  std::string escapeUsdaString(const std::string& value) {
+    std::string out;
+    out.reserve(value.size());
+    for (const char c : value) {
+      if (c == '"' || c == '\\') {
+        out += '\\';
+      }
+      out += c;
+    }
+    return out;
+  }
+
   std::string serializeUsda(const std::vector<Association>& associations) {
     std::string out =
       "#usda 1.0\n"
@@ -568,6 +580,9 @@ namespace {
 
       out += "        over \"mat_" + toHex(a.material) + "\"\n";
       out += "        {\n";
+      if (!a.materialName.empty()) {
+        out += "            custom string nickname = \"" + escapeUsdaString(a.materialName) + "\"\n";
+      }
       out += "            over \"Shader\"\n";
       out += "            {\n";
       if (normal != kEmptyHash) {

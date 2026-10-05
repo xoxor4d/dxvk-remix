@@ -60,4 +60,4 @@ Fixed folder `<game directory>/rtx-remix/imgdump/`:
   on Start / Load happens on the UI thread and can cause a short hitch.
 - `comp_autoconvert.usda` — one `over "mat_<MATERIAL_HASH>"` per material with
   a normal and/or specular texture, pointing at
-  `./assets/autoconv/<HASH>_normal_oth.dds` / `<HASH>_rough.dds`.
+  `./assets/autoconv/<HASH>_normal_oth.dds` / `<HASH>_rough.dds`, with the game material name as `nickname`.
