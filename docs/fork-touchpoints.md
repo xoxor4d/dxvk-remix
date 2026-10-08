@@ -798,11 +798,17 @@ initializer list and can't be lifted into a separate TU.
 ## src/dxvk/rtx_render/rtx_scene_manager.cpp
 
 **Pre-refactor footprint:** +73 / -2 LOC (migrated 2026-04-18)
-**Post-refactor footprint:** 4 hook call sites + 1 `#include "rtx_fork_hooks.h"`
+**Post-refactor footprint:** 7 hook call sites + 1 `#include "rtx_fork_hooks.h"`
 
 - **Hook** at `SceneManager::submitExternalDraw` (before submesh loop) → `fork_hooks::externalDrawMeshReplacement` in `rtx_fork_submit.cpp`
   *Checks for USD mesh/light replacements keyed on the API mesh handle hash; call site handles the early-exit + `drawReplacements` dispatch since those are private SceneManager methods.*
   *2026-07-29 (upstream sync): the call site's replacement-template setup now goes through `DrawCallState::modifyGeometryData()` instead of writing `replacementDrawCall.geometryData` directly — upstream moved `geometryData` into the private section behind that accessor, and `SceneManager` is not a friend of `DrawCallState` (the fork hooks and `D3D9Rtx` are). Same for `modifyMaterialData()` at the `setHashOverride` site below.*
+
+- **Hook** at `SceneManager::submitExternalDraw` (replacement branch, around `drawReplacements`) → `fork_hooks::externalDrawPrepareReplacementInstance` / `fork_hooks::externalDrawFinishReplacementInstance` in `rtx_fork_submit.cpp`
+  *Prepare clears the ReplacementInstance when its `activeReplacements` is not this bucket (mirrors the D3D9 `activeReplacementsMatch` → `clear()`, so `setup()` sizes prims for the bucket and records it for hot reload), resolves submesh 0's API / keyed / USD-replaced material (hash override, texture categories, object picking) and returns it as the `includeOriginal` material, and warns once when an `includeOriginal` bucket targets a multi-submesh API mesh. Finish sets `frameLastSeen`, `categoryFlags` and `isSkinned` like `submitDrawState`, so the RI is not garbage collected every frame. Replaces the call site's former default `LegacyMaterialData` (2026-10-08).*
+
+- **Hook** at `SceneManager::submitExternalDraw` (after the replacement branch, before the submesh loop) → `fork_hooks::externalDrawReleaseReplacementInstance` in `rtx_fork_submit.cpp`
+  *Clears the RI when it still holds a replacement bucket that no longer applies (override removed, replacements disabled), releasing the replacement prims (2026-10-08).*
 
 - **Hook** at `SceneManager::submitExternalDraw` (inside `if (material != nullptr)`, before `setHashOverride`) → `fork_hooks::externalDrawMaterialReplacement` in `rtx_fork_submit.cpp`
   *Checks for USD material replacements via `getReplacementMaterial()` and updates the `material` pointer in-place if one is found.*

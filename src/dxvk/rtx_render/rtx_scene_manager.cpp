@@ -2724,19 +2724,21 @@ namespace dxvk {
 
     if (auto pReplacements = fork_hooks::externalDrawMeshReplacement(*m_pReplacer, meshHash)) {
       // Copy the DrawCallState so we don't mutate the caller's state. Point geometryData
-      // at submeshes[0] as the replacement geometry template, clear externalMaterial so
-      // the USD replacement material takes precedence, and use a neutral default material
-      // since the replacement will provide its own.
+      // at submeshes[0] as the replacement geometry template and clear externalMaterial so
+      // the USD replacement material takes precedence.
       DrawCallState replacementDrawCall = state.drawCall;
       RasterGeometry& replacementGeometry = replacementDrawCall.modifyGeometryData();
       replacementGeometry = submeshes[0];
       replacementGeometry.cullMode = state.doubleSided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
       replacementGeometry.externalMaterial = nullptr;
 
-      MaterialData renderMaterialData(LegacyMaterialData::createDefault());
+      MaterialData renderMaterialData = fork_hooks::externalDrawPrepareReplacementInstance(*m_device, *m_pReplacer, *this, replacementDrawCall, submeshes[0].externalMaterial, submeshes.size(), pReplacements, *replacementInstance);
       drawReplacements(ctx, &replacementDrawCall, pReplacements, renderMaterialData, replacementInstance);
+      fork_hooks::externalDrawFinishReplacementInstance(*m_device, replacementDrawCall, *replacementInstance);
       return;
     }
+
+    fork_hooks::externalDrawReleaseReplacementInstance(*replacementInstance);
 
     AxisAlignedBoundingBox geometryBBox;
 

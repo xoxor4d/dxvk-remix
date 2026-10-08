@@ -52,6 +52,62 @@ namespace fork_hooks {
     return replacer.getReplacementsForMesh(meshHash);
   }
 
+  MaterialData externalDrawPrepareReplacementInstance(
+      DxvkDevice& device,
+      AssetReplacer& replacer,
+      SceneManager& scene,
+      DrawCallState& drawCall,
+      remixapi_MaterialHandle handle,
+      size_t submeshCount,
+      const std::shared_ptr<const ReplacementBucket>& pReplacements,
+      ReplacementInstance& replacementInstance) {
+    // An RI first drawn without this bucket (no replacement yet, or a stale or
+    // swapped one) has prims sized for that state; drawReplacements only runs
+    // setup() on an empty RI.
+    if (replacementInstance.activeReplacements.get() != pReplacements.get()) {
+      replacementInstance.clear();
+    }
+
+    if (submeshCount > 1) {
+      for (const auto& replacement : pReplacements->replacements) {
+        if (replacement.includeOriginal) {
+          ONCE(Logger::warn("[RTX-Mesh] A replacement with includeOriginal targets an API mesh with more than one submesh; only the first submesh is drawn as the original."));
+          break;
+        }
+      }
+    }
+
+    XXH64_hash_t textureHash = 0;
+    const MaterialData* material = replacer.accessExternalMaterial(handle);
+    std::shared_ptr<MaterialData> replacementMaterialKeepAlive;
+    if (material != nullptr) {
+      replacementMaterialKeepAlive = externalDrawMaterialReplacement(replacer, handle, material);
+
+      drawCall.modifyMaterialData().setHashOverride(externalMaterialKey(handle, *material));
+
+      externalDrawTextureCategories(handle, material, drawCall, textureHash);
+    }
+
+    externalDrawObjectPicking(device, drawCall, textureHash, scene);
+
+    return material != nullptr ? *material : MaterialData(LegacyMaterialData::createDefault());
+  }
+
+  void externalDrawFinishReplacementInstance(
+      DxvkDevice& device,
+      const DrawCallState& drawCall,
+      ReplacementInstance& replacementInstance) {
+    replacementInstance.frameLastSeen = device.getCurrentFrameId();
+    replacementInstance.categoryFlags = drawCall.getCategoryFlags().raw();
+    replacementInstance.isSkinned = drawCall.getSkinningState().numBones > 0;
+  }
+
+  void externalDrawReleaseReplacementInstance(ReplacementInstance& replacementInstance) {
+    if (replacementInstance.activeReplacements != nullptr) {
+      replacementInstance.clear();
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // externalDrawMaterialReplacement
   //

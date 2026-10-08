@@ -100,6 +100,36 @@ namespace dxvk {
     std::shared_ptr<const ReplacementBucket> externalDrawMeshReplacement(
       AssetReplacer& replacer, XXH64_hash_t meshHash);
 
+    // Runs before drawReplacements for an API mesh with a replacement bucket.
+    // Clears the RI when it was not set up for this bucket, so drawReplacements
+    // re-runs setup() with the bucket's prim count. Resolves submesh 0's API
+    // material onto drawCall like the per-submesh path (USD / keyed replacement,
+    // hash override, texture categories, object picking) and returns it as the
+    // material for includeOriginal entries.
+    // Implementation in rtx_fork_submit.cpp.
+    MaterialData externalDrawPrepareReplacementInstance(
+      DxvkDevice& device,
+      AssetReplacer& replacer,
+      SceneManager& scene,
+      DrawCallState& drawCall,
+      remixapi_MaterialHandle handle,
+      size_t submeshCount,
+      const std::shared_ptr<const ReplacementBucket>& pReplacements,
+      ReplacementInstance& replacementInstance);
+
+    // Runs after drawReplacements: marks the RI seen this frame and records the
+    // draw properties garbage collection reads, matching the D3D9 path.
+    // Implementation in rtx_fork_submit.cpp.
+    void externalDrawFinishReplacementInstance(
+      DxvkDevice& device,
+      const DrawCallState& drawCall,
+      ReplacementInstance& replacementInstance);
+
+    // Releases the prims of a replacement bucket the RI no longer has, before
+    // the API mesh is drawn without replacements.
+    // Implementation in rtx_fork_submit.cpp.
+    void externalDrawReleaseReplacementInstance(ReplacementInstance& replacementInstance);
+
     // Checks for a USD material replacement and updates the material pointer in-place.
     // Returns the owning shared_ptr (null when `material` is unchanged); the caller
     // must keep it alive for as long as it dereferences `material`.
