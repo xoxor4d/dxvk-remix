@@ -1457,6 +1457,11 @@ namespace {
       return REMIXAPI_ERROR_CODE_REMIX_DEVICE_WAS_NOT_REGISTERED;
     }
     std::lock_guard lock { s_mutex };
+    // A batched create that was never flushed must not resurrect the mesh later.
+    s_pendingMeshCreates.erase(
+      std::remove_if(s_pendingMeshCreates.begin(), s_pendingMeshCreates.end(),
+                     [handle](const PendingMeshCreate& pending) { return pending.handle == handle; }),
+      s_pendingMeshCreates.end());
     remixDevice->EmitCs([cHandle = handle](dxvk::DxvkContext* ctx) {
       ctx->getCommonObjects()->getSceneManager()
         .destroyExternalMesh(dxvk::Rc<dxvk::DxvkContext>(ctx), cHandle);
