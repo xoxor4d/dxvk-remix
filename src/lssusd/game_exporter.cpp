@@ -1021,6 +1021,12 @@ void GameExporter::exportSphereLights(const Export& exportData, ExportContext& c
   transformOp.Set(exportData.globalXform);
   dxvk::Logger::debug("[GameExporter][" + exportData.debugId + "][exportSphereLights] Begin");
   for(const auto& [id,sphereLightData] : exportData.sphereLights) {
+    // NV-DXVK start: WAR, lights with more than one xform crash inside setTimeSampledXforms
+    if (sphereLightData.xforms.size() > 1) {
+      continue;
+    }
+    // NV-DXVK end
+
     // Build light stage
     const std::string lightName = prefix::light + sphereLightData.lightName;
     const std::string lightStagePath = lightDirPath + lightName + ctx.extension;

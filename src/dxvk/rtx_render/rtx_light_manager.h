@@ -116,6 +116,9 @@ public:
 
   const std::unordered_map<XXH64_hash_t, RtLight>& getLightTable() const { return m_lights; }
   const std::unordered_map<uint64_t, RtLight>& getExternallyTrackedLightTable() const { return m_externallyTrackedLights; }
+  const std::unordered_map<remixapi_LightHandle, RtLight>& getExternalLightTable() const { return m_externalLights; }
+  // Active RemixAPI lights of the frame being captured; the live list is already reset when the capturer runs.
+  const std::unordered_set<remixapi_LightHandle>& getExternalActiveLightListForCapture() const { return m_externalActiveLightsForCapture; }
   const Rc<DxvkBuffer> getLightBuffer() const { return m_lightBuffer; }
   const Rc<DxvkBuffer> getPreviousLightBuffer() const { return m_previousLightBuffer.ptr() ? m_previousLightBuffer : m_lightBuffer; }
   const Rc<DxvkBuffer> getLightMappingBuffer() const { return m_lightMappingBuffer; }
@@ -177,6 +180,7 @@ private:
   std::unordered_map<remixapi_LightHandle, RtLight> m_externalLights;
   std::unordered_map<remixapi_LightHandle, DomeLight> m_externalDomeLights;
   std::unordered_set<remixapi_LightHandle> m_externalActiveLightList;
+  std::unordered_set<remixapi_LightHandle> m_externalActiveLightsForCapture;
   remixapi_LightHandle m_externalActiveDomeLight = nullptr;
   DomeLightArgs m_gpuDomeLightArgs;
 
