@@ -26,7 +26,7 @@ the API, see [`docs/RemixApi.md`](docs/RemixApi.md).
 | `REMIXAPI_VERSION_GET_PATCH(version)` | `(((uint64_t)(version)      ) & (uint64_t)0xFFFF)` |
 | `REMIXAPI_VERSION_MAJOR` | `0` |
 | `REMIXAPI_VERSION_MINOR` | `1000` |
-| `REMIXAPI_VERSION_PATCH` | `0` |
+| `REMIXAPI_VERSION_PATCH` | `3` |
 | `REMIX_WINAPI_LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR` | `LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR` |
 | `REMIX_WINAPI_LOAD_LIBRARY_SEARCH_DEFAULT_DIRS` | `LOAD_LIBRARY_SEARCH_DEFAULT_DIRS` |
 | `REMIX_WINAPI_MAX_PATH` | `MAX_PATH` |
@@ -95,6 +95,7 @@ the API, see [`docs/RemixApi.md`](docs/RemixApi.md).
 | `REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_PARTICLE_SYSTEM_EXT` | `26` |  |
 | `REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_GPU_INSTANCING_EXT` | `27` |  |
 | `REMIXAPI_STRUCT_TYPE_CAMERA_MEDIUM_INFO` | `28` |  |
+| `REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_GAME_TEXTURES_EXT` | `29` |  |
 
 ### `remixapi_ErrorCode`
 
@@ -167,7 +168,7 @@ toRtCategories(), so the bit values are free to match upstream and must.)
 | `REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_BODY` | `1 << 19` |  |
 | `REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_BAKED_LIGHTING` | `1 << 20` |  |
 | `REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_ALPHA_CHANNEL` | `1 << 21` |  |
-| `REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_TRANSPARENCY_LAYER` | `1 << 22` |  |
+| `REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_TRANSPARENCY_LAYER` | `1 << 22` | Deprecated. Reserved for API compatibility and ignored by the runtime. |
 | `REMIXAPI_INSTANCE_CATEGORY_BIT_PARTICLE_EMITTER` | `1 << 23` |  |
 | `REMIXAPI_INSTANCE_CATEGORY_BIT_SMOOTH_NORMALS` | `1 << 24` |  |
 | `REMIXAPI_INSTANCE_CATEGORY_BIT_HAIR_CARDS` | `1 << 25` |  |
@@ -281,6 +282,10 @@ Texture upload API
 | `int` | `alphaTestType` |  |
 | `uint8_t` | `alphaReferenceValue` |  |
 | `float` | `displaceOut` |  |
+| `remixapi_Bool` | `enableDlssControlMask` |  |
+| `float` | `dlssControlMaskIntensity` |  |
+| `float` | `dlssControlMaskToneStrength` |  |
+| `float` | `dlssControlMaskStructuralStrength` |  |
 
 ### `remixapi_MaterialInfoOpaqueSubsurfaceEXT`
 
@@ -712,6 +717,19 @@ Most fields correspond to a usd token. Set to null, if no value.
 | `remixapi_Format` | `format` |  |
 | `const void*` | `data` | Pointer to pixel data (all mips sequential) |
 | `uint64_t` | `dataSize` | Total size in bytes |
+
+### `remixapi_MaterialInfoGameTexturesEXT`
+
+Chained from remixapi_MaterialInfoOpaqueEXT::pNext. On an opaque material with an empty
+albedoTexture, this D3D9 texture (filled before CreateMaterial) is used as albedo and its
+image hash becomes the material's replacement / capture / category key, the same key a
+D3D9 draw of that texture gets.
+
+| Type | Field | Notes |
+| :-- | :-- | :-- |
+| `remixapi_StructType` | `sType` |  |
+| `void*` | `pNext` |  |
+| `IDirect3DTexture9*` | `colorTexture` |  |
 
 ### `remixapi_InitializeLibraryInfo`
 

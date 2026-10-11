@@ -4,22 +4,18 @@
 // keyed by their colormap hash (CreateMaterial / DestroyMaterial lambdas,
 // submitExternalDraw). Kept free of D3D9 dependencies.
 //
-// See docs/fork-touchpoints.md and docs/RemixAutoPbrAPI.md.
+// See docs/fork-touchpoints.md.
 
 #include "rtx_fork_game_textures.h"
 
-#include "rtx_fork_autopbr.h"
 #include "rtx_fork_hooks.h"
 #include "rtx_options.h"
 
-#include <atomic>
 #include <unordered_map>
 #include <utility>
 
 namespace dxvk {
 namespace {
-
-  std::atomic<bool> s_resolveRetained { false };
 
   struct KeyedMaterial {
     XXH64_hash_t key = kEmptyHash;
@@ -136,18 +132,6 @@ namespace game_textures {
     return keyed.legacy;
   }
 
-  void requestDeferredResolve() {
-    s_resolveRetained = true;
-  }
-
-  bool hasDeferredResolve() {
-    return s_resolveRetained.load(std::memory_order_relaxed);
-  }
-
-  bool consumeDeferredResolve() {
-    return s_resolveRetained.exchange(false);
-  }
-
   void clearKeyedMaterials() {
     s_keyedMaterials.clear();
   }
@@ -159,38 +143,29 @@ namespace fork_hooks {
   MaterialData applyMaterialGameTextures(
       remixapi_MaterialHandle handle,
       MaterialData&& material,
-      const std::shared_ptr<const game_textures::TextureSet>& gameTextures) {
+      const std::shared_ptr<const game_textures::Texture>& color) {
     // A handle can be re-created; drop what the previous material registered.
     forgetMaterialGameTextures(handle);
 
-    if (gameTextures == nullptr) {
-      return std::move(material);
-    }
-
-    if (!gameTextures->albedoFromColor || material.getType() != MaterialDataType::Opaque) {
-      AutoPbr::registerApiMaterial(handle, material.getHash(), gameTextures);
+    if (color == nullptr || !color->isValid() || material.getType() != MaterialDataType::Opaque) {
       return std::move(material);
     }
 
     // Same key a D3D9 draw of this colormap gets, so mat_<hash> replacements
     // and captures are shared between both paths.
-    const game_textures::Texture& color = gameTextures->color();
     KeyedMaterial& keyed = s_keyedMaterials[handle];
-    keyed.key = color.hash;
+    keyed.key = color->hash;
 
     OpaqueMaterialData gameState = material.getOpaqueMaterialData();
-    gameState.setAlbedoOpacityTexture(TextureRef(color.view));
+    gameState.setAlbedoOpacityTexture(TextureRef(color->view));
     copyGameState(gameState, keyed.gameState);
     keyed.legacy = std::make_shared<MaterialData>(makeLegacyMaterial(keyed));
     keyed.legacyStamp = legacyDefaultsStamp(keyed.key);
-
-    AutoPbr::registerApiMaterial(handle, keyed.key, gameTextures);
     return MaterialData(*keyed.legacy);
   }
 
   void forgetMaterialGameTextures(remixapi_MaterialHandle handle) {
     s_keyedMaterials.erase(handle);
-    AutoPbr::unregisterApiMaterial(handle);
   }
 
   XXH64_hash_t externalMaterialKey(remixapi_MaterialHandle handle, const MaterialData& material) {

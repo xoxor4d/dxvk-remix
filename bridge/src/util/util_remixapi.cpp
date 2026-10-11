@@ -260,28 +260,6 @@ void deserialize(void*& deserializeFrom, const char*& deserializeTo) {
   }
 }
 
-// remixapi_GameTexture
-// `texture` crosses the bridge as the client's D3D object id: the client translates
-// its texture proxies before serializing and the server resolves the id afterwards
-template<>
-static inline uint32_t sizeOf(const remixapi_GameTexture& tex) {
-  return sizeOf(tex.usage) + sizeOf<uint32_t>() + sizeOf(tex.name);
-}
-template<>
-void serialize(const remixapi_GameTexture& serializeFrom, void*& pSerialize) {
-  serialize(serializeFrom.usage, pSerialize);
-  serialize((uint32_t) (uintptr_t) serializeFrom.texture, pSerialize);
-  serialize(serializeFrom.name, pSerialize);
-}
-template<>
-void deserialize(void*& deserializeFrom, remixapi_GameTexture& deserializeTo) {
-  deserialize(deserializeFrom, deserializeTo.usage);
-  uint32_t textureId = 0;
-  deserialize(deserializeFrom, textureId);
-  deserializeTo.texture = reinterpret_cast<IDirect3DTexture9*>((uintptr_t) textureId);
-  deserialize(deserializeFrom, deserializeTo.name);
-}
-
 // remixapi_HardcodedVertex
 template<>
 static inline constexpr uint32_t sizeOf<remixapi_HardcodedVertex>() {
@@ -468,31 +446,23 @@ void MaterialInfoPortal::_dtor() {
 }
 
 
+// colorTexture crosses the bridge as the client's D3D object id: the client translates
+// its texture proxy before serializing and the server resolves the id afterwards
 uint32_t MaterialInfoGameTextures::_calcSize() const {
-  uint32_t size = fold_helper::calcSize(sType, materialName, shaderName, textures_count);
-  for(size_t iTex = 0; iTex < textures_count; ++iTex) {
-    size += sizeOf(textures_values[iTex]);
-  }
-  return size;
+  return fold_helper::calcSize(sType) + sizeOf<uint32_t>();
 }
 void MaterialInfoGameTextures::_serialize(void*& pSerialize) const {
-  fold_helper::serialize(pSerialize, sType, materialName, shaderName, textures_count);
-  for(size_t iTex = 0; iTex < textures_count; ++iTex) {
-    bridge_util::serialize(textures_values[iTex], pSerialize);
-  }
+  fold_helper::serialize(pSerialize, sType);
+  bridge_util::serialize((uint32_t) (uintptr_t) colorTexture, pSerialize);
 }
 void MaterialInfoGameTextures::_deserialize(void*& pDeserialize) {
   pNext = nullptr;
-  fold_helper::deserialize(pDeserialize, sType, materialName, shaderName, textures_count);
-  deserialize_const_p_for_each(pDeserialize, textures_values, textures_count);
+  fold_helper::deserialize(pDeserialize, sType);
+  uint32_t textureId = 0;
+  bridge_util::deserialize(pDeserialize, textureId);
+  colorTexture = reinterpret_cast<IDirect3DTexture9*>((uintptr_t) textureId);
 }
 void MaterialInfoGameTextures::_dtor() {
-  delete[] materialName;
-  delete[] shaderName;
-  for(size_t iTex = 0; iTex < textures_count; ++iTex) {
-    delete[] textures_values[iTex].name;
-  }
-  delete[] textures_values;
 }
 
 //////////////

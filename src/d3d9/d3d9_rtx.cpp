@@ -815,7 +815,6 @@ namespace dxvk {
 
     // Hash material data
     m_activeDrawCallState.materialData.updateCachedHash();
-    fork_hooks::onD3D9DrawMaterial(m_activeDrawCallState.materialData);
 
     // For shader based drawcalls we also want to capture the vertex shader output
     const bool needVertexCapture = m_parent->UseProgrammableVS() && useVertexCapture();
@@ -1371,7 +1370,6 @@ namespace dxvk {
 
   void D3D9Rtx::EndFrame(const Rc<DxvkImage>& targetImage, bool callInjectRtx) {
     const auto currentReflexFrameId = GetReflexFrameId();
-    fork_hooks::onD3D9EndFrame(m_parent, callInjectRtx);
     
     // Flush any pending game and RTX work
     m_parent->Flush();

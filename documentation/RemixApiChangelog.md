@@ -3,6 +3,23 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1000.3]
+
+AutoPBR removed (2026-10-11).
+
+### Removed
+- `remixapi_Interface.SetDrawGameTextures`, `remixapi_GameTexture`,
+  `remixapi_GameTextureUsage` and the AutoPBR texture dumping (`rtx.autopbr.*`,
+  `__autopbr.*` game values, `associations.json` / usda output).
+
+### Changed
+- `remixapi_MaterialInfoGameTexturesEXT` is now `{ sType, pNext, colorTexture }`:
+  the game's D3D9 colormap used as albedo and replacement key of an opaque
+  material without `albedoTexture`.
+- `REMIXAPI_VERSION` is now `0.1000.3` (was `0.1000.2`). `remixapi_Interface`
+  shrank by one slot (336 -> 328 bytes on x64); the `< 0.1000.2` interface
+  truncation is gone.
+
 ## [0.1000.2]
 
 Game texture association for AutoPBR and for API materials that reuse the

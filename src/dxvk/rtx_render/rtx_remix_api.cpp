@@ -1107,7 +1107,6 @@ namespace {
   remixapi_ErrorCode REMIXAPI_CALL remixapi_DestroyMaterial(
     remixapi_MaterialHandle handle) {
     if (auto remixDevice = tryAsDxvk()) {
-      dxvk::fork_hooks::releaseMaterialGameTextures(remixDevice, handle);
       std::lock_guard lock { s_mutex };
       remixDevice->EmitCs([cHandle = handle](dxvk::DxvkContext* ctx) {
         auto& assets = ctx->getCommonObjects()->getSceneManager().getAssetReplacer();
@@ -2684,11 +2683,6 @@ extern "C"
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 
-  remixapi_ErrorCode REMIXAPI_CALL remixapi_SetDrawGameTextures(
-    const remixapi_MaterialInfoGameTexturesEXT* info) {
-    return dxvk::fork_hooks::setDrawGameTextures(tryAsDxvk(), info);
-  }
-
   REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_InitializeLibrary(const remixapi_InitializeLibraryInfo* info,
                                                                        remixapi_Interface* out_result) {
     if (!info || info->sType != REMIXAPI_STRUCT_TYPE_INITIALIZE_LIBRARY_INFO) {
@@ -2744,18 +2738,12 @@ extern "C"
       interf.GetVramStats = remixapi_GetVramStats;
       interf.RequestTextureVramFree = remixapi_RequestTextureVramFree;
       interf.GetGameValue = remixapi_GetGameValue;
-      interf.SetDrawGameTextures = remixapi_SetDrawGameTextures;
       // Fork-added vtable slots (extern-C exported; delegated to fork hook)
       dxvk::fork_hooks::remixApiVtableInit(interf);
     }
-    static_assert(sizeof(interf) == 336, "Add/remove function registration");
+    static_assert(sizeof(interf) == 328, "Add/remove function registration");
 
-    // Callers built against < 0.1000.2 have a remixapi_Interface that ends before SetDrawGameTextures.
-    if (s_apiVersion < REMIXAPI_VERSION_MAKE(0, 1000, 2)) {
-      std::memcpy(out_result, &interf, offsetof(remixapi_Interface, SetDrawGameTextures));
-    } else {
-      *out_result = interf;
-    }
+    *out_result = interf;
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 

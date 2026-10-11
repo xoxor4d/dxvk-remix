@@ -69,7 +69,7 @@ namespace dxvk {
   struct TextureRef;
 
   namespace game_textures {
-    struct TextureSet;
+    struct Texture;
   }
 
   namespace fork_hooks {
@@ -619,75 +619,41 @@ namespace dxvk {
     bool isPreviousOpaqueTlasTraceable(uint32_t currentFrameId);
 
     // -----------------------------------------------------------------------
-    // Game textures (remixapi_MaterialInfoGameTexturesEXT) + AutoPBR
+    // Colormap-keyed API materials (remixapi_MaterialInfoGameTexturesEXT)
     // -----------------------------------------------------------------------
 
-    // remixapi_SetDrawGameTextures body. API thread. Resolves the textures
-    // (forcing upload + hash) and keeps them as the pending record for the
-    // following D3D9 draws; NULL clears it. Only records while AutoPBR collects.
+    // remixapi_CreateMaterial, API thread: resolves the colorTexture of a chained
+    // remixapi_MaterialInfoGameTexturesEXT (null when absent, malformed, or the
+    // material has an albedoTexture).
     // Implementation in rtx_fork_game_textures.cpp.
-    remixapi_ErrorCode setDrawGameTextures(
-      D3D9DeviceEx* remixDevice,
-      const remixapi_MaterialInfoGameTexturesEXT* info);
-
-    // Called by D3D9Rtx once a draw's LegacyMaterialData hash is final.
-    // Associates the pending SetDrawGameTextures record with that hash.
-    // API thread. Implementation in rtx_fork_game_textures.cpp.
-    void onD3D9DrawMaterial(const LegacyMaterialData& material);
-
-    // D3D9Rtx::EndFrame. Resolves the NORMAL / SPECULAR textures of API
-    // materials created while AutoPBR was idle once collecting starts. Skipped
-    // for the window-proc end of frame (callInjectRtx == false), which does not
-    // run on the API thread.
-    // Implementation in rtx_fork_game_textures.cpp.
-    void onD3D9EndFrame(D3D9DeviceEx* remixDevice, bool callInjectRtx);
-
-    // remixapi_CreateMaterial, API thread: resolves a chained
-    // remixapi_MaterialInfoGameTexturesEXT (null when absent).
-    // Implementation in rtx_fork_game_textures.cpp.
-    std::shared_ptr<const game_textures::TextureSet> resolveMaterialGameTextures(
+    std::shared_ptr<const game_textures::Texture> resolveMaterialGameTextures(
       D3D9DeviceEx* remixDevice,
       const remixapi_MaterialInfo& info,
       const remixapi_MaterialInfoGameTexturesEXT* ext);
 
-    // remixapi_CreateMaterial, render thread. A material without albedo path and
-    // with a COLOR texture becomes a legacy-defaults material (as a non-replaced
-    // D3D9 draw) using that texture, keyed by its hash. Also feeds AutoPBR.
-    // Pass-through when gameTextures is null.
-    // Implementation in rtx_fork_game_textures.cpp.
+    // remixapi_CreateMaterial, render thread. An opaque material with a resolved
+    // color texture becomes a legacy-defaults material (as a non-replaced D3D9
+    // draw) using that texture, keyed by its hash. Pass-through when color is null.
+    // Implementation in rtx_fork_game_textures_keyed.cpp.
     MaterialData applyMaterialGameTextures(
       remixapi_MaterialHandle handle,
       MaterialData&& material,
-      const std::shared_ptr<const game_textures::TextureSet>& gameTextures);
-
-    // remixapi_DestroyMaterial, API thread: drops the material's retained
-    // (not yet resolved) game textures.
-    // Implementation in rtx_fork_game_textures.cpp.
-    void releaseMaterialGameTextures(D3D9DeviceEx* remixDevice, remixapi_MaterialHandle handle);
+      const std::shared_ptr<const game_textures::Texture>& color);
 
     // remixapi_DestroyMaterial, render thread.
-    // Implementation in rtx_fork_game_textures.cpp.
+    // Implementation in rtx_fork_game_textures_keyed.cpp.
     void forgetMaterialGameTextures(remixapi_MaterialHandle handle);
 
-    // Drops every game-texture / AutoPBR reference to device resources.
+    // Drops every keyed-material reference to device resources.
     // remixapi_Shutdown and D3D9DeviceEx teardown; synchronizes the CS thread
     // first when remixDevice is given.
     // Implementation in rtx_fork_game_textures.cpp.
     void shutdownGameTextures(D3D9DeviceEx* remixDevice);
 
     // Replacement / capture key of an API material: the colormap image hash for
-    // materials using a game COLOR texture as albedo, material.getHash() otherwise.
-    // Render thread. Implementation in rtx_fork_game_textures.cpp.
+    // materials using a game color texture as albedo, material.getHash() otherwise.
+    // Render thread. Implementation in rtx_fork_game_textures_keyed.cpp.
     XXH64_hash_t externalMaterialKey(remixapi_MaterialHandle handle, const MaterialData& material);
-
-    // Per-frame AutoPBR work (throttled texture exports, autosave).
-    // Render thread, called from RtxContext::endFrame.
-    // Implementation in rtx_fork_autopbr.cpp.
-    void autoPbrEndFrame(RtxContext& ctx);
-
-    // "AutoPBR" collapsing header in Game Setup -> Step 1: Categorize Textures.
-    // Implementation in rtx_fork_autopbr.cpp.
-    void showAutoPbrUI();
 
   } // namespace fork_hooks
 

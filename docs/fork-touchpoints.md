@@ -4364,32 +4364,30 @@ sampling error averages out under the upsample instead of shimmering.
 
 ---
 
-## Workstream - Game texture API + AutoPBR (fork - 2026-10-04)
+## Workstream - Colormap-keyed API materials (fork - 2026-10-04, AutoPBR removed 2026-10-11)
 
-API `0.1000.2`: `remixapi_MaterialInfoGameTexturesEXT` + `SetDrawGameTextures`
-(see [`RemixAutoPbrAPI.md`](RemixAutoPbrAPI.md)). Fork-owned logic lives in
-`rtx_fork_game_textures.{h,cpp}` (texture resolution, pending draw record,
-colormap-keyed API materials, teardown) and `rtx_fork_autopbr.{h,cpp}`
-(collection, dumps, associations.json / usda, UI, `rtx.autopbr.*`).
+API `0.1000.3`: `remixapi_MaterialInfoGameTexturesEXT { sType, pNext, colorTexture }`.
+An opaque API material without `albedoTexture` uses the game's D3D9 colormap as
+albedo and its image hash as replacement / capture / category key. Fork-owned
+logic lives in `rtx_fork_game_textures.{h,cpp}` (API thread texture
+resolution, teardown) and `rtx_fork_game_textures_keyed.cpp` (render thread
+keyed materials, D3D9-free so unit tests link). The AutoPBR texture dumping
+that was introduced with this API was removed again (files, options, UI,
+`SetDrawGameTextures`).
 
-- **`public/include/remix/remix_c.h`** - inline. *`REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_GAME_TEXTURES_EXT`, `remixapi_GameTextureUsage`, `remixapi_GameTexture`, `remixapi_MaterialInfoGameTexturesEXT`, `PFN_remixapi_SetDrawGameTextures`, interface slot `SetDrawGameTextures`, version `0.1000.2`.*
-- **`public/include/remix/remix.h`** - inline. *`Interface::SetDrawGameTextures` wrapper; `sizeof(remixapi_Interface)` assert 328 -> 336.*
+- **`public/include/remix/remix_c.h`** - inline. *`REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_GAME_TEXTURES_EXT`, `remixapi_MaterialInfoGameTexturesEXT`, version `0.1000.3`.*
+- **`public/include/remix/remix.h`** - inline. *`sizeof(remixapi_Interface)` assert 328.*
 - **`src/dxvk/rtx_render/rtx_remix_specialization.inl`** - inline, 3 LOC. *Registers `remixapi_MaterialInfoGameTexturesEXT` (AllTypes / ToEnum / Root = `remixapi_MaterialInfo`).*
-- **`src/dxvk/rtx_render/rtx_remix_api.cpp`** - hooks + inline.
+- **`src/dxvk/rtx_render/rtx_remix_api.cpp`** - hooks.
   - `remixapi_CreateMaterial`: `fork_hooks::resolveMaterialGameTextures` on the API thread; the finalized material passes through `fork_hooks::applyMaterialGameTextures` in the CS lambda.
-  - `remixapi_DestroyMaterial`: `fork_hooks::releaseMaterialGameTextures` on the API thread and `fork_hooks::forgetMaterialGameTextures` in the CS lambda.
+  - `remixapi_DestroyMaterial`: `fork_hooks::forgetMaterialGameTextures` in the CS lambda.
   - `remixapi_Shutdown`: `fork_hooks::shutdownGameTextures(s_dxvkDevice)` next to `shutdownCallbacks()`.
-  - `remixapi_SetDrawGameTextures`: one-line delegate to `fork_hooks::setDrawGameTextures(tryAsDxvk(), info)` in the file's `extern "C"` block (non-exported, like `remixapi_SetGameValue`), assigned in the inline vtable block. Kept here rather than in `remixApiVtableInit` because the registered D3D9 device (`tryAsDxvk`) is private to this file.
-  - `remixapi_InitializeLibrary`: size sentinel 328 -> 336; callers reporting < `0.1000.2` get the interface copied only up to `offsetof(remixapi_Interface, SetDrawGameTextures)`. Adds `#include <cstddef>`.
-- **`src/dxvk/rtx_render/rtx_scene_manager.cpp`** - hook call sites changed in `SceneManager::submitExternalDraw`: `externalDrawMaterialReplacement` and `externalDrawTextureCategories` now take the submesh's material handle, and `setHashOverride` uses `fork_hooks::externalMaterialKey(handle, *material)` (equals `material->getHash()` for materials without the extension).
-- **`src/d3d9/d3d9_rtx.cpp`** - hooks. *`fork_hooks::onD3D9DrawMaterial` after `materialData.updateCachedHash()` in `D3D9Rtx::internalPrepareDraw`, `fork_hooks::onD3D9EndFrame(m_parent, callInjectRtx)` at the top of `D3D9Rtx::EndFrame` (API thread; the window-proc end of frame with `callInjectRtx == false` is ignored), plus the `rtx_fork_hooks.h` include.*
+- **`src/dxvk/rtx_render/rtx_scene_manager.cpp`** - hook call sites changed in `SceneManager::submitExternalDraw`: `externalDrawMaterialReplacement` and `externalDrawTextureCategories` take the submesh's material handle, and `setHashOverride` uses `fork_hooks::externalMaterialKey(handle, *material)` (equals `material->getHash()` for materials without the extension).
 - **`src/d3d9/d3d9_device.cpp`** - hook. *`fork_hooks::shutdownGameTextures(this)` in `D3D9DeviceEx::~D3D9DeviceEx` after `SynchronizeCsThread()`, plus the `rtx_fork_hooks.h` include.*
-- **`src/dxvk/rtx_render/rtx_context.cpp`** - hook. *`fork_hooks::autoPbrEndFrame` in `RtxContext::endFrame` (throttled exports, autosave).*
-- **`src/dxvk/imgui/dxvk_imgui.cpp`** - hook. *`fork_hooks::showAutoPbrUI` in `ImGUI::showSetupWindow`, "Step 1: Categorize Textures" tab.*
-- **`src/dxvk/meson.build`** - inline. *Registers the five new fork files (`rtx_fork_game_textures_keyed.cpp` holds the render-thread, D3D9-free half so unit tests link).*
-- **`src/dxvk/rtx_render/rtx_fork_hooks.h`, `rtx_fork_submit.cpp`** - fork-owned. *New hook declarations; the submit hooks draw colormap-keyed materials like D3D9 draws (replacement merged over the game state, or the legacy-defaults material) and use the key for categories.*
-- **`bridge/src/{client/remix_api.cpp, server/main.cpp, util/util_remixapi.{h,cpp}, util/util_commands.h}`** - inline. *`MaterialInfoGameTexturesEXT` serialization (texture proxies sent as D3D object ids, resolved via `gpD3DResources`), `RemixApi_SetDrawGameTextures` command, interface truncation for < `0.1000.2`, `CreateMesh` pNext loop fix.*
-- **`RtxOptions.md`** - REGEN PENDING (`rtx.autopbr.exportsPerFrame`, `rtx.autopbr.autosaveInterval`). **`RemixApiSurface.md`** - REGEN PENDING.
+- **`src/dxvk/meson.build`** - inline. *Registers the three fork files.*
+- **`src/dxvk/rtx_render/rtx_fork_hooks.h`, `rtx_fork_submit.cpp`** - fork-owned. *The submit hooks draw colormap-keyed materials like D3D9 draws (replacement merged over the game state, or the legacy-defaults material) and use the key for categories.*
+- **`bridge/src/{client/remix_api.cpp, server/main.cpp, util/util_remixapi.{h,cpp}}`** - inline. *`MaterialInfoGameTexturesEXT` serialization (texture proxy sent as D3D object id, resolved via `gpD3DResources`), `CreateMesh` pNext loop fix.*
+- **`RtxOptions.md`** - REGEN PENDING (`rtx.autopbr.*` entries are gone). **`RemixApiSurface.md`** - regenerated.
 
 ---
 

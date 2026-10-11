@@ -2770,8 +2770,6 @@ namespace dxvk {
 
       separator();
 
-      fork_hooks::showAutoPbrUI();
-
       // One-time migration button: only show if there are texture hashes incorrectly stored in user.conf
       {
         const RtxOptionLayer* userLayer = RtxOptionLayer::getUserLayer();
