@@ -187,6 +187,10 @@ namespace {
       blender->setTargetPreset(value);
       return;
     }
+    if (std::strcmp(sub, "previous_target") == 0) {
+      blender->setPreviousTargetPreset(value);
+      return;
+    }
 
     char* end = nullptr;
     const float parsed = std::strtof(value, &end);
@@ -196,6 +200,8 @@ namespace {
 
     if (std::strcmp(sub, "blend_seconds") == 0) {
       blender->setBlendSeconds(parsed);
+    } else if (std::strcmp(sub, "blend_absolute") == 0) {
+      blender->setBlendAbsolute(parsed);
     } else if (std::strcmp(sub, "drift_speed") == 0) {
       blender->setDriftSpeed(parsed);
     } else if (std::strcmp(sub, "drift_intensity") == 0) {
@@ -214,7 +220,9 @@ namespace {
     auto& store = dxvk::fork_game_state::GameStateStore::get();
     const char* keys[] = {
       "__weather.target",
+      "__weather.previous_target",
       "__weather.blend_seconds",
+      "__weather.blend_absolute",
       "__weather.drift_speed",
       "__weather.drift_intensity",
     };
@@ -246,6 +254,9 @@ namespace {
       value = buffer;
     } else if (std::strcmp(sub, "blend_seconds") == 0) {
       std::snprintf(buffer, sizeof(buffer), "%.6f", blender->getBlendSeconds());
+      value = buffer;
+    } else if (std::strcmp(sub, "blend_absolute") == 0) {
+      std::snprintf(buffer, sizeof(buffer), "%.4f", blender->getBlendAbsolute());
       value = buffer;
     } else if (std::strcmp(sub, "drift_speed") == 0) {
       std::snprintf(buffer, sizeof(buffer), "%.6f", blender->getDriftSpeed());

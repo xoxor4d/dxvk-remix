@@ -945,9 +945,19 @@ namespace dxvk {
     m_inputTarget = name;
   }
 
+  void WeatherBlender::setPreviousTargetPreset(const std::string& name) {
+    std::lock_guard<std::mutex> lock{ m_ioMutex };
+    m_inputPreviousTarget = name;
+  }
+
   void WeatherBlender::setBlendSeconds(float seconds) {
     std::lock_guard<std::mutex> lock{ m_ioMutex };
     m_inputBlendSeconds = std::max(0.0f, seconds);
+  }
+
+  void WeatherBlender::setBlendAbsolute(float t) {
+    std::lock_guard<std::mutex> lock{ m_ioMutex };
+    m_inputBlendAbsolute = t;
   }
 
   void WeatherBlender::setDriftSpeed(float speed) {
@@ -989,9 +999,14 @@ namespace dxvk {
     }
 
     std::string newTarget;
+    std::string previousTargetOverride;
+    float blendAbsolute;
     {
       std::lock_guard<std::mutex> lock{ m_ioMutex };
       newTarget = m_inputTarget;
+      previousTargetOverride = m_inputPreviousTarget;
+      m_inputPreviousTarget.clear();
+      blendAbsolute = m_inputBlendAbsolute;
     }
     if (newTarget.empty()) {
       m_blendActive = false;
@@ -1014,11 +1029,29 @@ namespace dxvk {
       return;
     }
 
+    const bool useAbsoluteBlend = blendAbsolute >= 0.0f;
+
+    // The game can resync the blend-from preset, e.g. when its own weather state moved on without a blend.
+    bool appliedPreviousOverride = false;
+    if (!previousTargetOverride.empty()) {
+      if (isKnownPresetName(previousTargetOverride)) {
+        readPresetValues(previousTargetOverride, m_previousSnapshot);
+        m_previousPresetName = previousTargetOverride;
+        appliedPreviousOverride = true;
+      } else if (m_warnedUnknownPresets.insert(previousTargetOverride).second) {
+        Logger::warn(str::format(
+          "WeatherBlender: unknown preset name '", previousTargetOverride,
+          "' in __weather.previous_target. Ignoring."));
+      }
+    }
+
     if (newTarget != m_targetPresetName) {
       if (m_targetPresetName.empty()) {
-        m_previousSnapshot    = snapshotCurrentValues();
-        m_previousPresetName  = "(initial)";
-      } else {
+        if (m_previousPresetName.empty()) {
+          m_previousSnapshot    = snapshotCurrentValues();
+          m_previousPresetName  = "(initial)";
+        }
+      } else if (!appliedPreviousOverride) {
         // Capture exactly what consumers saw this frame. Reconstructing the lerp
         // from endpoints loses drift and can visibly jump on a mid-blend retarget.
         m_previousSnapshot   = snapshotCurrentValues();
@@ -1026,14 +1059,18 @@ namespace dxvk {
       }
 
       m_targetPresetName   = newTarget;
-      {
-        std::lock_guard<std::mutex> lock{ m_ioMutex };
-        m_blendDurationSec = std::max(0.001f, m_inputBlendSeconds);
+      if (!useAbsoluteBlend) {
+        {
+          std::lock_guard<std::mutex> lock{ m_ioMutex };
+          m_blendDurationSec = std::max(0.001f, m_inputBlendSeconds);
+        }
+        m_blendStartTimeSec  = m_currentTimeSec;
       }
-      m_blendStartTimeSec  = m_currentTimeSec;
     }
 
-    float t = dxvk::fclamp(static_cast<float>((m_currentTimeSec - m_blendStartTimeSec) / m_blendDurationSec), 0.0f, 1.0f);
+    const float t = useAbsoluteBlend
+      ? dxvk::fclamp(blendAbsolute, 0.0f, 1.0f)
+      : dxvk::fclamp(static_cast<float>((m_currentTimeSec - m_blendStartTimeSec) / m_blendDurationSec), 0.0f, 1.0f);
     applyBlendedValues(t);
     {
       std::lock_guard<std::mutex> lock{ m_ioMutex };
