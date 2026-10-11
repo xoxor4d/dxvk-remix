@@ -239,8 +239,6 @@ namespace dxvk {
 
   void LightManager::prepareSceneData(Rc<DxvkContext> ctx, CameraManager const& cameraManager) {
     ScopedCpuProfileZone();
-    // Ensure external light updates/removals are applied before we linearize and draw UI
-    fork_hooks::flushPendingLightMutations(*this);
     // Note: Early outing in this function (via returns) should be done carefully (or not at all ideally) as it may skip important
     // logic such as swapping the current/previous frame light buffer, updating light count information or allocating/updating the
     // light buffer which may cause issues in some cases (or rather already has, which is why this warning exists).
@@ -783,24 +781,31 @@ namespace dxvk {
     }
     assert(light->getExternallyTrackedLightId() != kInvalidExternallyTrackedLightId && " light passed to updateExternallyTrackedLight is not actually externally tracked.");
 
-    const uint64_t externalId = light->getExternallyTrackedLightId();
-    fork_hooks::updateLightStaticSleep(light, newLight, m_device, externalId);
+    const uint16_t bufferIdx = light->getBufferIdx();
+    const uint32_t stableIdentity = light->getStableIdentity();
+    *light = newLight;
+    light->setBufferIdx(bufferIdx);
+    light->setStableIdentity(stableIdentity);
   }
 
   void LightManager::addExternalLight(remixapi_LightHandle handle, const RtLight& rtlight) {
     auto found = m_externalLights.find(handle);
     if (found != m_externalLights.end()) {
-      // Existing light - preserve temporal data for static lights
-      fork_hooks::updateLightStaticSleep(
-        &found->second, rtlight, m_device, kInvalidExternallyTrackedLightId);
+      const uint32_t stableIdentity = found->second.getStableIdentity();
+      found->second = rtlight;
+      found->second.setStableIdentity(stableIdentity);
     } else {
-      // New light - copy it and set initial frame
-      fork_hooks::setExternalLightEmplace(*this, handle, rtlight);
+      m_externalLights.emplace(handle, rtlight);
     }
   }
 
   void LightManager::removeExternalLight(remixapi_LightHandle handle) {
-    fork_hooks::disableExternalLightQueue(*this, handle);
+    m_externalLights.erase(handle);
+    m_externalDomeLights.erase(handle);
+    m_externalActiveLightList.erase(handle);
+    if (m_externalActiveDomeLight == handle) {
+      m_externalActiveDomeLight = nullptr;
+    }
   }
 
   bool LightManager::getActiveDomeLight(DomeLight& domeLightOut) {
@@ -849,8 +854,11 @@ namespace dxvk {
   }
 
   void LightManager::addExternalLightInstance(remixapi_LightHandle enabledLight) {
-    // Queue activation to be applied at frame start
-    m_pendingExternalActiveLights.insert(enabledLight);
+    if (m_externalLights.find(enabledLight) != m_externalLights.end()) {
+      m_externalActiveLightList.insert(enabledLight);
+    } else if (m_externalDomeLights.find(enabledLight) != m_externalDomeLights.end() && m_externalActiveDomeLight == nullptr) {
+      m_externalActiveDomeLight = enabledLight;
+    }
   }
 
   void LightManager::registerPersistentExternalLight(remixapi_LightHandle handle) {
