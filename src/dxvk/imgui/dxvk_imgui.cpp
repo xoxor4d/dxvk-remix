@@ -517,6 +517,7 @@ namespace dxvk {
       {ImGUI::Theme::Toolkit,  "Default Theme"},
       {ImGUI::Theme::Legacy,   "Legacy Theme"},
       {ImGUI::Theme::Nvidia,   "NVIDIA Theme"},
+      {ImGUI::Theme::Gta4,     "GTA4 Theme"},
   });
 
   // Styles 
@@ -1170,92 +1171,6 @@ namespace dxvk {
       
       OptionLayerUI::renderLayerButtons(userLayer, "User");
 
-      ImGui::Separator();
-
-      // --- Migration: Move miscategorized options from user.conf to rtx.conf ---
-      // Get cached count of options in user.conf that don't have UserSetting flag
-      const uint32_t userMiscategorizedCount = userLayer ? userLayer->countMiscategorizedOptions() : 0;
-
-      if (userMiscategorizedCount > 0) {
-        ImGui::Spacing();
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.65f, 0.0f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.95f, 0.75f, 0.1f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.75f, 0.55f, 0.0f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
-        
-        std::string buttonLabel = str::format("Migrate ", userMiscategorizedCount, " Developer Setting", (userMiscategorizedCount > 1 ? "s" : ""), " to rtx.conf");
-        if (ImGui::Button(buttonLabel.c_str(), ImVec2(-1, 0))) {
-          const uint32_t migratedCount = userLayer->migrateMiscategorizedOptions();
-          Logger::info(str::format("[RTX Option]: Migrated ", migratedCount, " developer settings from user.conf to rtx.conf"));
-        }
-        
-        ImGui::PopStyleColor(4);
-
-        // Tooltip needs to come after the PopStyleColor button to avoid having black text on a dark background
-        if (ImGui::IsItemHovered()) {
-          ImGui::SetTooltip("The user.conf file should only contain end user options (preferences and graphics quality settings).\n\n"
-                            "This button will move all other settings from user.conf to rtx.conf.\n"
-                            "It does not save the changes.");
-        }
-      }
-
-      ImGui::Spacing();
-      ImGui::Spacing();
-      ImGui::Spacing();
-
-      // --- RTX Config Layer ---
-      ImGui::Text("Remix Config (rtx.conf):");
-      if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("The main place where Remix configuration is stored.\n"
-          "Saves to rtx.conf. This should be where mod\n"
-          "developers configure game-specific settings.");
-      }
-      if (rtxHasUnsaved) {
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.0f, 1.0f), "(unsaved changes)");
-        if (ImGui::IsItemHovered()) {
-          ImGui::SetTooltip("Changes have been made since the rtx.conf file was last saved.");
-        }
-      }
-
-      // Show unsaved changes in a CollapsingHeader
-      if (rtxHasUnsaved && rtxConfLayer) {
-        if (RemixGui::CollapsingHeader("View Changes##RtxConf")) {
-          ImGui::Indent();
-          OptionLayerUI::RenderOptions renderOpts;
-          renderOpts.uniqueId = "##RtxConfLayerList";
-          OptionLayerUI::renderToImGui(rtxConfLayer, renderOpts);
-          ImGui::Unindent();
-        }
-      }
-      
-      OptionLayerUI::renderLayerButtons(rtxConfLayer, "RtxConf");
-
-      // --- Migration: Move miscategorized options from rtx.conf to user.conf ---
-      const uint32_t rtxMiscategorizedCount = rtxConfLayer ? rtxConfLayer->countMiscategorizedOptions() : 0;
-      if (rtxMiscategorizedCount > 0) {
-        ImGui::Spacing();
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.65f, 0.0f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.95f, 0.75f, 0.1f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.75f, 0.55f, 0.0f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
-        
-        std::string buttonLabel = str::format("Migrate ", rtxMiscategorizedCount, " User Setting", (rtxMiscategorizedCount > 1 ? "s" : ""), " to user.conf");
-        if (ImGui::Button(buttonLabel.c_str(), ImVec2(-1, 0))) {
-          const uint32_t migratedCount = rtxConfLayer->migrateMiscategorizedOptions();
-          Logger::info(str::format("[RTX Option]: Migrated ", migratedCount, " user settings from rtx.conf to user.conf"));
-        }
-        
-        ImGui::PopStyleColor(4);
-
-        // Tooltip needs to come after the PopStyleColor button to avoid having black text on a dark background
-        if (ImGui::IsItemHovered()) {
-          ImGui::SetTooltip("The rtx.conf file contains settings that should be in user.conf (end user options that should not be in mods).\n\n"
-                            "This button will move these settings from rtx.conf to user.conf.\n"
-                            "It does not save the changes.");
-        }
-      }
-
       ImGui::Spacing();
       ImGui::Separator();
       ImGui::Spacing();
@@ -1814,6 +1729,63 @@ namespace dxvk {
 
     if (IMGUI_ADD_TOOLTIP(RemixGui::CollapsingHeader("Option Layers"), "View what options are present in each layer, and alter the blend strength and threshold for them.")) {
       ImGui::Indent();
+
+      RtxOptionLayer* rtxConfLayer = RtxOptionLayer::getRtxConfLayer();
+      const bool rtxHasUnsaved = rtxConfLayer && rtxConfLayer->hasUnsavedChanges();
+
+      // --- RTX Config Layer ---
+      ImGui::Text("Remix Config (rtx.conf):");
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("The main place where Remix configuration is stored.\n"
+          "Saves to rtx.conf. This should be where mod\n"
+          "developers configure game-specific settings.");
+      }
+      if (rtxHasUnsaved) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.0f, 1.0f), "(unsaved changes)");
+        if (ImGui::IsItemHovered()) {
+          ImGui::SetTooltip("Changes have been made since the rtx.conf file was last saved.");
+        }
+      }
+
+      // Show unsaved changes in a CollapsingHeader
+      if (rtxHasUnsaved && rtxConfLayer) {
+        if (RemixGui::CollapsingHeader("View Changes##RtxConf")) {
+          ImGui::Indent();
+          OptionLayerUI::RenderOptions renderOpts;
+          renderOpts.uniqueId = "##RtxConfLayerList";
+          OptionLayerUI::renderToImGui(rtxConfLayer, renderOpts);
+          ImGui::Unindent();
+        }
+      }
+      
+      OptionLayerUI::renderLayerButtons(rtxConfLayer, "RtxConf");
+
+      // --- Migration: Move miscategorized options from rtx.conf to user.conf ---
+      const uint32_t rtxMiscategorizedCount = rtxConfLayer ? rtxConfLayer->countMiscategorizedOptions() : 0;
+      if (rtxMiscategorizedCount > 0) {
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.65f, 0.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.95f, 0.75f, 0.1f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.75f, 0.55f, 0.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+        
+        std::string buttonLabel = str::format("Migrate ", rtxMiscategorizedCount, " User Setting", (rtxMiscategorizedCount > 1 ? "s" : ""), " to user.conf");
+        if (ImGui::Button(buttonLabel.c_str(), ImVec2(-1, 0))) {
+          const uint32_t migratedCount = rtxConfLayer->migrateMiscategorizedOptions();
+          Logger::info(str::format("[RTX Option]: Migrated ", migratedCount, " user settings from rtx.conf to user.conf"));
+        }
+        
+        ImGui::PopStyleColor(4);
+
+        // Tooltip needs to come after the PopStyleColor button to avoid having black text on a dark background
+        if (ImGui::IsItemHovered()) {
+          ImGui::SetTooltip("The rtx.conf file contains settings that should be in user.conf (end user options that should not be in mods).\n\n"
+                            "This button will move these settings from rtx.conf to user.conf.\n"
+                            "It does not save the changes.");
+        }
+      }
+
       static char optionLayerFilter[256] = "";
       // Filter for option layer contents
       IMGUI_ADD_TOOLTIP(ImGui::InputText("RtxOption Display Filter", optionLayerFilter, IM_ARRAYSIZE(optionLayerFilter)), 
@@ -3292,6 +3264,100 @@ namespace dxvk {
     }
   }
 
+  void ImGUI::setGta4Style(ImGuiStyle* dst) {
+    ImGuiStyle* style = dst ? dst : &ImGui::GetStyle();
+
+    style->Alpha = 1.0f;
+    style->DisabledAlpha = 0.5f;
+
+    style->WindowPadding = ImVec2(8.0f, 10.0f);
+    style->FramePadding = compactGui() ? ImVec2(4.0f, 3.0f) : ImVec2(7.0f, 5.0f);
+    style->CellPadding = ImVec2(5.0f, 4.0f);
+    style->ItemSpacing = compactGui() ? ImVec2(8.0f, 0.0f) : ImVec2(3.0f, 3.0f);
+    style->ItemInnerSpacing = compactGui() ? ImVec2(4.0f, 4.0f) : ImVec2(3.0f, 8.0f);
+    style->IndentSpacing = 8.0f;
+    style->ColumnsMinSpacing = 10.0f;
+    style->ScrollbarSize = 15.0f;
+    style->GrabMinSize = 10.0f;
+
+    style->WindowBorderSize = 1.0f;
+    style->ChildBorderSize = 1.0f;
+    style->PopupBorderSize = 1.0f;
+    style->FrameBorderSize = 1.0f;
+    style->TabBorderSize = 0.0f;
+
+    style->WindowRounding = 0.0f;
+    style->ChildRounding = 2.0f;
+    style->FrameRounding = 3.0f;
+    style->PopupRounding = 2.0f;
+    style->ScrollbarRounding = 2.0f;
+    style->GrabRounding = 1.0f;
+    style->TabRounding = 2.0f;
+    style->WindowMenuButtonPosition = ImGuiDir_None;
+
+    style->WindowMinSize = ImVec2(32, 32);
+    style->TouchExtraPadding = ImVec2(0, 0);
+    style->LogSliderDeadzone = 4.0f;
+    style->TabMinWidthForCloseButton = 0.0f;
+    style->DisplayWindowPadding = ImVec2(19, 19);
+    style->DisplaySafeAreaPadding = ImVec2(3, 3);
+    style->MouseCursorScale = 1.0f;
+
+    style->Colors[ImGuiCol_Text] = ImVec4(0.92f, 0.92f, 0.92f, 1.00f);
+    style->Colors[ImGuiCol_TextDisabled] = ImVec4(0.38f, 0.38f, 0.38f, 1.00f);
+    style->Colors[ImGuiCol_WindowBg] = ImVec4(0.10f, 0.10f, 0.10f, backgroundAlpha());
+    style->Colors[ImGuiCol_ChildBg] = ImVec4(0.21f, 0.21f, 0.21f, 0.80f);
+    style->Colors[ImGuiCol_PopupBg] = ImVec4(0.28f, 0.28f, 0.28f, 1.00f);
+    style->Colors[ImGuiCol_Border] = ImVec4(0.26f, 0.26f, 0.26f, 1.00f);
+    style->Colors[ImGuiCol_BorderShadow] = ImVec4(0.00f, 0.00f, 0.00f, 0.23f);
+    style->Colors[ImGuiCol_FrameBg] = ImVec4(0.11f, 0.11f, 0.11f, 1.00f);
+    style->Colors[ImGuiCol_FrameBgHovered] = ImVec4(0.40f, 0.40f, 0.40f, 1.00f);
+    style->Colors[ImGuiCol_FrameBgActive] = ImVec4(0.94f, 0.63f, 0.01f, 1.00f);
+    style->Colors[ImGuiCol_TitleBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.98f);
+    style->Colors[ImGuiCol_TitleBgActive] = ImVec4(0.00f, 0.00f, 0.00f, 0.98f);
+    style->Colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.00f, 0.00f, 0.00f, 0.98f);
+    style->Colors[ImGuiCol_MenuBarBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+    style->Colors[ImGuiCol_ScrollbarBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.24f);
+    style->Colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.34f, 0.34f, 0.34f, 0.39f);
+    style->Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.54f, 0.54f, 0.54f, 0.47f);
+    style->Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.78f, 0.78f, 0.78f, 0.33f);
+    style->Colors[ImGuiCol_CheckMark] = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+    style->Colors[ImGuiCol_SliderGrab] = ImVec4(1.00f, 1.00f, 1.00f, 0.39f);
+    style->Colors[ImGuiCol_SliderGrabActive] = ImVec4(1.00f, 1.00f, 1.00f, 0.31f);
+    style->Colors[ImGuiCol_Button] = ImVec4(0.24f, 0.24f, 0.24f, 1.00f);
+    style->Colors[ImGuiCol_ButtonHovered] = ImVec4(0.94f, 0.63f, 0.01f, 1.00f);
+    style->Colors[ImGuiCol_ButtonActive] = ImVec4(1.00f, 0.77f, 0.33f, 1.00f);
+    style->Colors[ImGuiCol_Header] = ImVec4(0.33f, 0.33f, 0.33f, 0.39f);
+    style->Colors[ImGuiCol_HeaderHovered] = ImVec4(0.94f, 0.63f, 0.01f, 1.00f);
+    style->Colors[ImGuiCol_HeaderActive] = ImVec4(0.94f, 0.63f, 0.01f, 1.00f);
+    style->Colors[ImGuiCol_Separator] = ImVec4(0.35f, 0.35f, 0.35f, 1.00f);
+    style->Colors[ImGuiCol_SeparatorHovered] = ImVec4(0.94f, 0.63f, 0.01f, 1.00f);
+    style->Colors[ImGuiCol_SeparatorActive] = ImVec4(1.00f, 0.75f, 0.26f, 1.00f);
+    style->Colors[ImGuiCol_ResizeGrip] = ImVec4(0.43f, 0.43f, 0.43f, 0.51f);
+    style->Colors[ImGuiCol_ResizeGripHovered] = ImVec4(0.94f, 0.63f, 0.01f, 1.00f);
+    style->Colors[ImGuiCol_ResizeGripActive] = ImVec4(1.00f, 0.76f, 0.30f, 1.00f);
+    style->Colors[ImGuiCol_Tab] = ImVec4(0.00f, 0.00f, 0.00f, 0.37f);
+    style->Colors[ImGuiCol_TabHovered] = ImVec4(0.94f, 0.63f, 0.01f, 1.00f);
+    style->Colors[ImGuiCol_TabActive] = ImVec4(0.94f, 0.63f, 0.01f, 1.00f);
+    style->Colors[ImGuiCol_TabUnfocused] = ImVec4(0.00f, 0.00f, 0.00f, 0.16f);
+    style->Colors[ImGuiCol_TabUnfocusedActive] = ImVec4(1.00f, 1.00f, 1.00f, 0.24f);
+    style->Colors[ImGuiCol_PlotLines] = ImVec4(1.00f, 1.00f, 1.00f, 0.35f);
+    style->Colors[ImGuiCol_PlotLinesHovered] = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+    style->Colors[ImGuiCol_PlotHistogram] = ImVec4(1.00f, 1.00f, 1.00f, 0.35f);
+    style->Colors[ImGuiCol_PlotHistogramHovered] = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+    style->Colors[ImGuiCol_TableHeaderBg] = ImVec4(0.16f, 0.16f, 0.16f, 1.00f);
+    style->Colors[ImGuiCol_TableBorderStrong] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
+    style->Colors[ImGuiCol_TableBorderLight] = ImVec4(0.00f, 0.00f, 0.00f, 0.54f);
+    style->Colors[ImGuiCol_TableRowBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.39f);
+    style->Colors[ImGuiCol_TableRowBgAlt] = ImVec4(0.67f, 0.52f, 0.24f, 1.00f);
+    style->Colors[ImGuiCol_TextSelectedBg] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
+    style->Colors[ImGuiCol_DragDropTarget] = ImVec4(0.00f, 0.51f, 0.39f, 0.31f);
+    style->Colors[ImGuiCol_NavHighlight] = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
+    style->Colors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
+    style->Colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.80f, 0.80f, 0.80f, 0.20f);
+    style->Colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.56f);
+  }
+
   void ImGUI::onBackgroundAlphaChange(DxvkDevice* device) {
     if (GImGui != nullptr) {
       ImGUI& gui = device->getCommon()->getImgui();
@@ -3317,6 +3383,10 @@ namespace dxvk {
     
     case Theme::Nvidia:
       setNvidiaStyle(style);
+      break;
+
+    case Theme::Gta4:
+      setGta4Style(style);
       break;
     }
   }
