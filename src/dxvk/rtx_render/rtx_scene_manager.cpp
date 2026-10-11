@@ -1779,6 +1779,10 @@ namespace dxvk {
 
       bool ignoreAlphaChannel = false;
 
+      uint16_t d3dModifierFlags = 0u;
+      uint16_t d3dData0 = 0u;
+      uint16_t d3dData1 = 0u;
+
       constexpr Vector4 kWhiteModeAlbedo = Vector4(0.7f, 0.7f, 0.7f, 1.0f);
 
       const auto& opaqueMaterialData = renderMaterialData.getOpaqueMaterialData();
@@ -1816,6 +1820,57 @@ namespace dxvk {
       displaceOut = opaqueMaterialData.getDisplaceOut();
 
       ignoreAlphaChannel = opaqueMaterialData.getIgnoreAlphaChannel();
+
+      // Per draw call overrides from unused D3D render states (GTA4 compatibility mod)
+      {
+        const LegacyMaterialData& legacyMaterialData = drawCallState.getMaterialData();
+        const CategoryFlags d3dCategories(legacyMaterialData.remixTextureCategoryFlagsFromD3D);
+        const uint32_t d3dModifiers = legacyMaterialData.remixModifierFromD3D;
+        const bool forceVertexColorModulate = drawCallState.testCategoryFlags(InstanceCategories::Beam) || d3dCategories.test(InstanceCategories::Beam);
+
+        // The ignore alpha lookup above is hash based, so the per draw call category has to be checked here.
+        if (d3dCategories.test(InstanceCategories::IgnoreAlphaChannel)) {
+          ignoreAlphaChannel = true;
+        }
+
+        if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR) {
+          emissiveIntensity *= legacyMaterialData.remixTempFloat01FromD3D;
+        }
+
+        if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR) {
+          const uint32_t packedWetness = legacyMaterialData.remixPackedFloat4_RS210FromD3D;
+          d3dData0 = uint16_t(packedWetness & 0xFFFF);
+          d3dData1 = uint16_t((packedWetness >> 16) & 0xFFFF);
+          d3dModifierFlags |= D3D_OPAQUE_MODIFIER_ROUGHNESS_SCALAR;
+        }
+
+        if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_ENABLE_VERTEX_COLOR) {
+          d3dModifierFlags |= D3D_OPAQUE_MODIFIER_ENABLE_VERTEX_COLOR;
+        }
+
+        // Vertex color is set to white but keeps its alpha when requested or when tagged as terrain,
+        // unless the beam category asks for full vertex color modulation.
+        if (((d3dModifiers & REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA) || drawCallState.testCategoryFlags(InstanceCategories::Terrain))
+            && !forceVertexColorModulate) {
+          d3dModifierFlags |= D3D_OPAQUE_MODIFIER_REM_VERTEX_COLOR_KEEP_ALPHA;
+        }
+
+        if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_VEHICLE_DECAL_DIRT) {
+          d3dModifierFlags |= D3D_OPAQUE_MODIFIER_VEHICLE_DECAL_DIRT;
+        }
+
+        // Global UV animation: a 2x3 affine UV transform, the two extra terms go into the D3D payload and the rest
+        // replaces the albedo constant (static colors are not used on animated surfaces).
+        if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_GLOBAL_UV_MODIFIER) {
+          d3dModifierFlags |= D3D_OPAQUE_MODIFIER_GLOBAL_UV_MODIFIER;
+          d3dData0 = glm::packHalf1x16(legacyMaterialData.remixFloatRS211FromD3D);
+          d3dData1 = glm::packHalf1x16(legacyMaterialData.remixFloatRS212FromD3D);
+          albedoOpacityConstant.x = legacyMaterialData.remixFloatRS213FromD3D;
+          albedoOpacityConstant.y = legacyMaterialData.remixFloatRS214FromD3D;
+          albedoOpacityConstant.z = legacyMaterialData.remixFloatRS215FromD3D;
+          albedoOpacityConstant.w = legacyMaterialData.remixFloatRS216FromD3D;
+        }
+      }
 
       subsurfaceMeasurementDistance = opaqueMaterialData.getSubsurfaceMeasurementDistance() * RtxOptions::SubsurfaceScattering::surfaceThicknessScale();
 
@@ -1906,12 +1961,13 @@ namespace dxvk {
         secondaryTextureIndex,
         albedoTextureIsSrgb, emissiveTextureIsSrgb,
         opaqueMaterialData.getSkyLitParticle(),
-        renderMaterialData.usesLegacyDefaults()
+        renderMaterialData.usesLegacyDefaults(),
+        d3dModifierFlags, d3dData0, d3dData1
       };
 
       surfaceMaterial.emplace(opaqueSurfaceMaterial);
     } else if (renderMaterialDataType == MaterialDataType::Translucent) {
-      surfaceMaterial.emplace(createTranslucentSurfaceMaterial(renderMaterialData.getTranslucentMaterialData(), samplerIndex, hasTexcoords));
+      surfaceMaterial.emplace(createTranslucentSurfaceMaterial(&drawCallState, renderMaterialData.getTranslucentMaterialData(), samplerIndex, hasTexcoords));
     } else if (renderMaterialDataType == MaterialDataType::RayPortal) {
       const auto& rayPortalMaterialData = renderMaterialData.getRayPortalMaterialData();
 
@@ -1946,7 +2002,8 @@ namespace dxvk {
   }
 
 
-  RtTranslucentSurfaceMaterial SceneManager::createTranslucentSurfaceMaterial(const TranslucentMaterialData& translucentMaterialData,
+  RtTranslucentSurfaceMaterial SceneManager::createTranslucentSurfaceMaterial(const DrawCallState* drawCallState,
+                                                                              const TranslucentMaterialData& translucentMaterialData,
                                                                               uint32_t samplerIndex,
                                                                               bool hasTexcoords) {
     uint32_t normalTextureIndex = kSurfaceMaterialInvalidTextureIndex;
@@ -1958,6 +2015,40 @@ namespace dxvk {
     trackTexture(translucentMaterialData.getTransmittanceTexture(), transmittanceTextureIndex, hasTexcoords, true, &samplerFeedbackStamp);
     trackTexture(translucentMaterialData.getEmissiveColorTexture(), emissiveColorTextureIndex, hasTexcoords, true, &samplerFeedbackStamp);
 
+    float emissiveIntensity = translucentMaterialData.getEmissiveIntensity() * RtxOptions::emissiveIntensity();
+
+    // Per draw call overrides from unused D3D render states (GTA4 compatibility mod), absent for API medium materials
+    uint16_t d3dModifierFlags = 0u;
+    uint16_t wetnessParams1 = 0u;
+    uint16_t wetnessParams2 = 0u;
+    float freeFloat01 = 0.0f;
+    float freeFloat02 = 0.0f;
+
+    if (drawCallState) {
+      const LegacyMaterialData& legacyMaterialData = drawCallState->getMaterialData();
+      const uint32_t d3dModifiers = legacyMaterialData.remixModifierFromD3D;
+
+      if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR) {
+        emissiveIntensity *= legacyMaterialData.remixTempFloat01FromD3D;
+      }
+
+      if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR) {
+        const uint32_t packedWetness = legacyMaterialData.remixPackedFloat4_RS210FromD3D;
+        wetnessParams1 = uint16_t(packedWetness & 0xFFFF);
+        wetnessParams2 = uint16_t((packedWetness >> 16) & 0xFFFF);
+        d3dModifierFlags |= D3D_TRANSLUCENT_MODIFIER_RAINDROPS;
+      }
+
+      if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_TRANSLUCENT_WORLDPOS_AS_TEXUV) {
+        d3dModifierFlags |= D3D_TRANSLUCENT_MODIFIER_WORLDPOS_AS_TEXUV;
+        freeFloat01 = legacyMaterialData.remixFloatRS211FromD3D;
+      }
+
+      if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_TRANSLUCENT_FADE_NORMAL_UNTIL_DIST) {
+        freeFloat02 = legacyMaterialData.remixFloatRS212FromD3D;
+      }
+    }
+
     return RtTranslucentSurfaceMaterial{
       normalTextureIndex,
       transmittanceTextureIndex,
@@ -1966,13 +2057,14 @@ namespace dxvk {
       translucentMaterialData.getTransmittanceMeasurementDistance(),
       translucentMaterialData.getTransmittanceColor(),
       translucentMaterialData.getEnableEmission(),
-      translucentMaterialData.getEmissiveIntensity() * RtxOptions::emissiveIntensity(),
+      emissiveIntensity,
       translucentMaterialData.getEmissiveColorConstant(),
       translucentMaterialData.getEnableThinWalled(),
       translucentMaterialData.getThinWallThickness(),
       translucentMaterialData.getEnableDiffuseLayer(),
       samplerIndex,
-      samplerFeedbackStamp
+      samplerFeedbackStamp,
+      d3dModifierFlags, wetnessParams1, wetnessParams2, freeFloat01, freeFloat02
     };
   }
 
@@ -2007,7 +2099,7 @@ namespace dxvk {
 
     const auto samplerIndex = trackSampler(getOrCreateExternalSampler());
     const auto surfaceMaterial = RtSurfaceMaterial(
-      createTranslucentSurfaceMaterial(translucentMaterial.getTranslucentMaterialData(), samplerIndex, true));
+      createTranslucentSurfaceMaterial(nullptr, translucentMaterial.getTranslucentMaterialData(), samplerIndex, true));
 
     m_externalStartInMediumMaterialIndex_inCache = m_surfaceMaterialCache.track(surfaceMaterial);
   }
@@ -2324,7 +2416,7 @@ namespace dxvk {
         assert(m_persistentStartInMediumMaterial->getType() == MaterialDataType::Translucent);
         const auto samplerIndex = trackSampler(getOrCreateExternalSampler());
         const auto surfaceMaterial = RtSurfaceMaterial(
-          createTranslucentSurfaceMaterial(m_persistentStartInMediumMaterial->getTranslucentMaterialData(), samplerIndex, true));
+          createTranslucentSurfaceMaterial(nullptr, m_persistentStartInMediumMaterial->getTranslucentMaterialData(), samplerIndex, true));
         persistentStartInMediumMaterialIndexInCache = m_surfaceMaterialCache.track(surfaceMaterial);
       }
 

@@ -71,4 +71,17 @@ static const uint8_t surfaceMaterialTypeMask = uint8_t(0x3u);
 // If set, then the texture bound to transmittanceOrDiffuseTextureIndex is an albedo map for the diffuse layer
 #define TRANSLUCENT_SURFACE_MATERIAL_FLAG_USE_DIFFUSE_LAYER (1 << COMMON_MATERIAL_FLAG_TYPE_OFFSET(0))
 
+// Per draw call modifiers from the GTA4 compatibility mod, stored in the d3dModifierFlags field of
+// OpaqueSurfaceMaterial / TranslucentSurfaceMaterial (set on the CPU in rtx_scene_manager.cpp).
+// Opaque payload (d3dData0/1): ROUGHNESS_SCALAR -> packed wetness params 1/2,
+// GLOBAL_UV_MODIFIER -> half floats globUV0.x/.y (the other four affine terms live in albedoOpacityConstant).
+#define D3D_OPAQUE_MODIFIER_ROUGHNESS_SCALAR (1 << 0)
+#define D3D_OPAQUE_MODIFIER_ENABLE_VERTEX_COLOR (1 << 1)
+#define D3D_OPAQUE_MODIFIER_REM_VERTEX_COLOR_KEEP_ALPHA (1 << 2)
+#define D3D_OPAQUE_MODIFIER_VEHICLE_DECAL_DIRT (1 << 3)
+#define D3D_OPAQUE_MODIFIER_GLOBAL_UV_MODIFIER (1 << 4)
+
+#define D3D_TRANSLUCENT_MODIFIER_RAINDROPS (1 << 0)
+#define D3D_TRANSLUCENT_MODIFIER_WORLDPOS_AS_TEXUV (1 << 1)
+
 #endif // ifndef SHARED_CONSTANTS_H

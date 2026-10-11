@@ -649,6 +649,7 @@ enum class InstanceCategories : uint32_t {
   ParticleEmitter,
   SmoothNormals,
   HairCards,
+  DisableBackfaceCulling,
 
   Count,
 };
@@ -716,7 +717,7 @@ struct DrawCallState {
   }
 
   const CategoryFlags getCategoryFlags() const {
-    return categories;
+    return categories | CategoryFlags(materialData.remixTextureCategoryFlagsFromD3D);
   }
 
   CategoryFlags& modifyCategoryFlags() {

@@ -658,10 +658,14 @@ namespace dxvk {
     if (m_type != D3DRTYPE_TEXTURE || (m_desc.Usage & D3DUSAGE_DEPTHSTENCIL))
       return;
 
-    if (m_image->getHash() != kEmptyHash) {
+    // NV-DXVK start: optionally rehash on every use for games that overwrite texture contents (GTA4 streaming)
+    const bool alwaysRecalculateHash = RtxOptions::alwaysRecalculateTextureHashes();
+
+    if (m_image->getHash() != kEmptyHash && !alwaysRecalculateHash) {
       // Already setup.
       return;
     }
+    // NV-DXVK end
 
     // Use subresource 0 for hashing
     constexpr uint32_t subresource = 0;
@@ -682,6 +686,13 @@ namespace dxvk {
     } else {
       imageHash = XXH3_64bits(buffer->mapPtr(0), buffer->info().size);
     }
+
+    // NV-DXVK start: drop the ImGui entry of the previous hash when the content changed
+    if (alwaysRecalculateHash && m_image->getHash() != kEmptyHash && m_image->getHash() != imageHash) {
+      ImGUI::ReleaseTexture(m_image->getHash());
+    }
+    // NV-DXVK end
+
     // save hash to dxvkImage
     m_image->setHash(imageHash);
 

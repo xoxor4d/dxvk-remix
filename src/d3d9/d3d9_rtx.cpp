@@ -24,8 +24,9 @@ namespace dxvk {
   // We only look at RT 0 currently.
   const uint32_t kRenderTargetIndex = 0;
 
-  #define CATEGORIES_REQUIRE_DRAW_CALL_STATE  InstanceCategories::Sky, InstanceCategories::Terrain
-  #define CATEGORIES_REQUIRE_GEOMETRY_COPY    InstanceCategories::Terrain, InstanceCategories::WorldUI
+  // NV-DXVK start: GTA4 reuses the Terrain and WorldUI categories for per draw call material overrides
+  #define CATEGORIES_REQUIRE_DRAW_CALL_STATE  InstanceCategories::Sky
+  // NV-DXVK end
 
   D3D9Rtx::D3D9Rtx(D3D9DeviceEx* d3d9Device, bool enableDrawCallConversion)
     : m_rtStagingData(d3d9Device->GetDXVKDevice(), "RtxStagingDataAlloc: D3D9", (VkMemoryPropertyFlagBits) (VK_MEMORY_PROPERTY_HOST_CACHED_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
@@ -287,11 +288,16 @@ namespace dxvk {
           targetBuffer = &geoData.texcoordBuffer;
         break;
       case D3DDECLUSAGE_COLOR:
+        // NV-DXVK start: per draw call vertex color control through unused D3D render states (GTA4)
         if (element.UsageIndex == 0 &&
             !RtxOptions::ignoreAllVertexColorBakedLighting() &&
-            !lookupHash(RtxOptions::ignoreBakedLightingTextures(), m_activeDrawCallState.materialData.colorTextures[0].getImageHash())) {
+            !lookupHash(RtxOptions::ignoreBakedLightingTextures(), m_activeDrawCallState.materialData.colorTextures[0].getImageHash()) &&
+            (!CategoryFlags(m_activeDrawCallState.materialData.remixTextureCategoryFlagsFromD3D).test(InstanceCategories::IgnoreBakedLighting) ||
+             (m_activeDrawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA) ||
+             lookupHash(RtxOptions::terrainTextures(), m_activeDrawCallState.materialData.colorTextures[0].getImageHash()))) {
           targetBuffer = &geoData.color0Buffer;
         }
+        // NV-DXVK end
         break;
       }
 
@@ -776,6 +782,17 @@ namespace dxvk {
       return prepareFlagsForIgnoredDraws;
     }
 
+    // NV-DXVK start: GTA4 uses the Beam category to force texture * vertex color modulation (vehicle paint, rims)
+    if (m_activeDrawCallState.testCategoryFlags(InstanceCategories::Beam) ||
+        CategoryFlags(m_activeDrawCallState.materialData.remixTextureCategoryFlagsFromD3D).test(InstanceCategories::Beam)) {
+      m_activeDrawCallState.materialData.textureColorOperation = DxvkRtTextureOperation::Modulate;
+      m_activeDrawCallState.materialData.textureColorArg1Source = RtTextureArgSource::Texture;
+      m_activeDrawCallState.materialData.textureColorArg2Source = RtTextureArgSource::VertexColor0;
+      // The texture factor defaults to opaque white, so this is a no-op unless the game sets it.
+      m_activeDrawCallState.materialData.isTextureFactorBlend = true;
+    }
+    // NV-DXVK end
+
     // Max offseted index value within a buffer slice that geoData contains
     const uint32_t maxOffsetedIndex = maxIndex - minIndex;
 
@@ -1235,10 +1252,6 @@ namespace dxvk {
         }
       }
 
-      if (!m_forceGeometryCopy && RtxOptions::alwaysCopyDecalGeometries()) {
-        // Only poke decal hashes when option is enabled.
-        m_forceGeometryCopy |= m_activeDrawCallState.testCategoryFlags(CATEGORIES_REQUIRE_GEOMETRY_COPY);
-      }
     }
 
     m_texcoordIndex = d3d9State().textureStages[firstStage][DXVK_TSS_TEXCOORDINDEX];
