@@ -68,7 +68,8 @@ namespace dxvk {
     enum class Theme {
       Toolkit,
       Legacy,
-      Nvidia
+      Nvidia,
+      Gta4,
     };
 
     ImGUI(DxvkDevice* device);
@@ -262,6 +263,8 @@ namespace dxvk {
     void setToolkitStyle(ImGuiStyle* dst);
     // Sets Nvidia inspired UI theme
     void setNvidiaStyle(ImGuiStyle* dst);
+    // Sets GTA4 inspired UI theme
+    void setGta4Style(ImGuiStyle* dst);
     // Custom style
     void setupStyle(ImGuiStyle* dst = NULL);
 
