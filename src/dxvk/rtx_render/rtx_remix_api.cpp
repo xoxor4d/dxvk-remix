@@ -1719,9 +1719,21 @@ namespace {
       return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
     }
 
+    // Values land on the derived layer so they do not end up in user.conf; a "user " or "derived "
+    // prefix on the value picks the layer explicitly.
+    std::string strValue { value };
+    const dxvk::RtxOptionLayer* layer = dxvk::RtxOptionLayer::getDerivedLayer();
+
+    if (strValue.compare(0, 5, "user ") == 0) {
+      layer = dxvk::RtxOptionLayer::getUserLayer();
+      strValue.erase(0, 5);
+    } else if (strValue.compare(0, 8, "derived ") == 0) {
+      strValue.erase(0, 8);
+    }
+
     dxvk::Config newSetting;
-    newSetting.setOptionMove(std::move(strKey), std::string{ value });
-    option->readOption(newSetting, dxvk::RtxOptionLayer::getUserLayer());
+    newSetting.setOptionMove(std::move(strKey), std::move(strValue));
+    option->readOption(newSetting, layer);
 
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
