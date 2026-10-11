@@ -330,7 +330,8 @@ namespace dxvk {
                   "Textures on draw calls whose geometry should have smooth normals generated on the GPU.\n"
                   "This is useful for older D3D9 games where the geometry may be missing smooth normals, especially when using the VertexShader Capture mechanism.\n"
                   "When a draw call matches, area-weighted smooth normals will be computed from the triangle mesh and used for ray tracing.");
-    
+    RTX_OPTION("rtx", fast_unordered_set, disableBackfacecullingTextures, {}, "Objects rendered with these textures will not get their backfaces culled.");
+
   public:
     RTX_OPTION("rtx", bool, showRaytracingOption, true, "Enables or disables the option to toggle ray tracing in the UI. When set to false the ray tracing checkbox will not appear in the Remix UI.");
     RTX_OPTION_ENV("rtx", bool, enableRaytracing, true, "DXVK_ENABLE_RAYTRACING",
@@ -1372,6 +1373,11 @@ namespace dxvk {
     RTX_OPTION("rtx", bool, useObsoleteHashOnTextureUpload, false,
                "Whether or not to use slower XXH64 hash on texture upload.\n"
                "New projects should not enable this option as this solely exists for compatibility with older hashing schemes.");
+
+    RTX_OPTION("rtx", bool, alwaysRecalculateTextureHashes, false,
+               "Recalculate the hash of a texture every time it is used, for games whose streaming systems overwrite\n"
+               "existing textures with other content. Remix normally hashes a texture once for performance reasons,\n"
+               "which then results in the wrong texture hash being used for replacements and tagging. May need a restart to take full effect.");
 
     RTX_OPTION("rtx", uint32_t, applicationId, 102100511, "Used to uniquely identify the application to DLSS. Generally should not be changed without good reason.");
 

@@ -96,17 +96,20 @@ struct OpaqueSurfaceMaterial
   // 24-25
   uint subsurfaceMaterialIndex;
 
-  // 26
+  // 26-27
   uint16_t samplerFeedbackStamp;
-  uint16_t data0;
+  // bitmask of D3D_OPAQUE_MODIFIER_* bits (per draw call modifiers from the GTA4 compatibility mod)
+  uint16_t d3dModifierFlags;
 
   // 28-29
   uint dlssControlMask;
 
-  // Todo: Fixed function blend state info here in the future (Actually this should go on a Legacy Material, or some sort of non-PBR Legacy Surface)
+  // 30-31
+  // Payload of the d3dModifierFlags, see shared_constants.h
+  uint16_t d3dData0;
+  uint16_t d3dData1;
 
-  // padding (to keep size matching with MemoryPolymorphicSurfaceMaterial)
-  uint16_t data[2];
+  // Todo: Fixed function blend state info here in the future (Actually this should go on a Legacy Material, or some sort of non-PBR Legacy Surface)
 
   bool hasValidDisplacement() {
     return flags & OPAQUE_SURFACE_MATERIAL_FLAG_HAS_DISPLACEMENT;
@@ -140,8 +143,15 @@ struct TranslucentSurfaceMaterial
   // 17
   uint16_t samplerFeedbackStamp;
 
+  // 18-22: per draw call modifiers from the GTA4 compatibility mod, see shared_constants.h
+  uint16_t d3dModifierFlags;
+  uint16_t wetnessParams1; // scalar (6 bits) + max_z (5 bits) + blend_width (5 bits)
+  uint16_t wetnessParams2; // raindrop_scale (8 bits) + wetness flags (8 bits)
+  float16_t freeFloat01;   // world position UV scale
+  float16_t freeFloat02;   // distance after which the normal map fades out
+
   // padding (to keep size matching with MemoryPolymorphicSurfaceMaterial)
-  uint16_t data[14];
+  uint16_t data[9];
 };
 
 struct RayPortalSurfaceMaterial

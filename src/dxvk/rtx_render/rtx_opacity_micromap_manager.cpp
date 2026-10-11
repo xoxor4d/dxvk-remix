@@ -1012,7 +1012,6 @@ namespace dxvk {
     }
 
     if (instance.testCategoryFlags(InstanceCategories::IgnoreOpacityMicromap) ||
-        instance.testCategoryFlags(InstanceCategories::Terrain) ||
         instance.testCategoryFlags(InstanceCategories::IgnoreAlphaChannel)) {
       return false;
     }

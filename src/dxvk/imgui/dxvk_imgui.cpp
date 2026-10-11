@@ -206,7 +206,8 @@ namespace dxvk {
     {"ignorealphaontextures","Ignore Alpha Channel of Textures (optional)", &RtxOptions::ignoreAlphaOnTexturesObject()},
     {"raytracedRenderTargetTextures","Raytraced Render Target Textures (optional)", &RtxOptions::raytracedRenderTargetTexturesObject(), ImGUI::kTextureFlagsRenderTarget},
     {"particleemittertextures","Particle Emitters (optional)", &RtxOptions::particleEmitterTexturesObject()},
-    {"smoothnormalstextures","Smooth Normals (optional)", &RtxOptions::smoothNormalsTexturesObject()}
+    {"smoothnormalstextures","Smooth Normals (optional)", &RtxOptions::smoothNormalsTexturesObject()},
+    {"disablebackfacecullingtextures","Disable Backface Culling (optional)", &RtxOptions::disableBackfacecullingTexturesObject()}
   };
 
   RemixGui::ComboWithKey<RenderPassGBufferRaytraceMode> renderPassGBufferRaytraceModeCombo {
@@ -2759,6 +2760,7 @@ namespace dxvk {
     if (IMGUI_ADD_TOOLTIP(ImGui::BeginTabItem("Step 1: Categorize Textures", nullptr, tab_item_flags), "Select texture definitions for Remix")) {
       spacing();
       RemixGui::Checkbox("Preserve discarded textures", &RtxOptions::keepTexturesForTaggingObject());
+      RemixGui::Checkbox("Always recalculate hashes", &RtxOptions::alwaysRecalculateTextureHashesObject());
       separator();
 
       // set thumbnail size
