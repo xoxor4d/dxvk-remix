@@ -126,6 +126,7 @@ template<> constexpr auto ToRemixApiStructEnum< remixapi_MeshInfo               
 template<> constexpr auto ToRemixApiStructEnum< remixapi_InstanceInfo                   > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO;
 template<> constexpr auto ToRemixApiStructEnum< remixapi_InstanceInfoBoneTransformsEXT  > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT;
 template<> constexpr auto ToRemixApiStructEnum< remixapi_InstanceInfoBlendEXT           > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT;
+template<> constexpr auto ToRemixApiStructEnum< remixapi_InstanceInfoD3DOverridesEXT    > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_D3D_OVERRIDES_EXT;
 template<> constexpr auto ToRemixApiStructEnum< remixapi_InstanceInfoObjectPickingEXT   > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_OBJECT_PICKING_EXT;
 template<> constexpr auto ToRemixApiStructEnum< remixapi_InstanceInfoParticleSystemEXT  > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_PARTICLE_SYSTEM_EXT;
 template<> constexpr auto ToRemixApiStructEnum< remixapi_InstanceInfoGpuInstancingEXT   > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_GPU_INSTANCING_EXT;
@@ -151,6 +152,7 @@ using MeshInfo = bridge_util::Serializable<remixapi_MeshInfo,false>;
 using InstanceInfo = bridge_util::Serializable<remixapi_InstanceInfo,true>;
 using InstanceInfoObjectPicking = bridge_util::Serializable<remixapi_InstanceInfoObjectPickingEXT,true>;
 using InstanceInfoBlend = bridge_util::Serializable<remixapi_InstanceInfoBlendEXT,true>;
+using InstanceInfoD3DOverrides = bridge_util::Serializable<remixapi_InstanceInfoD3DOverridesEXT,true>;
 using InstanceInfoTransforms = bridge_util::Serializable<remixapi_InstanceInfoBoneTransformsEXT,false>;
 using InstanceInfoParticleSystem = bridge_util::Serializable<remixapi_InstanceInfoParticleSystemEXT, false>;
 using InstanceInfoGpuInstancing = bridge_util::Serializable<remixapi_InstanceInfoGpuInstancingEXT, false>;

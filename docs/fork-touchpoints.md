@@ -4364,6 +4364,22 @@ sampling error averages out under the upsample instead of shimmering.
 
 ---
 
+## Workstream - Per-draw D3D overrides for API instances (fork - 2026-10-11)
+
+API `0.1000.3`: `remixapi_InstanceInfoD3DOverridesEXT` carries the per-draw
+values the D3D9 path reads from unused render states (GTA4 compatibility) so
+API draws can replace D3D9 draws without losing wetness / emissive / categories.
+
+- **`public/include/remix/remix_c.h`** - inline. *`REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_D3D_OVERRIDES_EXT`, `remixapi_InstanceInfoD3DOverridesEXT`.*
+- **`public/include/remix/remix.h`** - inline. *`InstanceInfoD3DOverridesEXT` wrapper.*
+- **`src/dxvk/rtx_render/rtx_remix_specialization.inl`** - inline, 3 LOC. *Registers the struct (AllTypes / ToEnum / Root = `remixapi_InstanceInfo`).*
+- **`src/dxvk/rtx_render/rtx_remix_api.cpp`** - inline tweak at `RemixAPIPrivateAccessor::toRtDrawState` (after the `remixapi_InstanceInfoBlendEXT` block), 15 LOC. *Copies the extension into the `LegacyMaterialData::remix*FromD3D` fields that `d3d9_rtx_utils.cpp` fills for D3D9 draws; the GTA4 blocks in `rtx_scene_manager.cpp` and `rtx_types.h` then apply unchanged.*
+- **`src/dxvk/rtx_render/rtx_scene_manager.cpp`** - hook call sites in `SceneManager::submitExternalDraw`: `externalDrawMaterialReplacement` and `externalMaterialKey` take the draw's `LegacyMaterialData` so the hash seed / override applies to API draws.
+- **`src/dxvk/rtx_render/rtx_fork_hooks.h`, `rtx_fork_submit.cpp`, `rtx_fork_game_textures_keyed.cpp`** - fork-owned. *`applyD3DHashOverrides` (same rule as `LegacyMaterialData::updateCachedHash`) used for replacement lookups and the hash override of API draws; texture categories keep keying off the image hash like D3D9 draws.*
+- **`bridge/src/{client/remix_api.cpp, server/main.cpp, util/util_remixapi.{h,cpp}}`** - inline. *Serialization of the new `DrawInstance` extension.*
+
+---
+
 ## Workstream - Colormap-keyed API materials (fork - 2026-10-04, AutoPBR removed 2026-10-11)
 
 API `0.1000.3`: `remixapi_MaterialInfoGameTexturesEXT { sType, pNext, colorTexture }`.

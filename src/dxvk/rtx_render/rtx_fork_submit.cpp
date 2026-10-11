@@ -81,9 +81,9 @@ namespace fork_hooks {
     const MaterialData* material = replacer.accessExternalMaterial(handle);
     std::shared_ptr<MaterialData> replacementMaterialKeepAlive;
     if (material != nullptr) {
-      replacementMaterialKeepAlive = externalDrawMaterialReplacement(replacer, handle, material);
+      replacementMaterialKeepAlive = externalDrawMaterialReplacement(replacer, handle, material, drawCall.getMaterialData());
 
-      drawCall.modifyMaterialData().setHashOverride(externalMaterialKey(handle, *material));
+      drawCall.modifyMaterialData().setHashOverride(externalMaterialKey(handle, *material, drawCall.getMaterialData()));
 
       externalDrawTextureCategories(handle, material, drawCall, textureHash);
     }
@@ -117,10 +117,12 @@ namespace fork_hooks {
   // rtx_fork_game_textures.cpp).
   // ---------------------------------------------------------------------------
   std::shared_ptr<MaterialData> externalDrawMaterialReplacement(
-      AssetReplacer& replacer, remixapi_MaterialHandle handle, const MaterialData*& material) {
+      AssetReplacer& replacer, remixapi_MaterialHandle handle, const MaterialData*& material,
+      const LegacyMaterialData& drawMaterialData) {
     const XXH64_hash_t key = game_textures::findMaterialKey(handle);
     if (key != kEmptyHash) {
-      std::shared_ptr<MaterialData> keyed = game_textures::keyedDrawMaterial(handle, replacer.getReplacementMaterial(key));
+      std::shared_ptr<MaterialData> keyed = game_textures::keyedDrawMaterial(
+        handle, replacer.getReplacementMaterial(applyD3DHashOverrides(drawMaterialData, key)));
       if (keyed != nullptr) {
         material = keyed.get();
       }
@@ -131,7 +133,8 @@ namespace fork_hooks {
     // Upstream hands replacement materials out by shared_ptr so a hot reload
     // cannot free them under a live draw; return the owner to the caller so
     // `material` stays valid for the rest of the submesh iteration.
-    std::shared_ptr<MaterialData> pReplacementMaterial = replacer.getReplacementMaterial(material->getHash());
+    std::shared_ptr<MaterialData> pReplacementMaterial =
+      replacer.getReplacementMaterial(applyD3DHashOverrides(drawMaterialData, material->getHash()));
     if (pReplacementMaterial != nullptr) {
       material = pReplacementMaterial.get();
     }

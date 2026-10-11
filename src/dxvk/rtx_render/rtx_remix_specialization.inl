@@ -91,6 +91,7 @@ namespace pnext::detail {
     remixapi_InstanceInfo,
     remixapi_InstanceInfoBoneTransformsEXT,
     remixapi_InstanceInfoBlendEXT,
+    remixapi_InstanceInfoD3DOverridesEXT,
     remixapi_InstanceInfoObjectPickingEXT,
     remixapi_InstanceInfoParticleSystemEXT,
     remixapi_InstanceInfoParticleSystemLegacyEXT,
@@ -120,6 +121,7 @@ namespace pnext::detail {
   template<> constexpr auto ToEnum< remixapi_InstanceInfo                   > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO;
   template<> constexpr auto ToEnum< remixapi_InstanceInfoBoneTransformsEXT  > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT;
   template<> constexpr auto ToEnum< remixapi_InstanceInfoBlendEXT           > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT;
+  template<> constexpr auto ToEnum< remixapi_InstanceInfoD3DOverridesEXT    > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_D3D_OVERRIDES_EXT;
   template<> constexpr auto ToEnum< remixapi_InstanceInfoObjectPickingEXT   > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_OBJECT_PICKING_EXT;
   template<> constexpr auto ToEnum< remixapi_InstanceInfoParticleSystemLegacyEXT > = REMIXAPI_STRUCT_TYPE_DEPRECATED_LEGACY_PARTICLE_SYSTEM;
   template<> constexpr auto ToEnum< remixapi_InstanceInfoParticleSystemEXT  > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_PARTICLE_SYSTEM_EXT;
@@ -144,6 +146,7 @@ namespace pnext::detail {
   template<>           struct Root< remixapi_LightInfoUSDEXT                >{ using Type = remixapi_LightInfo;                 };
   template<>           struct Root< remixapi_InstanceInfoBoneTransformsEXT  >{ using Type = remixapi_InstanceInfo;              };
   template<>           struct Root< remixapi_InstanceInfoBlendEXT           >{ using Type = remixapi_InstanceInfo;              };
+  template<>           struct Root< remixapi_InstanceInfoD3DOverridesEXT    >{ using Type = remixapi_InstanceInfo;              };
   template<>           struct Root< remixapi_InstanceInfoObjectPickingEXT   >{ using Type = remixapi_InstanceInfo;              };
   template<>           struct Root< remixapi_InstanceInfoParticleSystemEXT  >{ using Type = remixapi_InstanceInfo;              };
   template<>           struct Root< remixapi_InstanceInfoParticleSystemLegacyEXT >{ using Type = remixapi_InstanceInfo;         };

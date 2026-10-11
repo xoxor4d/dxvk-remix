@@ -138,7 +138,8 @@ namespace dxvk {
     // their legacy-defaults material, matching the D3D9 draw path.
     // Implementation in rtx_fork_submit.cpp.
     std::shared_ptr<MaterialData> externalDrawMaterialReplacement(
-      AssetReplacer& replacer, remixapi_MaterialHandle handle, const MaterialData*& material);
+      AssetReplacer& replacer, remixapi_MaterialHandle handle, const MaterialData*& material,
+      const LegacyMaterialData& drawMaterialData);
 
     // Resolves the albedo texture hash from an API material (or its colormap key)
     // and auto-applies all texture-based instance categories (Sky, Ignore,
@@ -653,7 +654,13 @@ namespace dxvk {
     // Replacement / capture key of an API material: the colormap image hash for
     // materials using a game color texture as albedo, material.getHash() otherwise.
     // Render thread. Implementation in rtx_fork_game_textures_keyed.cpp.
-    XXH64_hash_t externalMaterialKey(remixapi_MaterialHandle handle, const MaterialData& material);
+    // The draw's hash seed / override (remixapi_InstanceInfoD3DOverridesEXT) is applied like on D3D9 draws.
+    XXH64_hash_t externalMaterialKey(remixapi_MaterialHandle handle, const MaterialData& material,
+                                     const LegacyMaterialData& drawMaterialData);
+
+    // Applies a draw's hash seed / override to a material hash, same as LegacyMaterialData::updateCachedHash.
+    // Implementation in rtx_fork_game_textures_keyed.cpp.
+    XXH64_hash_t applyD3DHashOverrides(const LegacyMaterialData& drawMaterialData, XXH64_hash_t hash);
 
   } // namespace fork_hooks
 

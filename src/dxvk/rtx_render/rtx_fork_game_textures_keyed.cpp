@@ -168,9 +168,20 @@ namespace fork_hooks {
     s_keyedMaterials.erase(handle);
   }
 
-  XXH64_hash_t externalMaterialKey(remixapi_MaterialHandle handle, const MaterialData& material) {
+  XXH64_hash_t externalMaterialKey(remixapi_MaterialHandle handle, const MaterialData& material,
+                                   const LegacyMaterialData& drawMaterialData) {
     const XXH64_hash_t key = game_textures::findMaterialKey(handle);
-    return key != kEmptyHash ? key : material.getHash();
+    return applyD3DHashOverrides(drawMaterialData, key != kEmptyHash ? key : material.getHash());
+  }
+
+  XXH64_hash_t applyD3DHashOverrides(const LegacyMaterialData& drawMaterialData, const XXH64_hash_t hash) {
+    if (drawMaterialData.remixHashModifierFromD3D) {
+      return XXH64(&hash, sizeof(hash), drawMaterialData.remixHashModifierFromD3D);
+    }
+    if (drawMaterialData.remixHashFromD3D) {
+      return drawMaterialData.remixHashFromD3D;
+    }
+    return hash;
   }
 
 } // namespace fork_hooks

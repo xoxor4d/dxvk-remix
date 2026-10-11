@@ -841,6 +841,22 @@ namespace remix {
     }
   };
 
+  struct InstanceInfoD3DOverridesEXT : remixapi_InstanceInfoD3DOverridesEXT {
+    InstanceInfoD3DOverridesEXT() {
+      sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_D3D_OVERRIDES_EXT;
+      pNext = nullptr;
+      categoryFlags = 0;
+      modifierFlags = 0;
+      hashOverride = 0;
+      hashSeed = 0;
+      emissiveScale = 0.0f;
+      packedWetness = 0;
+      for (float& v : multiUse) {
+        v = 0.0f;
+      }
+    }
+  };
+
   struct InstanceInfoObjectPickingEXT : remixapi_InstanceInfoObjectPickingEXT {
     InstanceInfoObjectPickingEXT() {
       sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_OBJECT_PICKING_EXT;

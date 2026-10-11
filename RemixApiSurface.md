@@ -96,6 +96,7 @@ the API, see [`docs/RemixApi.md`](docs/RemixApi.md).
 | `REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_GPU_INSTANCING_EXT` | `27` |  |
 | `REMIXAPI_STRUCT_TYPE_CAMERA_MEDIUM_INFO` | `28` |  |
 | `REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_GAME_TEXTURES_EXT` | `29` |  |
+| `REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_D3D_OVERRIDES_EXT` | `30` |  |
 
 ### `remixapi_ErrorCode`
 
@@ -467,6 +468,25 @@ Valid only if remixapi_MaterialInfo contains remixapi_MaterialInfoOpaqueEXT in p
 | `uint32_t` | `alphaBlendOp` |  |
 | `uint32_t` | `writeMask` |  |
 | `remixapi_Bool` | `isVertexColorBakedLighting` |  |
+
+### `remixapi_InstanceInfoD3DOverridesEXT`
+
+Per draw overrides that the D3D9 path reads from unused render states (GTA4 compatibility).
+Categories and modifier flags are applied like RS42 / RS149, the hash fields change the material
+hash used for replacement lookups, the remaining values feed the modifier flags. Absent fields
+behave like a D3D9 draw with those render states at 0.
+
+| Type | Field | Notes |
+| :-- | :-- | :-- |
+| `remixapi_StructType` | `sType` |  |
+| `void*` | `pNext` |  |
+| `uint32_t` | `categoryFlags` | RS42: runtime InstanceCategories bit order, OR'ed into the instance categories |
+| `uint32_t` | `modifierFlags` | RS149: REMIX_MODIFIER_FROM_D3D bits |
+| `uint64_t` | `hashOverride` | RS150: replaces the material hash when non-zero |
+| `uint32_t` | `hashSeed` | RS220: re-hashes the material hash when non-zero, takes precedence over hashOverride |
+| `float` | `emissiveScale` | RS169: emissive intensity multiplier (EMISSIVE_SCALAR modifier) |
+| `uint32_t` | `packedWetness` | RS210: two 16 bit wetness parameters (ROUGHNESS_SCALAR modifier) |
+| `float` | `multiUse[6]` | RS211-216: UV animation / translucent parameters |
 
 ### `remixapi_InstanceInfoObjectPickingEXT`
 

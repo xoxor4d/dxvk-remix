@@ -354,6 +354,13 @@ remixapi_ErrorCode REMIXAPI_CALL remixapi_DrawInstance(const remixapi_InstanceIn
           serializeAndSend<serialize::InstanceInfoBlend>(c, *pBlend);
           break;
         }
+        case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_D3D_OVERRIDES_EXT:
+        {
+          auto* pOverrides = static_cast<const remixapi_InstanceInfoD3DOverridesEXT* const>(infoItr);
+          send(c, Bool::True);
+          serializeAndSend<serialize::InstanceInfoD3DOverrides>(c, *pOverrides);
+          break;
+        }
         case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT:
         {
           auto* pXforms = static_cast<const remixapi_InstanceInfoBoneTransformsEXT* const>(infoItr);

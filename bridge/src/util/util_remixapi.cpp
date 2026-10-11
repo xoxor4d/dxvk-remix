@@ -673,6 +673,33 @@ void InstanceInfoBlend::_dtor() {
 }
 
 
+#define InstanceInfoD3DOverridesVars sType, \
+                                     categoryFlags, \
+                                     modifierFlags, \
+                                     hashOverride, \
+                                     hashSeed, \
+                                     emissiveScale, \
+                                     packedWetness, \
+                                     multiUse[0], \
+                                     multiUse[1], \
+                                     multiUse[2], \
+                                     multiUse[3], \
+                                     multiUse[4], \
+                                     multiUse[5]
+uint32_t InstanceInfoD3DOverrides::_calcSize() const {
+  return fold_helper::calcSize(InstanceInfoD3DOverridesVars);
+}
+void InstanceInfoD3DOverrides::_serialize(void*& pSerialize) const {
+  fold_helper::serialize(pSerialize, InstanceInfoD3DOverridesVars);
+}
+void InstanceInfoD3DOverrides::_deserialize(void*& pDeserialize) {
+  pNext = nullptr;
+  fold_helper::deserialize(pDeserialize, InstanceInfoD3DOverridesVars);
+}
+void InstanceInfoD3DOverrides::_dtor() {
+}
+
+
 #define InstanceInfoParticleSystemScalarVars sType, \
                                        maxNumParticles, \
                                        useTurbulence, \

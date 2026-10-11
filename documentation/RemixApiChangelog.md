@@ -5,7 +5,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1000.3]
 
-AutoPBR removed (2026-10-11).
+AutoPBR removed, per-draw D3D9 render-state overrides for API instances (2026-10-11).
+
+### Added
+- `remixapi_InstanceInfoD3DOverridesEXT` (`REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_D3D_OVERRIDES_EXT`),
+  chainable into `remixapi_InstanceInfo`. Carries the values the D3D9 path reads
+  from unused render states (RS42 categories, RS149 modifier flags, RS150 hash
+  override, RS220 hash seed, RS169 emissive scale, RS210 packed wetness,
+  RS211-216). The hash seed / override also applies to replacement lookups of
+  API draws, as it does for D3D9 draws.
 
 ### Removed
 - `remixapi_Interface.SetDrawGameTextures`, `remixapi_GameTexture`,

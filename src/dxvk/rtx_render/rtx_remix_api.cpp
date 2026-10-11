@@ -1043,6 +1043,23 @@ std::unique_ptr<dxvk::ExternalDrawState> dxvk::RemixAPIPrivateAccessor::toRtDraw
     prototype.materialData.blendMode.writeMask = (VkColorComponentFlags) extBlend->writeMask;
   }
 
+  // NV-DXVK start: per draw overrides, the same fields the D3D9 path reads from unused render states
+  if (auto extOverrides = pnext::find<remixapi_InstanceInfoD3DOverridesEXT>(&info)) {
+    prototype.materialData.remixTextureCategoryFlagsFromD3D = extOverrides->categoryFlags;
+    prototype.materialData.remixModifierFromD3D = extOverrides->modifierFlags;
+    prototype.materialData.remixHashFromD3D = extOverrides->hashOverride;
+    prototype.materialData.remixHashModifierFromD3D = extOverrides->hashSeed;
+    prototype.materialData.remixTempFloat01FromD3D = extOverrides->emissiveScale;
+    prototype.materialData.remixPackedFloat4_RS210FromD3D = extOverrides->packedWetness;
+    prototype.materialData.remixFloatRS211FromD3D = extOverrides->multiUse[0];
+    prototype.materialData.remixFloatRS212FromD3D = extOverrides->multiUse[1];
+    prototype.materialData.remixFloatRS213FromD3D = extOverrides->multiUse[2];
+    prototype.materialData.remixFloatRS214FromD3D = extOverrides->multiUse[3];
+    prototype.materialData.remixFloatRS215FromD3D = extOverrides->multiUse[4];
+    prototype.materialData.remixFloatRS216FromD3D = extOverrides->multiUse[5];
+  }
+  // NV-DXVK end
+
   if (auto extParticles = pnext::find<remixapi_InstanceInfoParticleSystemEXT>(&info)) {
     state->optionalParticleDesc.emplace(convert::toRtParticleDesc(*extParticles));
   }

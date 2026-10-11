@@ -3031,6 +3031,7 @@ void ProcessDeviceCommandQueue() {
         struct InstanceExtensions {
           serialize::InstanceInfoObjectPicking objectPicking;
           serialize::InstanceInfoBlend blend;
+          serialize::InstanceInfoD3DOverrides d3dOverrides;
           serialize::InstanceInfoTransforms boneXforms;
           serialize::InstanceInfoParticleSystem particleSystem;
         } exts;
@@ -3069,6 +3070,14 @@ void ProcessDeviceCommandQueue() {
               deserializeFromQueue(exts.blend);
               pInfoProto->pNext = &(exts.blend);
               pInfoProto = &getInfoProto(exts.blend);
+              break;
+            }
+            case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_D3D_OVERRIDES_EXT:
+            {
+              assert(!exts.d3dOverrides.pNext);
+              deserializeFromQueue(exts.d3dOverrides);
+              pInfoProto->pNext = &(exts.d3dOverrides);
+              pInfoProto = &getInfoProto(exts.d3dOverrides);
               break;
             }
             case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT:

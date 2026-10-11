@@ -2757,9 +2757,9 @@ namespace dxvk {
       // Keeps a USD replacement material alive for the rest of this iteration when one is found.
       std::shared_ptr<MaterialData> replacementMaterialKeepAlive;
       if (material != nullptr) {
-        replacementMaterialKeepAlive = fork_hooks::externalDrawMaterialReplacement(*m_pReplacer, submeshes[i].externalMaterial, material);
+        replacementMaterialKeepAlive = fork_hooks::externalDrawMaterialReplacement(*m_pReplacer, submeshes[i].externalMaterial, material, state.drawCall.getMaterialData());
 
-        state.drawCall.modifyMaterialData().setHashOverride(fork_hooks::externalMaterialKey(submeshes[i].externalMaterial, *material));
+        state.drawCall.modifyMaterialData().setHashOverride(fork_hooks::externalMaterialKey(submeshes[i].externalMaterial, *material, state.drawCall.getMaterialData()));
 
         fork_hooks::externalDrawTextureCategories(submeshes[i].externalMaterial, material, state.drawCall, textureHash);
       }
