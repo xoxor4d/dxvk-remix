@@ -187,6 +187,7 @@ static void resolveGameTextures(serialize::MaterialInfoGameTextures& info) {
     }
   }
 }
+}
 
 static inline void safeDestroy(IUnknown* obj, uint32_t x86handle) {
   // Note: in DXVK the refcounts of non-standalone objects may go negative!
