@@ -1002,13 +1002,18 @@ namespace dxvk {
     // Setters are safe to call from any thread. External APIs adapt into these
     // typed methods at their boundary; the subsystem itself has no untyped KV dependency.
     void setTargetPreset(const std::string& name);
+    // Blend-from preset to resync to; consumed by the next update().
+    void setPreviousTargetPreset(const std::string& name);
     void setBlendSeconds(float seconds);
+    // Blend parameter driven by the game instead of the timed blend; negative switches back to timed mode.
+    void setBlendAbsolute(float t);
     void setDriftSpeed(float speed);
     void setDriftIntensity(float intensity);
 
     // Getters — safe to call from any thread.
     std::string getTargetPreset()   const { std::lock_guard<std::mutex> lock{ m_ioMutex }; return m_inputTarget; }
     float       getBlendSeconds()   const { std::lock_guard<std::mutex> lock{ m_ioMutex }; return m_inputBlendSeconds; }
+    float       getBlendAbsolute()  const { std::lock_guard<std::mutex> lock{ m_ioMutex }; return m_inputBlendAbsolute; }
     float       getDriftSpeed()     const { std::lock_guard<std::mutex> lock{ m_ioMutex }; return m_inputDriftSpeed; }
     float       getDriftIntensity() const { std::lock_guard<std::mutex> lock{ m_ioMutex }; return m_inputDriftIntensity; }
     std::string getCurrentPreset()  const { std::lock_guard<std::mutex> lock{ m_ioMutex }; return m_outputCurrent; }
@@ -1057,7 +1062,9 @@ namespace dxvk {
 
     mutable std::mutex m_ioMutex;
     std::string        m_inputTarget;
+    std::string        m_inputPreviousTarget;
     float              m_inputBlendSeconds   = 1.0f;
+    float              m_inputBlendAbsolute  = -1.0f;
     float              m_inputDriftSpeed     = 1.0f;
     float              m_inputDriftIntensity = 1.0f;
 
