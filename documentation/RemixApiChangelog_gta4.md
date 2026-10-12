@@ -25,6 +25,9 @@ Per-draw D3D9 render-state overrides for API instances (2026-10-11).
   blend indices with a wrong size (vertex count x element count x bones per vertex);
   both arrays are now sent with `blendWeights_count` / `blendIndices_count` elements
   (2026-10-12).
+- Bridge: `SetupCamera` is forwarded to the runtime (the client slot was empty, so
+  32-bit clients could not supply a camera). Matrices and
+  `remixapi_CameraInfoParameterizedEXT` are both supported (2026-10-12).
 
 ## [0.1000.2]
 

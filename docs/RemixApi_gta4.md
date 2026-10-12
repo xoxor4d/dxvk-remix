@@ -43,3 +43,9 @@ Hub section "Instances (per-frame draw)", extension table: a new row before
 | :-- | :-- |
 | `remixapi_InstanceInfoD3DOverridesEXT` | The per-draw values the D3D9 path reads from unused render states: texture categories (runtime bit order), modifier flags, hash seed / override (changes the hash used for replacement lookups), emissive scale, packed wetness and the RS211-216 values. Lets an API draw look exactly like the D3D9 draw it replaces. |
 | `remixapi_InstanceInfoObjectPickingEXT` | Tags the instance with a 32-bit ID readable via the picking API. Use non-zero values below `0x80000000`; without it, the runtime assigns per-submesh values from `0x80000000` up while picking is active (dev-menu texture selection). |
+
+## `SetupCamera`: bridge
+
+Hub section "`SetupCamera`", after "...to specify position/forward/up/right + FOV + aspect + planes.":
+
+The bridge forwards both forms (32-bit clients included).
