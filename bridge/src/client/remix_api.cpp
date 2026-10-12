@@ -500,6 +500,40 @@ remixapi_ErrorCode REMIXAPI_CALL remixapi_DrawLightInstance(remixapi_LightHandle
   return REMIXAPI_ERROR_CODE_SUCCESS;
 }
 
+remixapi_ErrorCode REMIXAPI_CALL remixapi_SetupCamera(const remixapi_CameraInfo* info) {
+  ASSERT_REMIXAPI_PFN_TYPE(remixapi_SetupCamera);
+  if (!info || info->sType != REMIXAPI_STRUCT_TYPE_CAMERA_INFO) {
+    return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+  }
+
+  const remixapi_CameraInfoParameterizedEXT* params = nullptr;
+  for (const void* itr = info->pNext; itr; itr = getPNext(itr)) {
+    if (getSType(itr) == REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT) {
+      params = static_cast<const remixapi_CameraInfoParameterizedEXT*>(itr);
+      break;
+    }
+  }
+
+  {
+    ClientMessage c(Commands::RemixApi_SetupCamera);
+    send(c, info->type);
+    send(c, info->view);
+    send(c, info->projection);
+    send(c, params ? Bool::True : Bool::False);
+    if (params) {
+      send(c, params->position);
+      send(c, params->forward);
+      send(c, params->up);
+      send(c, params->right);
+      send(c, params->fovYInDegrees);
+      send(c, params->aspect);
+      send(c, params->nearPlane);
+      send(c, params->farPlane);
+    }
+  }
+  return REMIXAPI_ERROR_CODE_SUCCESS;
+}
+
 remixapi_ErrorCode REMIXAPI_CALL remixapi_SetConfigVariable(const char* var, const char* value) {
   ASSERT_REMIXAPI_PFN_TYPE(remixapi_SetConfigVariable);
   if (!var || !value) {
@@ -573,7 +607,7 @@ extern "C" {
       interf.DestroyTexture = remixapi_DestroyTexture;
       interf.CreateMesh = remixapi_CreateMesh;
       interf.DestroyMesh = remixapi_DestroyMesh;
-      // interf.SetupCamera = remixapi_SetupCamera;
+      interf.SetupCamera = remixapi_SetupCamera;
       interf.DrawInstance = remixapi_DrawInstance;
       interf.CreateLight = remixapi_CreateLight;
       interf.DestroyLight = remixapi_DestroyLight;

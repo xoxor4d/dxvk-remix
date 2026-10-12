@@ -4468,3 +4468,17 @@ count, as `remix_c.h` documents.
 - **`src/dxvk/meson.build`** - fork-owned change. *Adds `rtx_fork_vertex_capture.cpp`.*
 - **`src/d3d9/d3d9_rtx.cpp`** - fork-touchpoint hook. *`allocVertexCaptureBuffer` dispatches into the hook.*
 - **`bridge/src/util/util_remixapi.cpp`** - inline. *Blend weight / index sizes of skinned mesh surfaces (size calculation, serialize, deserialize).*
+
+---
+
+## Workstream - SetupCamera through the bridge (fork - 2026-10-12)
+
+The bridge client left `remixapi_Interface.SetupCamera` empty, so a 32-bit
+client whose frame is drawn entirely through `DrawInstance` never gave the
+runtime a camera (the D3D9 path only reads it while committing a ray traced
+draw). The camera info is sent field by field, the optional
+`remixapi_CameraInfoParameterizedEXT` included.
+
+- **`bridge/src/util/util_commands.h`** - inline. *`RemixApi_SetupCamera` command and its name.*
+- **`bridge/src/client/remix_api.cpp`** - inline. *`remixapi_SetupCamera` stub, interface slot assigned.*
+- **`bridge/src/server/main.cpp`** - inline. *`RemixApi_SetupCamera` handler calling `g_remix.SetupCamera`.*

@@ -21,6 +21,9 @@ AutoPBR removed, per-draw D3D9 render-state overrides for API instances (2026-10
   `__autopbr.*` game values, `associations.json` / usda output).
 
 ### Fixed
+- Bridge: `SetupCamera` is forwarded to the runtime (the client slot was empty, so
+  32-bit clients could not supply a camera). Matrices and
+  `remixapi_CameraInfoParameterizedEXT` are both supported (2026-10-12).
 - Bridge: skinned `remixapi_MeshInfoSurfaceTriangles` sent their blend weights and
   blend indices with a wrong size (vertex count x element count x bones per vertex);
   both arrays are now sent with `blendWeights_count` / `blendIndices_count` elements

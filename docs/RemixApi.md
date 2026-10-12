@@ -170,6 +170,7 @@ view/projection matrices and a `remixapi_CameraType` (`WORLD`, `SKY`,
 `VIEW_MODEL`). For applications that don't have a matrix-form camera
 ready, attach `remixapi_CameraInfoParameterizedEXT` via the `pNext`
 chain to specify position/forward/up/right + FOV + aspect + planes.
+The bridge forwards both forms (32-bit clients included).
 
 ### `SetCameraMediumMaterial`
 

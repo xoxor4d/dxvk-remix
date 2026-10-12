@@ -3253,6 +3253,41 @@ void ProcessDeviceCommandQueue() {
         break;
       }
 
+      case RemixApi_SetupCamera:
+      {
+        const auto pullBlob = [](void* dst, const size_t dstSize) {
+          void* ptr = nullptr;
+          const uint32_t size = DeviceBridge::getReaderChannel().data->pull(&ptr);
+          memcpy(dst, ptr, std::min<size_t>(size, dstSize));
+        };
+
+        remixapi_CameraInfo info = {};
+        info.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO;
+        pullBlob(&info.type, sizeof(info.type));
+        pullBlob(info.view, sizeof(info.view));
+        pullBlob(info.projection, sizeof(info.projection));
+
+        remixapi_CameraInfoParameterizedEXT params = {};
+        if (remixapi::pullBool()) {
+          params.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT;
+          for (auto* vec : { &params.position, &params.forward, &params.up, &params.right }) {
+            pullBlob(&vec->x, sizeof(float));
+            pullBlob(&vec->y, sizeof(float));
+            pullBlob(&vec->z, sizeof(float));
+          }
+          pullBlob(&params.fovYInDegrees, sizeof(float));
+          pullBlob(&params.aspect, sizeof(float));
+          pullBlob(&params.nearPlane, sizeof(float));
+          pullBlob(&params.farPlane, sizeof(float));
+          info.pNext = &params;
+        }
+
+        if (remixapi::g_remix.SetupCamera(&info) != REMIXAPI_ERROR_CODE_SUCCESS) {
+          Logger::err("[RemixApi_SetupCamera] Remix API call failed!");
+        }
+        break;
+      }
+
       case RemixApi_CreateD3D9:
       {
         Logger::err("[RemixApi_CreateD3D9] Not yet supported. Device used by Remix API defaults to "
