@@ -2975,7 +2975,10 @@ void RtxAtmosphere::dispatchCloudNvdfOccupancy(Rc<DxvkContext> ctx) {
 void RtxAtmosphere::dispatchCloudNvdfJfaPass(Rc<DxvkContext> ctx, uint32_t mode,
                                              uint32_t jumpSizeVoxels,
                                              uint32_t srcIdx, uint32_t dstIdx) {
-  ScopedGpuProfileZone(ctx, mode == 0u ? "Atmosphere Cloud NVDF JFA Seed" : "Atmosphere Cloud NVDF JFA Jump");
+  // Tracy zone names must be literals, the debugger annotation keeps the pass name
+  ScopedCpuProfileZoneN("Atmosphere Cloud NVDF JFA");
+  TracyVkZone(ctx->getDevice()->queues().graphics.tracyCtx, ctx->getCmdBuffer(DxvkCmdBuffer::ExecBuffer), "Atmosphere Cloud NVDF JFA");
+  __ScopedAnnotation __scopedAnnotation(ctx, mode == 0u ? "Atmosphere Cloud NVDF JFA Seed" : "Atmosphere Cloud NVDF JFA Jump");
 
   const AtmosphereArgs& args = m_nvdfPendingArgs;
   ctx->updateBuffer(m_constantsBuffer, 0, sizeof(AtmosphereArgs), &args);
