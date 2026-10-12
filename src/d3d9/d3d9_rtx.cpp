@@ -235,6 +235,10 @@ namespace dxvk {
 
       // Invalidate rest of the members
       // customWorldToProjection is not invalidated as its use is controlled by D3D9SpecConstantId::CustomVertexTransformEnabled being enabled
+      // NV-DXVK start: pooled capture slices share a buffer; a rebind with the same buffer and length only refreshes dynamic
+      // offsets, the storage descriptor would keep the previous draw's offset
+      ctx->bindResourceBuffer(getVertexCaptureBufferSlot(), DxvkBufferSlice());
+      // NV-DXVK end
       ctx->bindResourceBuffer(getVertexCaptureBufferSlot(), cVertexDataSlice);
     });
   }

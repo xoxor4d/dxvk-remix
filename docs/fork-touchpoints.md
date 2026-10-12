@@ -164,6 +164,8 @@ check will enforce it if discipline slips.
 - **Inline tweak** at `D3D9Rtx::EndFrame` (~line 1216) — 5-line addition for [RTX-Diag] entry log on EndFrame.
   *Logs targetImage pointer and callInjectRtx flag at the top of EndFrame, plus a second log after the CS lambda is emitted, to trace the frame-end dispatch chain.*
 - **Hook** in `allocVertexCaptureBuffer` — returns `fork_hooks::allocVertexCaptureSlice` (rtx_fork_vertex_capture.cpp) instead of creating one buffer per captured draw.
+- **Inline tweak** in `D3D9Rtx::prepareVertexCapture` (CS lambda binding the capture slice) — 1 line: unbind the capture slot before binding the new slice.
+  *`DxvkContext::bindResourceBuffer` treats a rebind with the same buffer and length as a dynamic offset change; the capture slot is a plain storage buffer whose offset lives in the descriptor, so consecutive equal-sized draws on one pooled page wrote into the previous draw's slice (stale vertices: explosions, geometry at the origin).*
 
 ---
 
