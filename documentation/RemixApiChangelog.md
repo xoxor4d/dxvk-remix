@@ -20,6 +20,12 @@ AutoPBR removed, per-draw D3D9 render-state overrides for API instances (2026-10
   `remixapi_GameTextureUsage` and the AutoPBR texture dumping (`rtx.autopbr.*`,
   `__autopbr.*` game values, `associations.json` / usda output).
 
+### Fixed
+- Bridge: skinned `remixapi_MeshInfoSurfaceTriangles` sent their blend weights and
+  blend indices with a wrong size (vertex count x element count x bones per vertex);
+  both arrays are now sent with `blendWeights_count` / `blendIndices_count` elements
+  (2026-10-12).
+
 ### Changed
 - `remixapi_MaterialInfoGameTexturesEXT` is now `{ sType, pNext, colorTexture }`:
   the game's D3D9 colormap used as albedo and replacement key of an opaque

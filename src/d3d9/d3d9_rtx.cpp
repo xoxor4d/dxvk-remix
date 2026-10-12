@@ -153,12 +153,9 @@ namespace dxvk {
   }
 
   DxvkBufferSlice allocVertexCaptureBuffer(DxvkDevice* pDevice, const VkDeviceSize size) {
-    DxvkBufferCreateInfo info;
-    info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-    info.access = VK_ACCESS_TRANSFER_READ_BIT;
-    info.stages = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
-    info.size = size;
-    return DxvkBufferSlice(pDevice->createBuffer(info, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, DxvkMemoryStats::Category::AppBuffer, "Vertex Capture Buffer"));
+    // NV-DXVK start: pooled vertex capture buffers
+    return fork_hooks::allocVertexCaptureSlice(pDevice, size);
+    // NV-DXVK end
   }
 
   void D3D9Rtx::prepareVertexCapture(const int vertexIndexOffset) {

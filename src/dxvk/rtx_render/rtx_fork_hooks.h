@@ -395,6 +395,12 @@ namespace dxvk {
     // Fires the beginScene callback on the first submission of the frame
     // (whichever API call establishes s_inFrame first). Atomically exchanges
     // s_inFrame to true; calls s_beginCallback once per frame when it was false.
+    // Called from D3D9Rtx::prepareVertexCapture (d3d9_rtx.cpp). Returns a
+    // device-local slice for the shaded vertices of one draw, sub-allocated
+    // from pages that are reused once their frame finished on the CS thread
+    // and the GPU. Implemented in rtx_fork_vertex_capture.cpp.
+    DxvkBufferSlice allocVertexCaptureSlice(DxvkDevice* device, VkDeviceSize size);
+
     // Called from remixapi_DrawInstance and remixapi_DrawLightInstance.
     // No private-member access; no friend declaration needed.
     // Implementation in rtx_fork_api_entry.cpp.

@@ -163,6 +163,7 @@ check will enforce it if discipline slips.
 
 - **Inline tweak** at `D3D9Rtx::EndFrame` (~line 1216) — 5-line addition for [RTX-Diag] entry log on EndFrame.
   *Logs targetImage pointer and callInjectRtx flag at the top of EndFrame, plus a second log after the CS lambda is emitted, to trace the frame-end dispatch chain.*
+- **Hook** in `allocVertexCaptureBuffer` — returns `fork_hooks::allocVertexCaptureSlice` (rtx_fork_vertex_capture.cpp) instead of creating one buffer per captured draw.
 
 ---
 
@@ -4444,3 +4445,26 @@ descriptors point at freed BLAS memory.
 - **`src/dxvk/rtx_render/rtx_fork_hooks.h`** - fork-owned change. *Declares the three hooks.*
 - **`src/dxvk/rtx_render/rtx_accel_manager.cpp`** - fork-touchpoint hooks. *`rtx_fork_hooks.h` include; `onOpaqueTlasBuilt` after `internalBuildTlas<Tlas::Opaque>` in `buildTlas`; `onAccelStructuresCleared` at the end of `AccelManager::clear`.*
 - **`src/dxvk/rtx_render/rtx_particle_system.cpp`** - fork-touchpoint inline tweak. *`setupConstants`'s `sceneTlasValid` and the `s_spawnTraceTlasValid` diagnostic also require `isPreviousOpaqueTlasTraceable`.*
+
+---
+
+## Workstream - Pooled vertex capture buffers, skinned API mesh serialization (fork - 2026-10-12)
+
+Vertex capture created a device-local Vulkan buffer for every captured draw.
+The captured vertices are only read in the frame they were captured, when
+`SceneManager::processGeometryInfo` copies them into the BLAS owned geometry
+buffers, so they are now sub-allocated from 4 MB pages that are reused once
+their frame went through the CS thread and the GPU (frame id 8 presents older
+and no longer in use). Pages unused for 600 presents are released.
+
+The bridge sized the blend weight and blend index arrays of a skinned
+`remixapi_MeshInfoSurfaceTriangles` as vertex count x total element count x
+bones per vertex, so any skinned API mesh over-read the client buffer and
+over-allocated the IPC data. Both arrays are now sized by their total element
+count, as `remix_c.h` documents.
+
+- **`src/dxvk/rtx_render/rtx_fork_vertex_capture.cpp`** - fork-owned file. *`fork_hooks::allocVertexCaptureSlice`: page pool for vertex capture slices.*
+- **`src/dxvk/rtx_render/rtx_fork_hooks.h`** - fork-owned change. *Declares `allocVertexCaptureSlice`.*
+- **`src/dxvk/meson.build`** - fork-owned change. *Adds `rtx_fork_vertex_capture.cpp`.*
+- **`src/d3d9/d3d9_rtx.cpp`** - fork-touchpoint hook. *`allocVertexCaptureBuffer` dispatches into the hook.*
+- **`bridge/src/util/util_remixapi.cpp`** - inline. *Blend weight / index sizes of skinned mesh surfaces (size calculation, serialize, deserialize).*
