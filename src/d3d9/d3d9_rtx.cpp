@@ -225,9 +225,13 @@ namespace dxvk {
     data.viewToWorld = inverseAffine(m_activeDrawCallState.transformData.worldToView);
     data.worldToObject = inverseAffine(m_activeDrawCallState.transformData.objectToWorld);
     data.normalTransform = m_activeDrawCallState.transformData.objectToWorld;
-    data.baseVertex = (uint32_t)std::max(0, vertexIndexOffset);
+    // NV-DXVK start: pooled vertex capture buffers
+    uint32_t captureFirstVertex = 0;
+    const DxvkBufferSlice captureWriteRange = fork_hooks::vertexCaptureWriteRange(slice, stride, captureFirstVertex);
+    data.baseVertex = (uint32_t)std::max(0, vertexIndexOffset) - captureFirstVertex;
+    // NV-DXVK end
 
-    m_parent->EmitCs([cVertexDataSlice = slice,
+    m_parent->EmitCs([cVertexDataSlice = captureWriteRange,
                       cConstantBuffer = m_vsVertexCaptureData,
                       cConstants = constants](DxvkContext* ctx) {
       // Bind the new constants to buffer
@@ -235,10 +239,6 @@ namespace dxvk {
 
       // Invalidate rest of the members
       // customWorldToProjection is not invalidated as its use is controlled by D3D9SpecConstantId::CustomVertexTransformEnabled being enabled
-      // NV-DXVK start: pooled capture slices share a buffer; a rebind with the same buffer and length only refreshes dynamic
-      // offsets, the storage descriptor would keep the previous draw's offset
-      ctx->bindResourceBuffer(getVertexCaptureBufferSlot(), DxvkBufferSlice());
-      // NV-DXVK end
       ctx->bindResourceBuffer(getVertexCaptureBufferSlot(), cVertexDataSlice);
     });
   }

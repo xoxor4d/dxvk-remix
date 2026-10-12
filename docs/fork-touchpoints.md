@@ -164,8 +164,8 @@ check will enforce it if discipline slips.
 - **Inline tweak** at `D3D9Rtx::EndFrame` (~line 1216) — 5-line addition for [RTX-Diag] entry log on EndFrame.
   *Logs targetImage pointer and callInjectRtx flag at the top of EndFrame, plus a second log after the CS lambda is emitted, to trace the frame-end dispatch chain.*
 - **Hook** in `allocVertexCaptureBuffer` — returns `fork_hooks::allocVertexCaptureSlice` (rtx_fork_vertex_capture.cpp) instead of creating one buffer per captured draw.
-- **Inline tweak** in `D3D9Rtx::prepareVertexCapture` (CS lambda binding the capture slice) — 1 line: unbind the capture slot before binding the new slice.
-  *`DxvkContext::bindResourceBuffer` treats a rebind with the same buffer and length as a dynamic offset change; the capture slot is a plain storage buffer whose offset lives in the descriptor, so consecutive equal-sized draws on one pooled page wrote into the previous draw's slice (stale vertices: explosions, geometry at the origin).*
+- **Hook** in `D3D9Rtx::prepareVertexCapture` — `fork_hooks::vertexCaptureWriteRange` (rtx_fork_vertex_capture.cpp): the capture shader writes through the whole pooled page, `baseVertex` is lowered by the slice's first vertex.
+  *`DxvkContext::bindResourceBuffer` treats a rebind with the same buffer and length as a dynamic offset change; the capture slot is a plain storage buffer whose offset lives in the descriptor, so binding slices made consecutive equal-sized draws write into the previous draw's slice (explosions, geometry at the origin). Binding the page keeps one valid descriptor for all draws on it.*
 
 ---
 

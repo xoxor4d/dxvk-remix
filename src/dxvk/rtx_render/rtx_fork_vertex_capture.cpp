@@ -18,6 +18,7 @@
 #include "../dxvk_device.h"
 
 #include <mutex>
+#include <numeric>
 #include <vector>
 
 namespace dxvk {
@@ -31,6 +32,8 @@ namespace dxvk {
     };
 
     constexpr VkDeviceSize kPageSize = 4ull << 20;
+    // sizeof(CapturedVertex) (d3d9_state.h): slices start on a vertex so the shader can address them from the page start
+    constexpr VkDeviceSize kCapturedVertexSize = 48;
     // getCurrentFrameId() counts presents on the CS thread, the D3D9 thread
     // that allocates runs ahead of it by up to the frame latency
     constexpr uint32_t kReuseFrameDelay = 8;
@@ -83,7 +86,7 @@ namespace dxvk {
       std::lock_guard lock(s_mutex);
 
       const uint32_t frameId = device->getCurrentFrameId();
-      const VkDeviceSize alignment = std::max<VkDeviceSize>(256, device->properties().core.properties.limits.minStorageBufferOffsetAlignment);
+      const VkDeviceSize alignment = std::lcm(std::max<VkDeviceSize>(256, device->properties().core.properties.limits.minStorageBufferOffsetAlignment), kCapturedVertexSize);
       size = align(size, alignment);
 
       const auto fits = [size](const Page& page) { return page.buffer->info().size - page.used >= size; };
@@ -110,6 +113,15 @@ namespace dxvk {
       page.used += size;
       page.frameId = frameId;
       return DxvkBufferSlice(page.buffer, offset, size);
+    }
+
+    DxvkBufferSlice vertexCaptureWriteRange(const DxvkBufferSlice& slice, const VkDeviceSize stride, uint32_t& outFirstVertex) {
+      outFirstVertex = 0;
+      if (stride == 0 || slice.offset() % stride != 0) {
+        return slice;
+      }
+      outFirstVertex = static_cast<uint32_t>(slice.offset() / stride);
+      return DxvkBufferSlice(slice.buffer());
     }
 
     void showVertexCaptureOptions() {
