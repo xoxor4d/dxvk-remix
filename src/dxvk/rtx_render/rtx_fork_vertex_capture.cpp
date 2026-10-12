@@ -12,6 +12,7 @@
 // See docs/fork-touchpoints.md for the full fork-hooks catalogue.
 
 #include "rtx_fork_hooks.h"
+#include "rtx_options.h"
 
 #include "../dxvk_device.h"
 
@@ -21,6 +22,12 @@
 namespace dxvk {
 
   namespace {
+
+    struct VertexCaptureOptions {
+      RTX_OPTION("rtx", bool, poolVertexCaptureBuffers, true,
+                 "Hands out the vertex capture buffers of shader draws as slices of shared 4 MB pages, reused once their frame "
+                 "went through the CS thread and the GPU. Off creates a buffer per captured draw (upstream behavior).");
+    };
 
     constexpr VkDeviceSize kPageSize = 4ull << 20;
     // getCurrentFrameId() counts presents on the CS thread, the D3D9 thread
@@ -68,6 +75,10 @@ namespace dxvk {
   namespace fork_hooks {
 
     DxvkBufferSlice allocVertexCaptureSlice(DxvkDevice* device, VkDeviceSize size) {
+      if (!VertexCaptureOptions::poolVertexCaptureBuffers()) {
+        return DxvkBufferSlice(createPage(device, size));
+      }
+
       std::lock_guard lock(s_mutex);
 
       const uint32_t frameId = device->getCurrentFrameId();
