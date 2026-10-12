@@ -145,3 +145,15 @@ draw). The camera info is sent field by field, the optional
 - **`bridge/src/util/util_commands.h`** - inline. *`RemixApi_SetupCamera` command and its name.*
 - **`bridge/src/client/remix_api.cpp`** - inline. *`remixapi_SetupCamera` stub, interface slot assigned.*
 - **`bridge/src/server/main.cpp`** - inline. *`RemixApi_SetupCamera` handler calling `g_remix.SetupCamera`.*
+---
+
+## Workstream - Captures with skinned API meshes (fork - 2026-10-12)
+
+Capturing a scene with skinned `DrawInstance` meshes crashed in
+`GameCapturer::captureMeshBlending`: the mesh took `bonesPerVertex` from the
+instance skinning state, which API instances fill before their mesh geometry
+is attached (always 0), and the weight loop ran to `bonesPerVertex - 1` as
+`size_t`. The count now comes from the geometry the blend buffers belong to;
+D3D9 fixed function skinning copies the same value into both.
+
+- **`src/dxvk/rtx_render/rtx_game_capturer.cpp`** - inline. *`captureMesh` reads `bonesPerVertex` from the raster geometry.*

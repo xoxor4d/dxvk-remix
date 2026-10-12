@@ -614,7 +614,9 @@ namespace dxvk {
       pMesh->lssData.numIndices = numIndices;
       pMesh->lssData.isDoubleSided = isDoubleSided;
       pMesh->lssData.numBones = skinData.numBones;
-      pMesh->lssData.bonesPerVertex = skinData.numBonesPerVertex;
+      // NV-DXVK start: the blend buffers belong to the geometry; API instances carry no per vertex count in their skinning state
+      pMesh->lssData.bonesPerVertex = rasterGeomData.numBonesPerVertex;
+      // NV-DXVK end
       pMesh->lssData.isLhs = isLhs;
       Logger::debug("[GameCapturer][" + m_pCap->idStr + "][Mesh:" + pMesh->lssData.meshName + "] New");
     }
