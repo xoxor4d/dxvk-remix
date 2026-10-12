@@ -494,7 +494,7 @@ namespace dxvk {
         }
         // If new OMMs were built this frame, force a full scene rebuild next frame
         // so tryBindOpacityMicromap runs on all instances and the BLASes pick up the new OMMs.
-        if (opacityMicromapManager && opacityMicromapManager->hasNewlyBuiltOmms()) {
+        if (opacityMicromapManager && fork_hooks::ommRebindDue(opacityMicromapManager->hasNewlyBuiltOmms(), currentFrame)) {
           m_ommBindPending = true;
           instanceManager.notifySceneChanged();
         }
@@ -1048,10 +1048,12 @@ namespace dxvk {
 
     // If new OMMs were built this frame, force a full scene rebuild next frame
     // so tryBindOpacityMicromap runs on all instances and the BLASes pick up the new OMMs.
-    if (opacityMicromapManager && opacityMicromapManager->hasNewlyBuiltOmms()) {
+    // NV-DXVK start: at most every rtx.opacityMicromap.rebindFrameInterval frames (the rebuild re-sorts every bucket)
+    if (opacityMicromapManager && fork_hooks::ommRebindDue(opacityMicromapManager->hasNewlyBuiltOmms(), currentFrame)) {
       m_ommBindPending = true;
       instanceManager.notifySceneChanged();
     }
+    // NV-DXVK end
 
     // Save baseline counts (before billboards are appended in prepareSceneData).
     // The full-skip cache path and prepareSceneData both use these to avoid

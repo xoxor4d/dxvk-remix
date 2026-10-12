@@ -145,6 +145,10 @@ namespace fork_hooks {
     }
 
     DxvkDevice* device = ctx->getDevice().ptr();
+    // externalDrawObjectPicking hands out the per draw picking ids on the dynamic path
+    if (device->getCommon()->getResources().getRaytracingOutput().m_primaryObjectPicking.isValid()) {
+      return false;
+    }
     const uint32_t frame = device->getCurrentFrameId();
     const bool seenThisFrame = ri.frameLastSeen == frame;
     const RasterGeometry& submesh = (*submeshes)[0];

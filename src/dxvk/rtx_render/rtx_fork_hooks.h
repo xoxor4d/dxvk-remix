@@ -164,6 +164,12 @@ namespace dxvk {
     // (rtx.dynamicBlasForAnimatedMeshes). Implemented in rtx_fork_skinning.cpp.
     bool keepAnimatedMeshesOutOfMergedBlas();
 
+    // Called from AccelManager::mergeInstancesIntoBlas with whether the OMM
+    // manager baked micromaps this frame: true when the pending OMM rebind
+    // (full bucket rebuild) should happen now
+    // (rtx.opacityMicromap.rebindFrameInterval). Implemented in rtx_fork_skinning.cpp.
+    bool ommRebindDue(bool bakedThisFrame, uint32_t frame);
+
     // Checks for a USD material replacement and updates the material pointer in-place.
     // Returns the owning shared_ptr (null when `material` is unchanged); the caller
     // must keep it alive for as long as it dereferences `material`.
