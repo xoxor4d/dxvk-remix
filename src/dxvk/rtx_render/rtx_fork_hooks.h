@@ -144,6 +144,11 @@ namespace dxvk {
                                  const std::shared_ptr<const std::vector<RasterGeometry>>& submeshes,
                                  ReplacementInstance& replacementInstance);
 
+    // Called from RtxTextureManager (sampler feedback readback): whether the
+    // texture garbage collection runs this frame (rtx.textureGcFrameInterval).
+    // Implemented in rtx_fork_texture_streaming.cpp.
+    bool textureGarbageCollectionDue(uint32_t frame);
+
     // Called from RtxGeometryUtils::dispatchSkinning: vertex count up to which a
     // skinned draw is skinned on the CPU, 0 = always on the GPU. Implemented in
     // rtx_fork_skinning.cpp.

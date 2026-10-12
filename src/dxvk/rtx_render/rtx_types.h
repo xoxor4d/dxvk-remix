@@ -251,7 +251,6 @@ struct ReplacementInstance {
   TexGenMode texgenMode = TexGenMode::None;
   // Fork: what externalDrawTryPreserve compares with the last submission of an external draw
   XXH64_hash_t externalMaterialIdentityHash = kEmptyHash;
-  const void* externalReplacementMaterial = nullptr;
 
   // Gates preserve vs dynamic dispatch and (future) split updaters. See DirtyFlag
   // and kLookupDriftMask / kDynamicFeatureMask for clear semantics.

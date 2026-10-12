@@ -4465,6 +4465,15 @@ CPU and wrote every vertex to the GPU with its own buffer update (16k
 `vkCmdUpdateBuffer` per frame). `rtx.skinningCpuVertexLimit` (default 0) sends
 everything through the compute shader.
 
+Second capture (~9,800 instances): the preserve path itself was ~1.3 us per
+instance, `mergeInstancesIntoBlas` rebuilt a hash set of every instance per
+frame and the texture garbage collection walked every managed texture per
+frame. The preserve hook now refreshes the instance without copying the draw
+state into the BlasEntry (api geometry does not move), the sampler / view
+transform setup of `submitExternalDraw` runs after it, the bucket cache check
+uses a sorted scratch vector, and `rtx.textureGcFrameInterval` (default 2)
+spaces the texture garbage collection.
+
 - **`src/dxvk/rtx_render/rtx_fork_submit.cpp`** - fork-owned file. *`externalDrawTryPreserve`, `rtx.preserveUnchangedExternalDraws`.*
 - **`src/dxvk/rtx_render/rtx_fork_skinning.cpp`** - fork-owned file. *`rtx.skinningCpuVertexLimit`, `skinningCpuVertexLimit()`.*
 - **`src/dxvk/rtx_render/rtx_fork_hooks.h`** - fork-owned change. *Declares both hooks.*
@@ -4473,6 +4482,9 @@ everything through the compute shader.
 - **`src/dxvk/rtx_render/rtx_scene_manager.h`** - inline. *Forward declaration and friend for `externalDrawTryPreserve`.*
 - **`src/dxvk/rtx_render/rtx_types.h`** - inline. *`ReplacementInstance::externalMaterialIdentityHash` / `externalReplacementMaterial`.*
 - **`src/dxvk/rtx_render/rtx_geometry_utils.cpp`** - hook. *`dispatchSkinning`: CPU vertex limit from `fork_hooks::skinningCpuVertexLimit()`.*
+- **`src/dxvk/rtx_render/rtx_fork_texture_streaming.cpp`** - fork-owned file. *`rtx.textureGcFrameInterval`, `textureGarbageCollectionDue()`.*
+- **`src/dxvk/rtx_render/rtx_texture_manager.cpp`** - hook. *Sampler feedback readback: `garbageCollection` only when `fork_hooks::textureGarbageCollectionDue(curframe)`.*
+- **`src/dxvk/rtx_render/rtx_accel_manager.cpp`** - inline. *`mergeInstancesIntoBlas`: the per frame `unordered_set` of live instances is a sorted static scratch vector + `binary_search`.*
 
 ---
 

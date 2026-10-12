@@ -22,6 +22,7 @@
 
 #include "dxvk_device.h"
 #include "rtx_texture_manager.h"
+#include "rtx_fork_hooks.h"
 #include "../../util/thread.h"
 #include "../../util/rc/util_rc_ptr.h"
 #include "dxvk_context.h"
@@ -1259,12 +1260,14 @@ namespace dxvk {
         bytesToCopy);
     }
 
-    {
+    // NV-DXVK start: fork option, every N frames
+    if (fork_hooks::textureGarbageCollectionDue(curframe)) {
       const uint32_t* gpuAccessedMips_safeToReadOnHost =
         (const uint32_t*)res.m_samplerFeedbackReadback[prevframe]->mapPtr(0); // approximately...
 
       garbageCollection(gpuAccessedMips_safeToReadOnHost);
     }
+    // NV-DXVK end
   }
 
   bool SamplerFeedback::associate(uint16_t stampWithList, uint16_t stampToAdd) {

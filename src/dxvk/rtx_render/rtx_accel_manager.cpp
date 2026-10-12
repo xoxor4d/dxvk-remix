@@ -19,6 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
+#include <algorithm>
 #include <assert.h>
 #include <cstring>
 #include <mutex>
@@ -522,7 +523,11 @@ namespace dxvk {
         anyBucketDirty = true;
         m_ommBindPending = false;
       } else {
-        std::unordered_set<RtInstance*> currentInstanceSet(instances.begin(), instances.end());
+        // NV-DXVK start: a sorted scratch copy instead of a hash set built (one node allocation per instance) every frame
+        static std::vector<RtInstance*> s_liveInstances;
+        s_liveInstances.assign(instances.begin(), instances.end());
+        std::sort(s_liveInstances.begin(), s_liveInstances.end());
+        // NV-DXVK end
         bucketDirty.resize(m_cachedBuckets.size(), false);
 
         for (uint32_t bi = 0; bi < m_cachedBuckets.size(); ++bi) {
@@ -542,7 +547,7 @@ namespace dxvk {
             // bucket-vector cleanup), the pointer is dangling and must not be
             // dereferenced. Mark the bucket dirty so it gets rebuilt without
             // touching the stale entry.
-            if (currentInstanceSet.find(inst) == currentInstanceSet.end()) {
+            if (!std::binary_search(s_liveInstances.begin(), s_liveInstances.end(), inst)) {
               bucketDirty[bi] = true;
               anyBucketDirty = true;
               break;
