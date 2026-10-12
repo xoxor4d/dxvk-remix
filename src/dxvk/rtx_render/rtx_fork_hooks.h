@@ -64,6 +64,11 @@ namespace dxvk {
   class RtInstance;
   class RtxContext;
   class SceneManager;
+
+  // Implemented in rtx_remix_api.cpp (owns the registered device): drops the
+  // registration of a device being destroyed, so api calls fail instead of
+  // using a freed device.
+  void remixApiForgetDevice(D3D9DeviceEx* device);
   struct ExternalDrawState;
   struct RasterGeometry;
   struct ReplacementInstance;

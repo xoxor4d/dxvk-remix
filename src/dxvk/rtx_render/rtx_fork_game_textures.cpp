@@ -107,6 +107,7 @@ namespace fork_hooks {
   }
 
   void shutdownGameTextures(D3D9DeviceEx* remixDevice) {
+    remixApiForgetDevice(remixDevice);
     // Another device (e.g. a short-lived probe device) going away.
     if (remixDevice != nullptr && s_owner != nullptr && remixDevice != s_owner) {
       return;

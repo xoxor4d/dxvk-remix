@@ -171,6 +171,21 @@ namespace {
   dxvk::D3D9DeviceEx* tryAsDxvk() {
     return s_dxvkDevice;
   }
+}
+
+// NV-DXVK start: a device the game destroys (GTA IV re-creates it on focus changes) must not stay registered,
+// api calls after that would use the freed object. Called from ~D3D9DeviceEx through fork_hooks::shutdownGameTextures.
+namespace dxvk {
+  void remixApiForgetDevice(D3D9DeviceEx* device) {
+    if (device != nullptr && s_dxvkDevice == device) {
+      s_dxvkDevice = nullptr;
+      g_dxvkDeviceNative = nullptr;
+    }
+  }
+}
+// NV-DXVK end
+
+namespace {
 
   dxvk::WeatherBlender* getWeatherBlender(dxvk::D3D9DeviceEx* device) {
     return device
