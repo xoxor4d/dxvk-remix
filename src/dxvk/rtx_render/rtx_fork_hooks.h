@@ -154,6 +154,11 @@ namespace dxvk {
     // rtx_fork_skinning.cpp.
     uint32_t skinningCpuVertexLimit();
 
+    // Called from AccelManager::mergeInstancesIntoBlas: whether a small mesh
+    // animated every frame stays out of the merged BLAS
+    // (rtx.dynamicBlasForAnimatedMeshes). Implemented in rtx_fork_skinning.cpp.
+    bool keepAnimatedMeshesOutOfMergedBlas();
+
     // Checks for a USD material replacement and updates the material pointer in-place.
     // Returns the owning shared_ptr (null when `material` is unchanged); the caller
     // must keep it alive for as long as it dereferences `material`.

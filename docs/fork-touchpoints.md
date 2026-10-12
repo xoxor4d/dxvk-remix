@@ -4484,7 +4484,7 @@ spaces the texture garbage collection.
 - **`src/dxvk/rtx_render/rtx_geometry_utils.cpp`** - hook. *`dispatchSkinning`: CPU vertex limit from `fork_hooks::skinningCpuVertexLimit()`.*
 - **`src/dxvk/rtx_render/rtx_fork_texture_streaming.cpp`** - fork-owned file. *`rtx.textureGcFrameInterval`, `textureGarbageCollectionDue()`.*
 - **`src/dxvk/rtx_render/rtx_texture_manager.cpp`** - hook. *Sampler feedback readback: `garbageCollection` only when `fork_hooks::textureGarbageCollectionDue(curframe)`.*
-- **`src/dxvk/rtx_render/rtx_accel_manager.cpp`** - inline. *`mergeInstancesIntoBlas`: the per frame `unordered_set` of live instances is a sorted static scratch vector + `binary_search`.*
+- **`src/dxvk/rtx_render/rtx_accel_manager.cpp`** - inline. *`mergeInstancesIntoBlas`: the per frame `unordered_set` of live instances is a sorted static scratch vector + `binary_search`; `forceMergedBlas` no longer merges small meshes animated every frame (`fork_hooks::keepAnimatedMeshesOutOfMergedBlas`, `rtx.dynamicBlasForAnimatedMeshes`): one skinned part in a merged bucket re-sorted and rebuilt the whole bucket every frame.*
 
 ---
 
