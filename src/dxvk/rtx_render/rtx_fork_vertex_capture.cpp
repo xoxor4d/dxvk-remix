@@ -12,6 +12,7 @@
 // See docs/fork-touchpoints.md for the full fork-hooks catalogue.
 
 #include "rtx_fork_hooks.h"
+#include "rtx_imgui.h"
 #include "rtx_options.h"
 
 #include "../dxvk_device.h"
@@ -109,6 +110,10 @@ namespace dxvk {
       page.used += size;
       page.frameId = frameId;
       return DxvkBufferSlice(page.buffer, offset, size);
+    }
+
+    void showVertexCaptureOptions() {
+      RemixGui::Checkbox("Pool Vertex Capture Buffers", &VertexCaptureOptions::poolVertexCaptureBuffersObject());
     }
 
   } // namespace fork_hooks

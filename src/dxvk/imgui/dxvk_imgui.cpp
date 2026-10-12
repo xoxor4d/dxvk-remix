@@ -2916,6 +2916,7 @@ namespace dxvk {
         RemixGui::Checkbox("Capture Vertices from Shader", &D3D9Rtx::useVertexCaptureObject());
         RemixGui::Checkbox("Capture Normals from Shader", &D3D9Rtx::useVertexCapturedNormalsObject());
         RemixGui::Checkbox("Capture Texcoords from Shader", &D3D9Rtx::useVertexCapturedTexcoordsObject());
+        fork_hooks::showVertexCaptureOptions();
         RemixGui::Separator();
         RemixGui::Checkbox("Use World Transforms", &D3D9Rtx::useWorldMatricesForShadersObject());
         ImGui::Unindent();

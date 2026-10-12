@@ -401,6 +401,11 @@ namespace dxvk {
     // and the GPU. Implemented in rtx_fork_vertex_capture.cpp.
     DxvkBufferSlice allocVertexCaptureSlice(DxvkDevice* device, VkDeviceSize size);
 
+    // Called from ImGUI::showRenderingSettings ("Shader Support" header, after
+    // the vertex capture checkboxes). Renders the rtx.poolVertexCaptureBuffers
+    // checkbox. Implemented in rtx_fork_vertex_capture.cpp.
+    void showVertexCaptureOptions();
+
     // Called from remixapi_DrawInstance and remixapi_DrawLightInstance.
     // No private-member access; no friend declaration needed.
     // Implementation in rtx_fork_api_entry.cpp.
