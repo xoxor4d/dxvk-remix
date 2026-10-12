@@ -64,6 +64,9 @@ namespace dxvk {
   class RtInstance;
   class RtxContext;
   class SceneManager;
+  struct ExternalDrawState;
+  struct RasterGeometry;
+  struct ReplacementInstance;
   struct LegacyMaterialData;
   struct RtLight;
   struct TextureRef;
@@ -129,6 +132,22 @@ namespace dxvk {
     // the API mesh is drawn without replacements.
     // Implementation in rtx_fork_submit.cpp.
     void externalDrawReleaseReplacementInstance(ReplacementInstance& replacementInstance);
+
+    // Called from SceneManager::submitExternalDraw once the ReplacementInstance
+    // is known. An external draw unchanged since its last dynamic update (one
+    // submesh, same identity, no replacement appeared, nothing invalidated)
+    // takes the preserve path D3D9 draws take: the instance is refreshed, the
+    // dynamic per-draw work (draw call cache, instance update, surface
+    // material) is skipped. Returns true when the draw was handled. Friend of
+    // SceneManager. Implemented in rtx_fork_submit.cpp.
+    bool externalDrawTryPreserve(SceneManager& scene, const Rc<DxvkContext>& ctx, ExternalDrawState& state,
+                                 const std::shared_ptr<const std::vector<RasterGeometry>>& submeshes,
+                                 ReplacementInstance& replacementInstance);
+
+    // Called from RtxGeometryUtils::dispatchSkinning: vertex count up to which a
+    // skinned draw is skinned on the CPU, 0 = always on the GPU. Implemented in
+    // rtx_fork_skinning.cpp.
+    uint32_t skinningCpuVertexLimit();
 
     // Checks for a USD material replacement and updates the material pointer in-place.
     // Returns the owning shared_ptr (null when `material` is unchanged); the caller
