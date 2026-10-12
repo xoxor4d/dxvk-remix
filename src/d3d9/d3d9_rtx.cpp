@@ -153,9 +153,12 @@ namespace dxvk {
   }
 
   DxvkBufferSlice allocVertexCaptureBuffer(DxvkDevice* pDevice, const VkDeviceSize size) {
-    // NV-DXVK start: pooled vertex capture buffers
-    return fork_hooks::allocVertexCaptureSlice(pDevice, size);
-    // NV-DXVK end
+    DxvkBufferCreateInfo info;
+    info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+    info.access = VK_ACCESS_TRANSFER_READ_BIT;
+    info.stages = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
+    info.size = size;
+    return DxvkBufferSlice(pDevice->createBuffer(info, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, DxvkMemoryStats::Category::AppBuffer, "Vertex Capture Buffer"));
   }
 
   void D3D9Rtx::prepareVertexCapture(const int vertexIndexOffset) {
@@ -225,13 +228,9 @@ namespace dxvk {
     data.viewToWorld = inverseAffine(m_activeDrawCallState.transformData.worldToView);
     data.worldToObject = inverseAffine(m_activeDrawCallState.transformData.objectToWorld);
     data.normalTransform = m_activeDrawCallState.transformData.objectToWorld;
-    // NV-DXVK start: pooled vertex capture buffers
-    uint32_t captureFirstVertex = 0;
-    const DxvkBufferSlice captureWriteRange = fork_hooks::vertexCaptureWriteRange(slice, stride, captureFirstVertex);
-    data.baseVertex = (uint32_t)std::max(0, vertexIndexOffset) - captureFirstVertex;
-    // NV-DXVK end
+    data.baseVertex = (uint32_t)std::max(0, vertexIndexOffset);
 
-    m_parent->EmitCs([cVertexDataSlice = captureWriteRange,
+    m_parent->EmitCs([cVertexDataSlice = slice,
                       cConstantBuffer = m_vsVertexCaptureData,
                       cConstants = constants](DxvkContext* ctx) {
       // Bind the new constants to buffer

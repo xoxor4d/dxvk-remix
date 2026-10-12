@@ -163,9 +163,6 @@ check will enforce it if discipline slips.
 
 - **Inline tweak** at `D3D9Rtx::EndFrame` (~line 1216) — 5-line addition for [RTX-Diag] entry log on EndFrame.
   *Logs targetImage pointer and callInjectRtx flag at the top of EndFrame, plus a second log after the CS lambda is emitted, to trace the frame-end dispatch chain.*
-- **Hook** in `allocVertexCaptureBuffer` — returns `fork_hooks::allocVertexCaptureSlice` (rtx_fork_vertex_capture.cpp) instead of creating one buffer per captured draw.
-- **Hook** in `D3D9Rtx::prepareVertexCapture` — `fork_hooks::vertexCaptureWriteRange` (rtx_fork_vertex_capture.cpp): the capture shader writes through the whole pooled page, `baseVertex` is lowered by the slice's first vertex.
-  *`DxvkContext::bindResourceBuffer` treats a rebind with the same buffer and length as a dynamic offset change; the capture slot is a plain storage buffer whose offset lives in the descriptor, so binding slices made consecutive equal-sized draws write into the previous draw's slice (explosions, geometry at the origin). Binding the page keeps one valid descriptor for all draws on it.*
 
 ---
 
@@ -230,9 +227,6 @@ check will enforce it if discipline slips.
 
 - **Hook** at tonemapper ImGui settings → `fork_hooks::showTonemapOperatorUI` / `fork_hooks::showLocalTonemapOperatorUI` in `rtx_fork_tonemap.cpp`. Also remove the standalone `RemixGui::Checkbox("Use Legacy ACES", ...)` at ~line 3888 — its RtxOption `rtx.useLegacyACES` is being deleted.
   *Operator combo + per-operator sliders replace the old ACES checkbox. "Use Legacy ACES" reachable via TonemapOperator::ACESLegacy enum value.*
-
-- **Hook** at `ImGUI::showRenderingSettings` "Shader Support (Experimental)" header → `fork_hooks::showVertexCaptureOptions` in `rtx_fork_vertex_capture.cpp` (1 line after "Capture Texcoords from Shader").
-  *Checkbox for `rtx.poolVertexCaptureBuffers` (pooled vertex capture pages vs one buffer per captured draw).*
 
 - **Inline tweak** at `ImGUI::showRenderingSettings` "Tonemapping" header — removed the `Tonemapping Mode` combo (Global / Local / Direct) and the standalone "User Brightness" / "User Brightness EV Range" sliders. The header body is now a single always-visible `metaToneMapping().showImguiSettings()` call between two separators. Tuning Mode (tone curve sliders) is also removed from the panel.
   *2026-05-13 tonemap refactor: mode selector removed; operator dropdown is now the primary control. 2026-05-15: local tonemap path removed entirely, so no per-path UI gate remains.*
@@ -4453,14 +4447,11 @@ descriptors point at freed BLAS memory.
 
 ---
 
-## Workstream - Pooled vertex capture buffers, skinned API mesh serialization (fork - 2026-10-12)
+## Workstream - Skinned API mesh serialization (fork - 2026-10-12)
 
-Vertex capture created a device-local Vulkan buffer for every captured draw.
-The captured vertices are only read in the frame they were captured, when
-`SceneManager::processGeometryInfo` copies them into the BLAS owned geometry
-buffers, so they are now sub-allocated from 4 MB pages that are reused once
-their frame went through the CS thread and the GPU (frame id 8 presents older
-and no longer in use). Pages unused for 600 presents are released.
+A pool for vertex capture buffers was part of this workstream and has been
+removed again (corrupted captured vertices of consecutive equal-sized draws,
+no measurable gain); vertex capture creates one buffer per draw as upstream.
 
 The bridge sized the blend weight and blend index arrays of a skinned
 `remixapi_MeshInfoSurfaceTriangles` as vertex count x total element count x
@@ -4468,10 +4459,6 @@ bones per vertex, so any skinned API mesh over-read the client buffer and
 over-allocated the IPC data. Both arrays are now sized by their total element
 count, as `remix_c.h` documents.
 
-- **`src/dxvk/rtx_render/rtx_fork_vertex_capture.cpp`** - fork-owned file. *`fork_hooks::allocVertexCaptureSlice`: page pool for vertex capture slices.*
-- **`src/dxvk/rtx_render/rtx_fork_hooks.h`** - fork-owned change. *Declares `allocVertexCaptureSlice`.*
-- **`src/dxvk/meson.build`** - fork-owned change. *Adds `rtx_fork_vertex_capture.cpp`.*
-- **`src/d3d9/d3d9_rtx.cpp`** - fork-touchpoint hook. *`allocVertexCaptureBuffer` dispatches into the hook.*
 - **`bridge/src/util/util_remixapi.cpp`** - inline. *Blend weight / index sizes of skinned mesh surfaces (size calculation, serialize, deserialize).*
 
 ---
