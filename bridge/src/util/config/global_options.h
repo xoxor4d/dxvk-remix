@@ -184,8 +184,14 @@ public:
     return get().presentSemaphoreEnabled;
   }
 
-  static bool getCommandBatchingEnabled() {
-    return get().commandBatchingEnabled;
+  // [PerfBridge]: log the bridge counters every N frames on both sides; 0 = off (util_perfbridge.h).
+  static uint32_t getPerfLogIntervalFrames() {
+    return get().perfLogIntervalFrames;
+  }
+
+  // How long a command-ring wait spins before it blocks on its wake event (util_atomiccircularqueue.h).
+  static uint32_t getIpcSpinMicroseconds() {
+    return get().ipcSpinMicroseconds;
   }
 
   static bool getUseSharedHeap() {
@@ -238,6 +244,29 @@ public:
     setDisableTimeouts((flags & 1) == 1);
     setInfiniteRetries((flags & 2) == 2);
     bridge_util::Logger::debug(bridge_util::format_string("Global settings are being applied from flags value %d", flags));
+  }
+
+  // Which calls the client waits on a server response for. The client sends these at the handshake (Bridge_Continue)
+  // and the server adopts them, so the two sides can never disagree: a server that answers a call the client does not
+  // wait for fills the response ring, and a client that waits for an answer the server never sends times out and turns
+  // the bridge off.
+  static constexpr uint32_t kResponsePolicyAll = 1;
+  static constexpr uint32_t kResponsePolicyCreates = 2;
+
+  static uint32_t getResponsePolicyFlags() {
+    uint32_t flags = 0;
+    flags |= get().sendAllServerResponses ? kResponsePolicyAll : 0;
+    flags |= get().sendCreateFunctionServerResponses ? kResponsePolicyCreates : 0;
+    return flags;
+  }
+
+  static void applyResponsePolicyFlags(uint32_t flags) {
+    get().sendAllServerResponses = (flags & kResponsePolicyAll) != 0;
+    get().sendCreateFunctionServerResponses = (flags & kResponsePolicyCreates) != 0;
+    bridge_util::Logger::info(bridge_util::format_string("Server response policy from the client: sendAllServerResponses = %s, "
+                                                         "sendCreateFunctionServerResponses = %s",
+                                                         get().sendAllServerResponses ? "True" : "False",
+                                                         get().sendCreateFunctionServerResponses ? "True" : "False"));
   }
 
   static const bool getAlwaysCopyEntireStaticBuffer() {
@@ -381,14 +410,15 @@ private:
     // This is the maximum latency in number of frames the client can be ahead of the
     // server before it blocks and waits for the server to catch up. We want this value
     // to be rather small so the two processes don't get too far out of sync.
-    presentSemaphoreMaxFrames = bridge_util::Config::getOption<uint8_t>("presentSemaphoreMaxFrames", 3);
+    presentSemaphoreMaxFrames = bridge_util::Config::getOption<uint8_t>("presentSemaphoreMaxFrames", 1);
     presentSemaphoreEnabled = bridge_util::Config::getOption<bool>("presentSemaphoreEnabled", true);
 
-    // Toggles between waiting on and triggering the command queue semaphore for each
-    // command separately when batching is off compared to waiting for it only once per
-    // frame, used in conjunction with the Present semaphore above. Fewer semaphore
-    // calls should give us better performance, so this is turned on by default.
-    commandBatchingEnabled = bridge_util::Config::getOption<bool>("commandBatchingEnabled", false);
+    // [PerfBridge] counters: log every N frames on both sides, 0 = off.
+    perfLogIntervalFrames = bridge_util::Config::getOption<uint32_t>("perfLogIntervalFrames", 0);
+
+    // A command-ring wait spins this long before it blocks on its wake event. Short gaps between commands stay
+    // in the spin (lowest latency); longer idle periods cost no CPU. 0 blocks at once.
+    ipcSpinMicroseconds = bridge_util::Config::getOption<uint32_t>("ipcSpinMicroseconds", 100);
 
     // If this is enabled, timeouts will be set to their maximum value (INFINITE which is the max uint32_t) 
     // and retries will be set to 1 while the application is being launched with or attached to by a debugger
@@ -469,7 +499,8 @@ private:
   uint16_t keyStateCircBufMaxSize;
   uint8_t presentSemaphoreMaxFrames;
   bool presentSemaphoreEnabled;
-  bool commandBatchingEnabled;
+  uint32_t perfLogIntervalFrames;
+  uint32_t ipcSpinMicroseconds;
   bool disableTimeoutsWhenDebugging;
   bool disableTimeouts;
   bool useSharedHeap;

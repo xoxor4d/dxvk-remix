@@ -32,6 +32,7 @@ util_src = files([
 	'util_sharedheap.cpp',
 	'util_sharedmemory.cpp',
 	'util_monitor.cpp',
+	'util_perfbridge.cpp',
 	'log/log.cpp',
 	'config/config.cpp',
 	'config/global_options.cpp',
@@ -39,7 +40,6 @@ util_src = files([
 
 util_header = files([
 	'util_atomiccircularqueue.h',
-	'util_blockingcircularqueue.h',
 	'util_bridge_assert.h',
 	'util_bridge_state.h',
 	'util_bridgecommand.h',
@@ -69,6 +69,7 @@ util_header = files([
 	'util_texture_and_volume.h',
 	'util_version.h',
 	'util_monitor.h',
+	'util_perfbridge.h',
 	'log/log.h',
 	'log/log_strings.h',
 	'config/config.h',

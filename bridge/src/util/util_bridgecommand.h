@@ -28,6 +28,7 @@
 #include "util_circularbuffer.h"
 #include "util_bridge_state.h"
 #include "util_ipcchannel.h"
+#include "util_perfbridge.h"
 #include "util_scopedlock.h"
 #include "util_singleton.h"
 #include "../tracy/tracy.hpp"
@@ -104,27 +105,8 @@ public:
     return *s_pReaderChannel;
   }
   
-  //=========================//
-  // Channel writing methods //
-  //=========================//
-  static inline bridge_util::Result begin_batch() {
-    ZoneScoped;
-  #ifdef USE_BLOCKING_QUEUE
-    if (gbBridgeRunning) {
-      return getWriterChannel().commands->begin_write_batch();
-    }
-  #endif
-    return bridge_util::Result::Failure;
-  }
-  static inline size_t end_batch() {
-    ZoneScoped;
-  #ifdef USE_BLOCKING_QUEUE
-    if (gbBridgeRunning) {
-      return getWriterChannel().commands->end_write_batch();
-    }
-  #endif
-    return 0;
-  }
+  // [PerfBridge] (util_perfbridge.h): call once per frame on the presenting thread, after Present.
+  static void perfOnFrame();
 
   //=========================//
   // Channel reading methods //
@@ -334,6 +316,7 @@ public:
     const Commands::D3D9Command m_command;
     const uint32_t m_handle;
     const Commands::Flags m_commandFlags;
+    int64_t m_perfStart = 0;  // [PerfBridge]: 0 when the counters are off or this is not a counted command
   };
 
 private:

@@ -481,8 +481,12 @@ HRESULT syncOnPresent() {
   if (GlobalOptions::getPresentSemaphoreEnabled()) {
     const auto maxRetries = GlobalOptions::getCommandRetries();
     size_t numRetries = 0;
+    const int64_t perfStart = bridge_util::perf::enabled() ? bridge_util::perf::now() : 0;
     while (gbBridgeRunning && RESULT_FAILURE(gpPresent->wait()) && numRetries++ < maxRetries) {
       Logger::warn("Still waiting on the Present semaphore to be released...");
+    }
+    if (perfStart != 0) {
+      bridge_util::perf::notePresentWait(bridge_util::perf::now() - perfStart);
     }
     if (numRetries >= maxRetries) {
       Logger::err("Max retries reached waiting on the Present semaphore!");

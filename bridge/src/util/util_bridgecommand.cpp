@@ -22,7 +22,23 @@
 #include "util_bridgecommand.h"
 #include "log/log_strings.h"
 
+#include <type_traits>
+
 namespace {
+  // [PerfBridge] counts the device bridge only (util_perfbridge.h).
+  template<typename BridgeIdT>
+  constexpr bool kIsDeviceBridge = std::is_same_v<BridgeIdT, ::BridgeId::Device>;
+
+  // Client: times one wait for a server response and attributes it to the request sent last.
+  struct ResponseWaitTimer {
+    int64_t start;
+    ~ResponseWaitTimer() {
+      if (start != 0) {
+        bridge_util::perf::noteResponseWait(bridge_util::perf::now() - start);
+      }
+    }
+  };
+
   DWORD get_default_timeout() {
     const auto timeout = GlobalOptions::getCommandTimeout();
     const auto retries = GlobalOptions::getCommandRetries();
@@ -52,7 +68,17 @@ DECL_BRIDGE_FUNC(void, init,
   s_pReaderChannel = new ReaderChannel(
     baseName + kReaderChannelName,
     readerChannelMemSize, readerChannelCmdQueueSize, readerChannelDataQueueSize);
+  if constexpr (kIsDeviceBridge<BridgeId>) {
+    bridge_util::perf::init(GlobalOptions::getPerfLogIntervalFrames());
+  }
   bIsInit = true;
+}
+
+DECL_BRIDGE_FUNC(void, perfOnFrame) {
+  if constexpr (kIsDeviceBridge<BridgeId>) {
+    bridge_util::perf::onFrame(s_pWriterChannel->commands->fullWaitStats(),
+                               s_pReaderChannel->commands->emptyWaitStats());
+  }
 }
 
 DECL_BRIDGE_FUNC(void, syncDataQueue, size_t expectedMemUsage, bool posResetOnLastIndex) {
@@ -157,6 +183,12 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
   if (!gbBridgeRunning) {
     return Result::Failure;
   }
+#ifdef REMIX_BRIDGE_CLIENT
+  const bool timeResponseWait = kIsDeviceBridge<BridgeId> && command == Commands::Bridge_Response && bridge_util::perf::enabled();
+#else
+  const bool timeResponseWait = false;
+#endif
+  const ResponseWaitTimer responseWaitTimer { timeResponseWait ? bridge_util::perf::now() : 0 };
   DWORD peekTimeoutMS = overrideTimeoutMS > 0 ? overrideTimeoutMS : GlobalOptions::getCommandTimeout();
   uint32_t maxAttempts = GlobalOptions::getCommandRetries();
 #ifdef ENABLE_WAIT_FOR_COMMAND_TRACE
@@ -302,6 +334,13 @@ DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
   s_pWriterChannel->pbCmdInProgress->store(true);
   s_curBatchStartPos = (int32_t) s_pWriterChannel->data->get_pos();
   s_cmdCounter++;
+#ifdef REMIX_BRIDGE_CLIENT
+  if constexpr (kIsDeviceBridge<BridgeId>) {
+    if (bridge_util::perf::enabled()) {
+      m_perfStart = bridge_util::perf::now();
+    }
+  }
+#endif
   if (gbBridgeRunning) {
     // Send command id as part of data queue for everycommand from client to server
 #ifdef REMIX_BRIDGE_CLIENT
@@ -323,6 +362,14 @@ DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
 DECL_COMMAND_FUNC(,~Command) {
   // Only actually send the command if the bridge is enabled, otherwise this becomes a no-op
   if (gbBridgeRunning) {
+    uint32_t perfDataWords = 0;
+    if (m_perfStart != 0) {
+      // Words this command put on the data ring (a wrap skips the ring's tail, so this can overcount slightly).
+      const size_t endPos = s_pWriterChannel->data->get_pos();
+      const size_t startPos = (size_t) s_curBatchStartPos;
+      perfDataWords = (uint32_t) (endPos >= startPos ? endPos - startPos
+                                                     : endPos + s_pWriterChannel->data->get_total_size() - startPos);
+    }
     s_pWriterChannel->data->end_batch();
     s_curBatchStartPos = -1;
     uint32_t numRetries = 0;
@@ -357,6 +404,10 @@ DECL_COMMAND_FUNC(,~Command) {
         std::string command = Commands::toString(m_command);
         Logger::debug(format_string("The command %s took %d retries (%d ms)!", command.c_str(), numRetries, numRetries * GlobalOptions::getCommandTimeout()));
       }
+    if (m_perfStart != 0) {
+      bridge_util::perf::noteSent((uint16_t) m_command);
+      bridge_util::perf::noteCommand((uint16_t) m_command, perfDataWords, bridge_util::perf::now() - m_perfStart);
+    }
   }
   s_pWriterChannel->pbCmdInProgress->store(false);
 #ifdef REMIX_BRIDGE_CLIENT
