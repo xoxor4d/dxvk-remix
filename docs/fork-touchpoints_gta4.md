@@ -313,3 +313,13 @@ Two of the four changes are upstream bugs that also affect glass with nothing be
 - **`src/dxvk/shaders/rtx/pass/composite/composite.comp.slang`** - inline. *`compositeResult`: the aerial perspective in-scatter throughput is 1 on PSR pixels. `PrimaryAttenuation` there is the reflection / transmission throughput (0 for absorbing water), which only scaled the haze away while the extinction still applied, so distant water went dark instead of hazy.*
 - **`src/dxvk/shaders/rtx/utility/shared_constants.h`**, **`src/dxvk/rtx_render/rtx_scene_manager.cpp`** - inline. *AnimatedWater translucents carry `D3D_TRANSLUCENT_MODIFIER_WATER_SHORELINE` (the water flag) as well, so the above applies to them without the D3D modifier.*
 - **`src/dxvk/shaders/rtx/algorithm/rtx_fork_water_shore.slangh`** - fork-owned file. *`forkIsOpaqueWaterMedium`.*
+---
+
+## Workstream - API draws get every texture category the D3D9 path applies (fork - 2026-10-13)
+
+`fork_hooks::externalDrawTextureCategories` (fork-owned, `rtx_fork_submit.cpp`) looked the colormap hash
+up in a subset of the `rtx.*Textures` lists. DecalDynamic, DecalSingleOffset, DecalNoOffset,
+ParticleEmitter, HairCards, DisableBackfaceCulling, IgnoreOpacityMicromap, IgnoreAlphaChannel,
+IgnoreBakedLighting and the player model categories were missing, so a draw moved from D3D9 to the API
+lost them (a texture in `particleEmitterTextures` stopped emitting). The list now matches
+`DrawCallState::setupCategoriesForTexture`. No upstream file is touched.

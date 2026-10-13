@@ -255,19 +255,31 @@ namespace fork_hooks {
         }
       };
 
-      applyCategory(RtxOptions::skyBoxTextures(), InstanceCategories::Sky);
-      applyCategory(RtxOptions::ignoreTextures(), InstanceCategories::Ignore);
+      // The same set as DrawCallState::setupCategoriesForTexture
       applyCategory(RtxOptions::worldSpaceUiTextures(), InstanceCategories::WorldUI);
       applyCategory(RtxOptions::worldSpaceUiBackgroundTextures(), InstanceCategories::WorldMatte);
-      applyCategory(RtxOptions::particleTextures(), InstanceCategories::Particle);
-      applyCategory(RtxOptions::beamTextures(), InstanceCategories::Beam);
-      applyCategory(RtxOptions::decalTextures(), InstanceCategories::DecalStatic);
-      applyCategory(RtxOptions::terrainTextures(), InstanceCategories::Terrain);
-      applyCategory(RtxOptions::animatedWaterTextures(), InstanceCategories::AnimatedWater);
+      applyCategory(RtxOptions::ignoreTextures(), InstanceCategories::Ignore);
       applyCategory(RtxOptions::ignoreLights(), InstanceCategories::IgnoreLights);
       applyCategory(RtxOptions::antiCullingTextures(), InstanceCategories::IgnoreAntiCulling);
       applyCategory(RtxOptions::motionBlurMaskOutTextures(), InstanceCategories::IgnoreMotionBlur);
+      applyCategory(RtxOptions::opacityMicromapIgnoreTextures(), InstanceCategories::IgnoreOpacityMicromap);
+      applyCategory(RtxOptions::ignoreAlphaOnTextures(), InstanceCategories::IgnoreAlphaChannel);
+      applyCategory(RtxOptions::ignoreBakedLightingTextures(), InstanceCategories::IgnoreBakedLighting);
       applyCategory(RtxOptions::hideInstanceTextures(), InstanceCategories::Hidden);
+      applyCategory(RtxOptions::particleTextures(), InstanceCategories::Particle);
+      applyCategory(RtxOptions::beamTextures(), InstanceCategories::Beam);
+      applyCategory(RtxOptions::decalTextures(), InstanceCategories::DecalStatic);
+      applyCategory(RtxOptions::dynamicDecalTextures(), InstanceCategories::DecalDynamic);
+      applyCategory(RtxOptions::singleOffsetDecalTextures(), InstanceCategories::DecalSingleOffset);
+      applyCategory(RtxOptions::nonOffsetDecalTextures(), InstanceCategories::DecalNoOffset);
+      applyCategory(RtxOptions::animatedWaterTextures(), InstanceCategories::AnimatedWater);
+      applyCategory(RtxOptions::playerModelTextures(), InstanceCategories::ThirdPersonPlayerModel);
+      applyCategory(RtxOptions::playerModelBodyTextures(), InstanceCategories::ThirdPersonPlayerBody);
+      applyCategory(RtxOptions::terrainTextures(), InstanceCategories::Terrain);
+      applyCategory(RtxOptions::skyBoxTextures(), InstanceCategories::Sky);
+      applyCategory(RtxOptions::particleEmitterTextures(), InstanceCategories::ParticleEmitter);
+      applyCategory(RtxOptions::hairCardTextures(), InstanceCategories::HairCards);
+      applyCategory(RtxOptions::disableBackfacecullingTextures(), InstanceCategories::DisableBackfaceCulling);
     }
   }
 
