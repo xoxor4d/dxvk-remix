@@ -249,15 +249,13 @@ remixapi_ErrorCode REMIXAPI_CALL remixapi_CreateTexture(
 
   TextureHandle newHandle;
   {
+    // Plain words, exactly as the server PULLs them (sv/main.cpp RemixApi_CreateTexture). send(c, x) would write each
+    // scalar as a sized blob (length word + value) and put the server's reads out of step.
     ClientMessage c(Commands::RemixApi_CreateTexture);
-    send(c, info->sType);
-    send(c, info->hash);
-    send(c, info->width);
-    send(c, info->height);
-    send(c, info->depth);
-    send(c, info->mipLevels);
-    send(c, info->format);
-    send(c, info->dataSize);
+    c.send_data(static_cast<uint32_t>(info->sType));
+    c.send_many(static_cast<uint32_t>(info->hash & 0xFFFFFFFFull), static_cast<uint32_t>(info->hash >> 32));
+    c.send_many(info->width, info->height, info->depth, info->mipLevels,
+                static_cast<uint32_t>(info->format), static_cast<uint32_t>(info->dataSize));
     c.send_data(static_cast<uint32_t>(info->dataSize), info->data);
     sendHandle(c, newHandle);
   }
@@ -775,8 +773,9 @@ extern "C" {
     const remixapi_ErrorCode result = static_cast<remixapi_ErrorCode>(DeviceBridge::get_data());
     const uint32_t actual = DeviceBridge::get_data();
     *out_actual_size = actual;
-    if (actual > 0 && in_buffer_size >= actual) {
-      // Server sent the value bytes when the caller's buffer was large enough.
+    if (result == REMIXAPI_ERROR_CODE_SUCCESS && actual > 0 && in_buffer_size >= actual) {
+      // Server sent the value bytes when the call succeeded and the caller's buffer was large enough (the exact
+      // condition sv/main.cpp RemixApi_GetGameValue uses; any other condition would leave the response data out of step).
       void* value_ptr = nullptr;
       const uint32_t value_size = DeviceBridge::get_data(&value_ptr);
       (void) value_size;

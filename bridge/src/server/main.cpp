@@ -3000,14 +3000,17 @@ void ProcessDeviceCommandQueue() {
 
       case RemixApi_CreateTexture:
       {
+        // Plain words, as the client sends them (cl/remix_api.cpp remixapi_CreateTexture); the 64-bit hash as lo / hi.
         PULL(remixapi_StructType, sType);
-        PULL(uint64_t, hash);
+        PULL_U(hashLo);
+        PULL_U(hashHi);
+        const uint64_t hash = (uint64_t(hashHi) << 32) | uint64_t(hashLo);
         PULL(uint32_t, width);
         PULL(uint32_t, height);
         PULL(uint32_t, depth);
         PULL(uint32_t, mipLevels);
         PULL(remixapi_Format, format);
-        PULL(uint64_t, dataSize);
+        PULL(uint32_t, dataSize);
         void* data = nullptr;
         PULL_DATA(dataSize, data);
         const auto bridgeHandle = DeviceBridge::get_data();
@@ -3485,10 +3488,18 @@ void ProcessDeviceCommandQueue() {
     }
 
     // Ensure the data position between client and server is in sync after processing the command
-    if (!CHECK_DATA_OFFSET)       {
-      Logger::warn("Data not in sync");
+    // A command that read more or fewer data words than the client wrote leaves every later read out of step: the
+    // next variable-size read takes a garbage length (typically ending in a misleading "buffer too small" exit) or
+    // the runtime is fed garbage. Stop the bridge here, naming the command, instead of carrying on.
+    if (!CHECK_DATA_OFFSET) {
+      Logger::err(format_string("[Bridge] data out of step after %s: the server read up to word %u, the client wrote up to "
+                                "word %u. Client and server disagree on this command's arguments; stopping the bridge.",
+                                toString(rpcHeader.command).c_str(), (unsigned) DeviceBridge::get_data_pos(),
+                                (unsigned) rpcHeader.dataOffset));
+      gbBridgeRunning = false;
+      done = true;
+      break;
     }
-    assert(CHECK_DATA_OFFSET);
     *DeviceBridge::getReaderChannel().serverDataPos = DeviceBridge::get_data_pos();
     // Check if overwrite condition was met
     if (*DeviceBridge::getReaderChannel().clientDataExpectedPos != -1) {
