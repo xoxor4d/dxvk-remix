@@ -2581,7 +2581,6 @@ void geometryPSRResolverVertex(
     {
       skyRadiance = cb.skyBrightness * SkyProbe.SampleLevel(ray.direction, 0);
     }
-    skyRadiance *= calcVolumetricAttenuation(cb.volumeArgs, none, true, 0.0f, ray.origin, ray.direction);
     emissiveRadiance += skyRadiance * radianceAttenuation;
   }
 
@@ -2611,12 +2610,33 @@ void geometryPSRResolverVertex(
     }
 
     // Output Miss
-    SharedRadianceRG[geometryPSRResolverState.pixelCoordinate] += geometryPSRResolverState.radiance.rg;
-    SharedRadianceB[geometryPSRResolverState.pixelCoordinate] += geometryPSRResolverState.radiance.b;
+    // Fork: the state radiance was loaded from SharedRadiance at the start of the pass, so it is stored like the hit
+    // path does. Adding it counted the loaded part twice (the reflection pass doubled on a transmission miss).
+    SharedRadianceRG[geometryPSRResolverState.pixelCoordinate] = geometryPSRResolverState.radiance.rg;
+    SharedRadianceB[geometryPSRResolverState.pixelCoordinate] = geometryPSRResolverState.radiance.b;
 
     geometryResolverOutputMissDynamic(
       geometryPSRResolverState.primarySurface, geometryPSRResolverState.selectedIntegrationSurface,
       geometryPSRResolverState.pixelCoordinate);
+
+    // Fork: a transmission ray leaving the scene inside fully absorbing water sees nothing (its radiance is already 0).
+    // The surface keeps the depth of the water instead of the miss depth, so composite fog and volumetrics use the water
+    // distance rather than turning the pixel into distant haze. Its attenuation (0) weights the cloud in-scatter like a
+    // hit below the water would.
+    if (geometryPSRResolverState.primarySurface && forkIsOpaqueWaterMedium(geometryPSRResolverState.mediumMaterialIndex))
+    {
+      const uvec2 pixelCoordinate = geometryPSRResolverState.pixelCoordinate;
+      PrimaryAttenuation[pixelCoordinate] = colorToR11G11B10(geometryPSRResolverState.attenuation);
+
+      const Ray originalCameraRay = rayCreatePrimaryFromPixel(cb.camera, pixelCoordinate, false);
+      const vec3 virtualHitPosition = rayEvaluate(originalCameraRay, geometryPSRResolverState.accumulatedHitDistance);
+      const float4 projectionSpacePosition = mul(cb.camera.worldToProjectionJittered, float4(virtualHitPosition, 1.f));
+
+      imageStore(PrimaryDepth, pixelCoordinate, projectionSpacePosition.z / projectionSpacePosition.w);
+      imageStore(PrimaryLinearViewZ, pixelCoordinate, cameraWorldPosToLinearViewZ(cb.camera, virtualHitPosition));
+      PrimaryScreenSpaceMotionVector[pixelCoordinate] = cameraCalcMotionVectorPixel(
+        cb.camera, cameraPixelCoordinateToNDC(cb.camera, pixelCoordinate), cameraWorldPosToPrevNDC(cb.camera, virtualHitPosition));
+    }
 
     return;
   }

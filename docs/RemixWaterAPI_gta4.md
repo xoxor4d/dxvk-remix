@@ -85,6 +85,16 @@ A thin layer does not bend the transmitted ray, so the refraction offset
 changes where the fade ends; with the IOR already faded towards 1 it is
 small in shallow water.
 
+### Deep water without geometry below
+
+A transmission ray that leaves the scene inside thick water with a nonzero
+attenuation coefficient is fully absorbed. The pixel keeps the water's
+depth and an attenuation of 0 instead of the miss values, so composite
+fog, volumetrics, aerial perspective and clouds treat it like water over
+a sea floor. No helper mesh below the water is needed. (Upstream also
+doubled the sky reflection on such pixels; the fork stores the PSR miss
+radiance the same way as a hit.)
+
 ## Options
 
 All distances are in world units. The defaults are tuned for GTA IV (1 unit = 1 m).

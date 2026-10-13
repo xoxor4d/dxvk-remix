@@ -1085,8 +1085,10 @@ vec4 compositeResult(
 
   // Applied before the sky so it only affects geometry; the sky already carries its full column.
   // Background radiance already carries foreground transparency from the geometry resolver.
+  // Fork: on PSR pixels PrimaryAttenuation is the reflection / transmission throughput, not a foreground
+  // transparency. The whole surface sits behind the same air, so its in-scatter is not scaled by it.
   applyAerialPerspective(pixelCoordinate, primaryMiss, viewDistance, volumeAttenuation,
-    primaryAttenuation, radianceOutput);
+    geometryFlags.performedAnyPSR() ? vec3(1.0f) : primaryAttenuation, radianceOutput);
   if (alphaBlendSurfaceValid) {
     applyAerialPerspective(pixelCoordinate, false, alphaBlendHitDistance, alphaVolumeAttenuation,
       vec3(1.0f - backgroundAlpha), alphaBlendOutput);

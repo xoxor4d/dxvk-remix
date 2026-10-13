@@ -2048,7 +2048,10 @@ namespace dxvk {
         freeFloat02 = legacyMaterialData.remixFloatRS212FromD3D;
       }
 
-      if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_WATER_SHORELINE) {
+      // Water: the shoreline modifier or the AnimatedWater category
+      const CategoryFlags d3dCategories(legacyMaterialData.remixTextureCategoryFlagsFromD3D);
+      if ((d3dModifiers & REMIX_MODIFIER_FROM_D3D_WATER_SHORELINE) ||
+          drawCallState->testCategoryFlags(InstanceCategories::AnimatedWater) || d3dCategories.test(InstanceCategories::AnimatedWater)) {
         d3dModifierFlags |= D3D_TRANSLUCENT_MODIFIER_WATER_SHORELINE;
       }
     }

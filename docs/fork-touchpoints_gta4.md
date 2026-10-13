@@ -298,3 +298,18 @@ when no present came for 100 ms (an app drawing without presenting).
 - **`src/d3d9/d3d9_swapchain.cpp`** - inline. *`steadyClockMs`, `onWindowMessageEvent` records the request, `processPendingRtxEndOfFrame` runs the events, `Present` clears the request.*
 - **`src/d3d9/d3d9_swapchain.h`** - inline. *`processPendingRtxEndOfFrame`, `m_rtxEndOfFramePendingSince`.*
 - **`src/d3d9/d3d9_device.cpp`** - inline. *`BeginScene` calls `processPendingRtxEndOfFrame` on the implicit swap chain.*
+---
+
+## Workstream - Dark open water without geometry below it (fork - 2026-10-13)
+
+Water reflecting the sky over open sea (no sea floor mesh below) came out lighter and hazier than the
+same water over a sea floor, and the volumetric transmittance color tinted it far more than it should.
+Two of the four changes are upstream bugs that also affect glass with nothing behind it.
+
+- **`src/dxvk/shaders/rtx/algorithm/geometry_resolver.slangh`** - inline. *`geometryPSRResolverVertex` miss: `SharedRadiance` is assigned instead of accumulated. The PSR state radiance is loaded from `SharedRadiance` at the start of each PSR pass, so the upstream `+=` counted the loaded part twice. The reflection pass runs first, so a transmission miss doubled the sky reflection.*
+- **`src/dxvk/shaders/rtx/algorithm/geometry_resolver.slangh`** - inline. *`geometryPSRResolverVertex` miss: a transmission ray leaving the scene inside fully absorbing water (`forkIsOpaqueWaterMedium`) keeps the water's depth / linear view Z / motion vector and its attenuation (0) in the primary G-buffer instead of the miss values, so composite fog, volumetrics, aerial perspective and clouds do not turn the dark water into distant haze.*
+- **`src/dxvk/shaders/rtx/algorithm/geometry_resolver.slangh`** - inline, changes a Remix Plus entry. *The PSR hit atmosphere sky radiance block: the extra `calcVolumetricAttenuation` multiply Remix Plus added on 2026-07-04 is removed again; the primary miss never had it, and together with the one in `resolveVertexFinalMiss` it darkened the reflected sky by `transmittanceColor^10` regardless of the measurement distance.*
+- **`src/dxvk/shaders/rtx/algorithm/resolve.slangh`** - inline. *`resolveVertexFinalMiss`: the `RESOLVER_USE_VOLUMETRIC_ATTENUATION` miss attenuation (`transmittanceColor^5`, PSR passes only) is removed. The fork's primary-miss sky is not attenuated by the volumetrics, so the sky in reflections and transmissions matches the directly visible sky.*
+- **`src/dxvk/shaders/rtx/pass/composite/composite.comp.slang`** - inline. *`compositeResult`: the aerial perspective in-scatter throughput is 1 on PSR pixels. `PrimaryAttenuation` there is the reflection / transmission throughput (0 for absorbing water), which only scaled the haze away while the extinction still applied, so distant water went dark instead of hazy.*
+- **`src/dxvk/shaders/rtx/utility/shared_constants.h`**, **`src/dxvk/rtx_render/rtx_scene_manager.cpp`** - inline. *AnimatedWater translucents carry `D3D_TRANSLUCENT_MODIFIER_WATER_SHORELINE` (the water flag) as well, so the above applies to them without the D3D modifier.*
+- **`src/dxvk/shaders/rtx/algorithm/rtx_fork_water_shore.slangh`** - fork-owned file. *`forkIsOpaqueWaterMedium`.*

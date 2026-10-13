@@ -337,13 +337,10 @@ void resolveVertexFinalMiss<let overrideRayInteraction : bool, T : IBasePayloadS
     rayInteraction = rayInteractionCreateMiss();
   }
 
-  // Account for attenuation on miss
-  // Note: This is important for any effects which apply after miss, such as potential future skybox effects.
-#ifdef RESOLVER_USE_VOLUMETRIC_ATTENUATION
-  radianceAttenuation *= calcVolumetricAttenuation(cb.volumeArgs, none, true, 0.0f, resolveVertexState.origin, resolveVertexState.direction);
-#else 
+  // Fork: no volumetric attenuation on a miss (upstream applied transmittanceColor^5 here in the PSR passes). The sky
+  // on a primary miss is not attenuated by the volumetrics (geometry_resolver.slangh), so the sky seen in reflections
+  // and transmissions matches the directly visible sky.
   unused(radianceAttenuation);
-#endif
 }
 
 // Resolves a single vertex of the resolve loop. Note this should be called first thing from the function handling the hit logic.
