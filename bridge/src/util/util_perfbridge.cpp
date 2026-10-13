@@ -58,6 +58,7 @@ namespace bridge_util {
       std::atomic<uint32_t> s_cmdCount[kMaxCommands];
       std::atomic<uint32_t> s_respWaitCount[kMaxCommands];
       std::atomic<uint64_t> s_respWaitTicks[kMaxCommands];
+      std::atomic<uint32_t> s_droppedCount[kMaxCommands];
       std::atomic<uint64_t> s_commands;
       std::atomic<uint64_t> s_dataWords;
       std::atomic<uint64_t> s_cmdTicks;
@@ -163,6 +164,7 @@ namespace bridge_util {
           s_cmdCount[i].store(0, std::memory_order_relaxed);
           s_respWaitCount[i].store(0, std::memory_order_relaxed);
           s_respWaitTicks[i].store(0, std::memory_order_relaxed);
+          s_droppedCount[i].store(0, std::memory_order_relaxed);
         }
         s_commands.store(0, std::memory_order_relaxed);
         s_dataWords.store(0, std::memory_order_relaxed);
@@ -222,8 +224,14 @@ namespace bridge_util {
         uint64_t classCount[kClassCount] = {};
         std::vector<std::pair<uint32_t, uint32_t>> commands;  // count, command
         std::vector<std::pair<uint64_t, uint32_t>> blocking;  // ticks, command
-        uint64_t blockingCount = 0, blockingTicks = 0;
+        std::vector<std::pair<uint32_t, uint32_t>> dropped;   // count, command
+        uint64_t blockingCount = 0, blockingTicks = 0, droppedCount = 0;
         for (uint32_t i = 0; i < kMaxCommands; ++i) {
+          const uint32_t d = s_droppedCount[i].load(std::memory_order_relaxed);
+          if (d != 0) {
+            dropped.emplace_back(d, i);
+            droppedCount += d;
+          }
           const uint32_t n = s_cmdCount[i].load(std::memory_order_relaxed);
           if (n != 0) {
             classCount[classify(i)] += n;
@@ -239,6 +247,7 @@ namespace bridge_util {
         }
         std::sort(commands.begin(), commands.end(), std::greater<>());
         std::sort(blocking.begin(), blocking.end(), std::greater<>());
+        std::sort(dropped.begin(), dropped.end(), std::greater<>());
 
         std::ostringstream ss;
         ss << std::fixed << std::setprecision(1);
@@ -297,6 +306,17 @@ namespace bridge_util {
         }
         Logger::info(top.str());
 
+        if (!dropped.empty()) {
+          // Setters sent appear in "top commands"; these are the ones not sent (already on the server).
+          std::ostringstream drp;
+          drp << std::fixed << std::setprecision(1) << "[PerfBridge] " << kSide << " redundant setters dropped per frame: total="
+              << double(droppedCount) * perFrame << " |";
+          for (size_t i = 0; i < dropped.size() && i < kTopCommands; ++i) {
+            drp << " " << shortName(dropped[i].second) << "=" << double(dropped[i].first) * perFrame;
+          }
+          Logger::info(drp.str());
+        }
+
         if (!blocking.empty()) {
           std::ostringstream blk;
           blk << std::fixed << std::setprecision(1) << "[PerfBridge] " << kSide << " blocking calls per frame:";
@@ -330,6 +350,12 @@ namespace bridge_util {
       s_commands.fetch_add(1, std::memory_order_relaxed);
       s_dataWords.fetch_add(dataWords, std::memory_order_relaxed);
       s_cmdTicks.fetch_add(uint64_t(std::max<int64_t>(ticks, 0)), std::memory_order_relaxed);
+    }
+
+    void noteDropped(uint16_t command) {
+      if (command < kMaxCommands) {
+        s_droppedCount[command].fetch_add(1, std::memory_order_relaxed);
+      }
     }
 
     void noteSent(uint16_t command) {

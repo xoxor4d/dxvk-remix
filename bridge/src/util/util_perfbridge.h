@@ -62,6 +62,9 @@ namespace bridge_util {
     // One command sent (client) or processed (server), with the data-ring words it carried and its duration.
     void noteCommand(uint16_t command, uint32_t dataWords, int64_t ticks);
 
+    // Client: a setter not sent because the server already has its value (A3a, client.dropRedundantState).
+    void noteDropped(uint16_t command);
+
     // Client: the most recent request, to which the next response wait is attributed.
     void noteSent(uint16_t command);
 

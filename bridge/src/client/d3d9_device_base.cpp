@@ -21,6 +21,7 @@
  */
 #include "d3d9_device_base.h"
 
+#include "client_options.h"
 #include "d3d9_lss.h"
 #include "window.h"
 
@@ -46,6 +47,9 @@ BaseDirect3DDevice9Ex_LSS::BaseDirect3DDevice9Ex_LSS(const bool bExtended,
 
   //Setting default value
   m_maxFrameLatency = 3;
+
+  // A3a: drop setters whose value the server already has (the shadow starts empty: nothing is known yet)
+  m_dropRedundantState = ClientOptions::getDropRedundantState();
 
   // D3D9 seems to inialize its state to this
   memset(&m_state.renderStates[0], 0xBAADCAFE, sizeof(m_state.renderStates));

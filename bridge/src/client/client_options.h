@@ -89,4 +89,10 @@ namespace ClientOptions {
   inline bool getAsyncQueries() {
     return bridge_util::Config::getOption<bool>("client.asyncQueries", true);
   }
+
+  // A3a (docs/bridge-rework-study.md): setters whose value the server already has are not sent (d3d9_sent_state.h).
+  // Read once per device.
+  inline bool getDropRedundantState() {
+    return bridge_util::Config::getOption<bool>("client.dropRedundantState", true);
+  }
 }
