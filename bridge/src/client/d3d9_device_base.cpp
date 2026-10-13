@@ -25,6 +25,7 @@
 #include "d3d9_lss.h"
 #include "window.h"
 
+#include "util_devicecommand.h"
 #include "util_modulecommand.h"
 
 #include <d3d9.h>
@@ -50,6 +51,10 @@ BaseDirect3DDevice9Ex_LSS::BaseDirect3DDevice9Ex_LSS(const bool bExtended,
 
   // A3a: drop setters whose value the server already has (the shadow starts empty: nothing is known yet)
   m_dropRedundantState = ClientOptions::getDropRedundantState();
+
+  // A3b: state setters travel as records of one packet per run (flushed before any other command). With
+  // sendAllServerResponses every setter waits for its answer, so each record goes out on its own.
+  DeviceBridge::setStateBatching(ClientOptions::getBatchState() && !GlobalOptions::getSendAllServerResponses());
 
   // D3D9 seems to inialize its state to this
   memset(&m_state.renderStates[0], 0xBAADCAFE, sizeof(m_state.renderStates));

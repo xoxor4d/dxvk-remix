@@ -37,6 +37,8 @@ namespace Commands {
     Bridge_Any,
     Bridge_Response,
     Bridge_DebugMessage,
+    // A3b: a run of state setter records, see IsBatchableState() and util_bridgecommand.h StateMessage.
+    Bridge_StatePacket,
 
     RemixApi_CreateMaterial,
     RemixApi_DestroyMaterial,
@@ -480,6 +482,7 @@ namespace Commands {
     case Bridge_Any: return "Any";
     case Bridge_Response: return "Response";
     case Bridge_DebugMessage: return "DebugMessage";
+    case Bridge_StatePacket: return "StatePacket";
 
     case RemixApi_CreateMaterial: return "RemixApi_CreateMaterial";
     case RemixApi_DestroyMaterial: return "RemixApi_DestroyMaterial";
@@ -896,6 +899,41 @@ namespace Commands {
 
   inline bool IsDataReserved(Flags flags) {
     return (flags & FlagBits::DataIsReserved) != 0;
+  }
+
+  // A3b: device state setters that may travel as records of a Bridge_StatePacket. They take no flags, answer
+  // nothing unless sendAllServerResponses is set (then packets hold one record each) and only change device state.
+  // The server rejects any other command inside a packet.
+  inline bool IsBatchableState(D3D9Command command) {
+    switch (command) {
+    case IDirect3DDevice9Ex_SetTransform:
+    case IDirect3DDevice9Ex_SetViewport:
+    case IDirect3DDevice9Ex_SetMaterial:
+    case IDirect3DDevice9Ex_SetLight:
+    case IDirect3DDevice9Ex_LightEnable:
+    case IDirect3DDevice9Ex_SetClipPlane:
+    case IDirect3DDevice9Ex_SetRenderState:
+    case IDirect3DDevice9Ex_SetTexture:
+    case IDirect3DDevice9Ex_SetTextureStageState:
+    case IDirect3DDevice9Ex_SetSamplerState:
+    case IDirect3DDevice9Ex_SetScissorRect:
+    case IDirect3DDevice9Ex_SetVertexDeclaration:
+    case IDirect3DDevice9Ex_SetFVF:
+    case IDirect3DDevice9Ex_SetVertexShader:
+    case IDirect3DDevice9Ex_SetVertexShaderConstantF:
+    case IDirect3DDevice9Ex_SetVertexShaderConstantI:
+    case IDirect3DDevice9Ex_SetVertexShaderConstantB:
+    case IDirect3DDevice9Ex_SetStreamSource:
+    case IDirect3DDevice9Ex_SetStreamSourceFreq:
+    case IDirect3DDevice9Ex_SetIndices:
+    case IDirect3DDevice9Ex_SetPixelShader:
+    case IDirect3DDevice9Ex_SetPixelShaderConstantF:
+    case IDirect3DDevice9Ex_SetPixelShaderConstantI:
+    case IDirect3DDevice9Ex_SetPixelShaderConstantB:
+      return true;
+    default:
+      return false;
+    }
   }
 }
 

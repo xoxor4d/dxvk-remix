@@ -95,4 +95,10 @@ namespace ClientOptions {
   inline bool getDropRedundantState() {
     return bridge_util::Config::getOption<bool>("client.dropRedundantState", true);
   }
+
+  // A3b (docs/bridge-rework-study.md): consecutive state setters travel as one Bridge_StatePacket command
+  // (util_bridgecommand.h StateMessage). False = one setter per packet, the per-command cost of before.
+  inline bool getBatchState() {
+    return bridge_util::Config::getOption<bool>("client.batchState", true);
+  }
 }

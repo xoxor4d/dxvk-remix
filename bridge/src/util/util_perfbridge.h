@@ -65,6 +65,10 @@ namespace bridge_util {
     // Client: a setter not sent because the server already has its value (A3a, client.dropRedundantState).
     void noteDropped(uint16_t command);
 
+    // A setter carried as a record inside a Bridge_StatePacket (A3b): counted by type with the commands, but not in
+    // cmdsPerFrame (the packet is the command).
+    void noteRecord(uint16_t command);
+
     // Client: the most recent request, to which the next response wait is attributed.
     void noteSent(uint16_t command);
 

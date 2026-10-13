@@ -52,7 +52,7 @@
 
 #define SetShaderConst(func, StartRegister, pConstantData, Count, size, currentUID) \
   { \
-    ClientMessage c(Commands::IDirect3DDevice9Ex_##func, getId()); \
+    StateMessage c(Commands::IDirect3DDevice9Ex_##func, getId()); \
     currentUID = c.get_uid(); \
     c.send_many(StartRegister, Count); \
     c.send_data(size, (void*)pConstantData); \
@@ -1256,7 +1256,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetTransform(D3DTRANSFORMSTATETYPE St
       return S_OK;
     }
     {
-      ClientMessage c(Commands::IDirect3DDevice9Ex_SetTransform, getId());
+      StateMessage c(Commands::IDirect3DDevice9Ex_SetTransform, getId());
       currentUID = c.get_uid();
       c.send_data(State);
       c.send_data(sizeof(D3DMATRIX), (void*) pMatrix);
@@ -1342,7 +1342,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetViewport(CONST D3DVIEWPORT9* pView
       return S_OK;
     }
     {
-      ClientMessage c(Commands::IDirect3DDevice9Ex_SetViewport, getId());
+      StateMessage c(Commands::IDirect3DDevice9Ex_SetViewport, getId());
       currentUID = c.get_uid();
       c.send_data(sizeof(D3DVIEWPORT9), (void*) pViewport);
     }
@@ -1392,7 +1392,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetMaterial(CONST D3DMATERIAL9* pMate
       return S_OK;
     }
     {
-      ClientMessage c(Commands::IDirect3DDevice9Ex_SetMaterial, getId());
+      StateMessage c(Commands::IDirect3DDevice9Ex_SetMaterial, getId());
       currentUID = c.get_uid();
       c.send_data(sizeof(D3DMATERIAL9), (void*) pMaterial);
     }
@@ -1441,7 +1441,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetLight(DWORD Index, CONST D3DLIGHT9
     // Always sent, even when redundant (A3a): every SetLight of an enabled light makes the runtime re-emit the
     // frame's game lights (D3D9Rtx DirtyLights), and game lights that are not re-emitted can age out.
     {
-      ClientMessage c(Commands::IDirect3DDevice9Ex_SetLight, getId());
+      StateMessage c(Commands::IDirect3DDevice9Ex_SetLight, getId());
       currentUID = c.get_uid();
       c.send_data(Index);
       c.send_data(sizeof(D3DLIGHT9), (void*) pLight);
@@ -1486,7 +1486,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::LightEnable(DWORD LightIndex, BOOL bE
     }
     // Always sent, like SetLight (A3a).
     {
-      ClientMessage c(Commands::IDirect3DDevice9Ex_LightEnable, getId());
+      StateMessage c(Commands::IDirect3DDevice9Ex_LightEnable, getId());
       currentUID = c.get_uid();
       c.send_many(LightIndex, (uint32_t) bEnable);
     }
@@ -1539,7 +1539,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetClipPlane(DWORD Index, CONST float
     }
     {
       // pPlane is a four-element array with the clipping plane coefficients
-      ClientMessage c(Commands::IDirect3DDevice9Ex_SetClipPlane, getId());
+      StateMessage c(Commands::IDirect3DDevice9Ex_SetClipPlane, getId());
       currentUID = c.get_uid();
       c.send_data(Index);
       c.send_data(sizeof(float) * 4, (void*) pPlane);
@@ -1588,7 +1588,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetRenderState(D3DRENDERSTATETYPE Sta
       return S_OK;
     }
     {
-      ClientMessage c(Commands::IDirect3DDevice9Ex_SetRenderState, getId());
+      StateMessage c(Commands::IDirect3DDevice9Ex_SetRenderState, getId());
       currentUID = c.get_uid();
       c.send_many(State, Value);
     }
@@ -2041,7 +2041,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetTexture(DWORD Stage, IDirect3DBase
   }
   UID currentUID = 0;
   {
-    ClientMessage c(Commands::IDirect3DDevice9Ex_SetTexture, getId());
+    StateMessage c(Commands::IDirect3DDevice9Ex_SetTexture, getId());
     currentUID = c.get_uid();
     c.send_many(Stage, (uint32_t) pD3DObject);
   }
@@ -2144,7 +2144,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetTextureStageState(DWORD Stage, D3D
       return S_OK;
     }
     {
-      ClientMessage c(Commands::IDirect3DDevice9Ex_SetTextureStageState, getId());
+      StateMessage c(Commands::IDirect3DDevice9Ex_SetTextureStageState, getId());
       currentUID = c.get_uid();
       c.send_many(Stage, Type, Value);
     }
@@ -2200,7 +2200,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetSamplerState(DWORD Sampler, D3DSAM
       return S_OK;
     }
     {
-      ClientMessage c(Commands::IDirect3DDevice9Ex_SetSamplerState, getId());
+      StateMessage c(Commands::IDirect3DDevice9Ex_SetSamplerState, getId());
       currentUID = c.get_uid();
       c.send_many(Sampler, Type, Value);
     }
@@ -2309,7 +2309,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetScissorRect(CONST RECT* pRect) {
       return S_OK;
     }
     {
-      ClientMessage c(Commands::IDirect3DDevice9Ex_SetScissorRect, getId());
+      StateMessage c(Commands::IDirect3DDevice9Ex_SetScissorRect, getId());
       currentUID = c.get_uid();
       c.send_data(sizeof(RECT), (void*) pRect);
     }
@@ -2551,7 +2551,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetVertexDeclaration(IDirect3DVertexD
       return S_OK;
     }
     {
-      ClientMessage c(Commands::IDirect3DDevice9Ex_SetVertexDeclaration, getId());
+      StateMessage c(Commands::IDirect3DDevice9Ex_SetVertexDeclaration, getId());
       currentUID = c.get_uid();
       c.send_data(id);
     }
@@ -2594,7 +2594,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetFVF(DWORD FVF) {
       return S_OK;
     }
     {
-      ClientMessage c(Commands::IDirect3DDevice9Ex_SetFVF, getId());
+      StateMessage c(Commands::IDirect3DDevice9Ex_SetFVF, getId());
       currentUID = c.get_uid();
       c.send_data(FVF);
     }
@@ -2678,7 +2678,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetVertexShader(IDirect3DVertexShader
       return S_OK;
     }
     {
-      ClientMessage c(Commands::IDirect3DDevice9Ex_SetVertexShader, getId());
+      StateMessage c(Commands::IDirect3DDevice9Ex_SetVertexShader, getId());
       currentUID = c.get_uid();
       c.send_data(id);
     }
@@ -2925,7 +2925,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetStreamSource(UINT StreamNumber, ID
       return S_OK;
     }
     {
-      ClientMessage c(Commands::IDirect3DDevice9Ex_SetStreamSource, getId());
+      StateMessage c(Commands::IDirect3DDevice9Ex_SetStreamSource, getId());
       currentUID = c.get_uid();
       c.send_many(StreamNumber, id, OffsetInBytes, Stride);
     }
@@ -2976,7 +2976,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetStreamSourceFreq(UINT StreamNumber
       return S_OK;
     }
     {
-      ClientMessage c(Commands::IDirect3DDevice9Ex_SetStreamSourceFreq, getId());
+      StateMessage c(Commands::IDirect3DDevice9Ex_SetStreamSourceFreq, getId());
       currentUID = c.get_uid();
       c.send_many(StreamNumber, Divider);
     }
@@ -3020,7 +3020,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetIndices(IDirect3DIndexBuffer9* pIn
       return S_OK;
     }
     {
-      ClientMessage c(Commands::IDirect3DDevice9Ex_SetIndices, getId());
+      StateMessage c(Commands::IDirect3DDevice9Ex_SetIndices, getId());
       currentUID = c.get_uid();
       c.send_data(id);
     }
@@ -3109,7 +3109,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetPixelShader(IDirect3DPixelShader9*
   }
   UID currentUID = 0;
   {
-    ClientMessage c(Commands::IDirect3DDevice9Ex_SetPixelShader, getId());
+    StateMessage c(Commands::IDirect3DDevice9Ex_SetPixelShader, getId());
     currentUID = c.get_uid();
     c.send_data(id);
   }

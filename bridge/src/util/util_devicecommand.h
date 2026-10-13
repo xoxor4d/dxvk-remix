@@ -30,6 +30,8 @@
 using DeviceBridge = Bridge<BridgeId::Device>;
 using ClientMessage = DeviceBridge::Command;
 using ServerMessage = DeviceBridge::Command;
+// A3b: a state setter as a record of the open state packet (client only)
+using StateMessage = DeviceBridge::StateMessage;
 static void initDeviceBridge() {
   DeviceBridge::init("Device",
 #if defined(REMIX_BRIDGE_CLIENT)

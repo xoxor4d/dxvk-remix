@@ -59,6 +59,7 @@ namespace bridge_util {
       std::atomic<uint32_t> s_respWaitCount[kMaxCommands];
       std::atomic<uint64_t> s_respWaitTicks[kMaxCommands];
       std::atomic<uint32_t> s_droppedCount[kMaxCommands];
+      std::atomic<uint64_t> s_records;
       std::atomic<uint64_t> s_commands;
       std::atomic<uint64_t> s_dataWords;
       std::atomic<uint64_t> s_cmdTicks;
@@ -167,6 +168,7 @@ namespace bridge_util {
           s_droppedCount[i].store(0, std::memory_order_relaxed);
         }
         s_commands.store(0, std::memory_order_relaxed);
+        s_records.store(0, std::memory_order_relaxed);
         s_dataWords.store(0, std::memory_order_relaxed);
         s_cmdTicks.store(0, std::memory_order_relaxed);
         s_uploadBytes.store(0, std::memory_order_relaxed);
@@ -258,7 +260,9 @@ namespace bridge_util {
              << " workCpuMsPerFrame=" << std::max(0.0, cpuMsPerFrame - spinMsPerFrame);
         }
         ss << std::setprecision(1)
-           << " | cmdsPerFrame=" << double(s_commands.load(std::memory_order_relaxed)) * perFrame << " (";
+           << " | cmdsPerFrame=" << double(s_commands.load(std::memory_order_relaxed)) * perFrame
+           << " stateRecordsPerFrame=" << double(s_records.load(std::memory_order_relaxed)) * perFrame
+           << " (by type, records included: ";
         for (uint32_t c = 0; c < kClassCount; ++c) {
           ss << (c ? " " : "") << kClassNames[c] << "=" << double(classCount[c]) * perFrame;
         }
@@ -350,6 +354,13 @@ namespace bridge_util {
       s_commands.fetch_add(1, std::memory_order_relaxed);
       s_dataWords.fetch_add(dataWords, std::memory_order_relaxed);
       s_cmdTicks.fetch_add(uint64_t(std::max<int64_t>(ticks, 0)), std::memory_order_relaxed);
+    }
+
+    void noteRecord(uint16_t command) {
+      if (command < kMaxCommands) {
+        s_cmdCount[command].fetch_add(1, std::memory_order_relaxed);
+      }
+      s_records.fetch_add(1, std::memory_order_relaxed);
     }
 
     void noteDropped(uint16_t command) {

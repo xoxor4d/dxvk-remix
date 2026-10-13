@@ -351,6 +351,10 @@ void ProcessDeviceCommandQueue() {
         Logger::info("Device Processing: " + toString(rpcHeader.command) + " UID: " + std::to_string(currentUID));
       }
 #endif
+      // A3b: the per-command handlers, as a lambda so a Bridge_StatePacket can run them once per record (with the
+      // record's command and the packet's device handle and UID). The handlers read their arguments from the data
+      // ring, where a record carries them exactly as the stand-alone command would.
+      const auto dispatch = [&](const Header& rpcHeader, const uint32_t currentUID) {
       // The mother of all switch statements - every call in the D3D9 interface is mapped here...
       switch (rpcHeader.command) {
       case IDirect3D9Ex_CreateDeviceEx:
@@ -3455,6 +3459,28 @@ void ProcessDeviceCommandQueue() {
 
       default:
         break;
+      }
+      };
+
+      if (rpcHeader.command == Bridge_StatePacket) {
+        // Records until the packet's end position: [setter command id][its arguments]
+        while (gbBridgeRunning && DeviceBridge::get_data_pos() != rpcHeader.dataOffset) {
+          PULL_U(recordCommand);
+          const auto command = (Commands::D3D9Command) recordCommand;
+          if (!Commands::IsBatchableState(command)) {
+            // A record the server cannot decode would leave every later read out of step: stop the bridge.
+            Logger::err(format_string("[Bridge] state packet holds a non-state command %u (%s); stopping the bridge.",
+                                      (unsigned) recordCommand, Commands::toString(command).c_str()));
+            gbBridgeRunning = false;
+            break;
+          }
+          if (bridge_util::perf::enabled()) {
+            bridge_util::perf::noteRecord((uint16_t) command);
+          }
+          dispatch(Header { command, 0, rpcHeader.dataOffset, rpcHeader.pHandle }, (uint32_t) currentUID);
+        }
+      } else {
+        dispatch(rpcHeader, (uint32_t) currentUID);
       }
     }
 
