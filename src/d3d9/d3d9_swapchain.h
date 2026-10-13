@@ -121,6 +121,7 @@ namespace dxvk {
     }
 
     void onWindowMessageEvent(UINT message, WPARAM wParam);
+    void processPendingRtxEndOfFrame();
     // NV-DXVK end
 
     void SyncFrameLatency();
@@ -213,6 +214,10 @@ namespace dxvk {
     dxvk::mutex               m_inputPingMutex;
     dxvk::condition_variable  m_inputPingCond;
     bool                      m_inputPingStop = false;
+    // NV-DXVK end
+
+    // NV-DXVK start: end-of-frame events requested by a window message, steady clock ms (0 = none)
+    std::atomic<int64_t>      m_rtxEndOfFramePendingSince = { 0 };
     // NV-DXVK end
 
     WindowState               m_windowState;

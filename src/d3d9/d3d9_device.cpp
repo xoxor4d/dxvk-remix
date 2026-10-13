@@ -1545,6 +1545,12 @@ namespace dxvk {
     if (unlikely(m_flags.test(D3D9DeviceFlag::InScene)))
       return D3DERR_INVALIDCALL;
 
+    // NV-DXVK start: end-of-frame events requested by window messages run on the device thread
+    if (m_implicitSwapchain.ptr() != nullptr) {
+      m_implicitSwapchain->processPendingRtxEndOfFrame();
+    }
+    // NV-DXVK end
+
     m_flags.set(D3D9DeviceFlag::InScene);
 
     return D3D_OK;

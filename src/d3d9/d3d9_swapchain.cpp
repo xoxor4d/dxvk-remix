@@ -42,6 +42,12 @@
 // NV-DXVK end
 
 namespace dxvk {
+  // NV-DXVK start: deferred end-of-frame events, see D3D9SwapChainEx::onWindowMessageEvent
+  static int64_t steadyClockMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+  }
+  // NV-DXVK end
+
   // NV-DXVK start: App Controlled FSE
   enum FSEState {
     Acquire = 0,
@@ -495,6 +501,7 @@ namespace dxvk {
     ScopedCpuProfileZone();
 
     // NV-DXVK start: Restart RTX capture on the new frame
+    m_rtxEndOfFramePendingSince = 0;
     m_parent->m_rtx.EndFrame(m_backBuffers[0]->GetCommonTexture()->GetImage());
     // NV-DXVK end
 
@@ -1895,18 +1902,36 @@ namespace dxvk {
       (message == WM_ACTIVATE && wParam == WA_INACTIVE) ||
       (message == WM_SIZE && (wParam == SIZE_MINIMIZED || wParam == SIZE_RESTORED));
   
+    // Window messages can arrive on another thread (the bridge message channel) while the device thread is in the
+    // middle of a frame, so the events are only requested here and run by the device thread, see processPendingRtxEndOfFrame
     if (triggerRtxEndOfFrameEvents) {
-      // Don't artificially and unnecessarily inject RTX when no present is called
-      const bool callInjectRtx = false;
-      
-      m_parent->m_rtx.EndFrame(m_backBuffers[0]->GetCommonTexture()->GetImage(), callInjectRtx);
-
-      // Need to increment present counter as it's used to reject repeated injectRtx calls.
-      // Failing to do that will make next frame injection get rejected
-      m_parent->EmitCs([](DxvkContext* ctx) {
-        ctx->getDevice()->incrementPresentCount();
-      });
+      int64_t none = 0;
+      m_rtxEndOfFramePendingSince.compare_exchange_strong(none, steadyClockMs());
     }
+  }
+
+  // Called by the device thread at the start of a scene. A present ends the frame itself and clears the request, so
+  // the events only run for an app that keeps drawing without presenting (e.g. minimized in fullscreen).
+  void D3D9SwapChainEx::processPendingRtxEndOfFrame() {
+    constexpr int64_t kPresentWaitMs = 100;
+
+    const int64_t pendingSince = m_rtxEndOfFramePendingSince.load();
+    if (pendingSince == 0 || steadyClockMs() - pendingSince < kPresentWaitMs) {
+      return;
+    }
+
+    m_rtxEndOfFramePendingSince = 0;
+
+    // Don't artificially and unnecessarily inject RTX when no present is called
+    const bool callInjectRtx = false;
+
+    m_parent->m_rtx.EndFrame(m_backBuffers[0]->GetCommonTexture()->GetImage(), callInjectRtx);
+
+    // Need to increment present counter as it's used to reject repeated injectRtx calls.
+    // Failing to do that will make next frame injection get rejected
+    m_parent->EmitCs([](DxvkContext* ctx) {
+      ctx->getDevice()->incrementPresentCount();
+    });
   }
     // NV-DXVK end
   

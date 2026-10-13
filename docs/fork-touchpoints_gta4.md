@@ -282,3 +282,19 @@ ray from a clamped origin.
 - **`src/dxvk/shaders/rtx/algorithm/resolve.slangh`** - fork-touchpoint hook. *Includes the header; the shore fade dispatch continues the ray (`resolveVertexFinalContinue` + clamped origin) when `forkWaterShoreFade` reports the water fully faded.*
 - **`src/dxvk/shaders/rtx/algorithm/geometry_resolver.slangh`** - fork-touchpoint hooks. *The three transmission PSR spawns (first hit, PSR continuation, PSR prepare) wrap `rayCreateDirection` in `forkClampTransmissionRay`.*
 - **`src/dxvk/shaders/rtx/algorithm/integrator.slangh`** - fork-touchpoint hook. *`sampleDirection` wraps `rayCreateDirection` in `forkClampTransmissionRay`.*
+---
+
+## Workstream - Window message end of frame on the device thread (fork - 2026-10-13)
+
+In bridge mode the server cannot subclass the game's window, so window messages reach `D3D9WindowProc`
+on the bridge message channel thread. `D3D9SwapChainEx::onWindowMessageEvent` ran the RTX end-of-frame
+events (`D3D9Rtx::EndFrame`, `EmitCs`) right there on focus loss and minimize / restore, while the bridge
+main thread was in the middle of the game's frame: a race on the device's CS chunk (crash in
+`remixapi_DrawInstance` -> `EmitCs` with a null chunk, the api calls do not take the device lock) and a
+Remix frame ended halfway (camera cut, partial skinned instances kept on screen while the game pauses).
+The message now only records the request; `Present` clears it, `BeginScene` runs it on the device thread
+when no present came for 100 ms (an app drawing without presenting).
+
+- **`src/d3d9/d3d9_swapchain.cpp`** - inline. *`steadyClockMs`, `onWindowMessageEvent` records the request, `processPendingRtxEndOfFrame` runs the events, `Present` clears the request.*
+- **`src/d3d9/d3d9_swapchain.h`** - inline. *`processPendingRtxEndOfFrame`, `m_rtxEndOfFramePendingSince`.*
+- **`src/d3d9/d3d9_device.cpp`** - inline. *`BeginScene` calls `processPendingRtxEndOfFrame` on the implicit swap chain.*
