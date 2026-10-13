@@ -71,6 +71,16 @@ namespace bridge_util {
     // Client: time spent waiting on the Present semaphore.
     void notePresentWait(int64_t ticks);
 
+    // Client: how one IDirect3DQuery9::GetData call was answered (A4, util_queryresults.h).
+    enum class QueryPath : uint32_t {
+      ClientEvent,   // event query answered from the server's processed-Issue counter, no IPC
+      AsyncCached,   // result already in the shared slot (or cached), no IPC
+      AsyncRequest,  // a non-blocking request was sent or is in flight; S_FALSE returned
+      Blocking,      // old round trip (no slot, unsupported type, or client.asyncQueries = False)
+      Count
+    };
+    void noteQuery(QueryPath path, bool signalled);
+
     // Buffer / texture / volume bytes uploaded (client: sent at Unlock; server: copied into the runtime).
     void noteUpload(uint64_t bytes);
 

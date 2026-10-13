@@ -29,14 +29,26 @@ class Direct3DQuery9_LSS: public D3DBase<IDirect3DQuery9> {
   void onDestroy() override;
   D3DQUERYTYPE m_type;
 
+  // Non-blocking GetData (docs/bridge-rework-study.md, A4; util_queryresults.h).
+  enum class Mode { Blocking, ClientEvent, AsyncSlot };
+  Mode m_mode = Mode::Blocking;
+  bool m_issued = false;          // an Issue was sent since creation
+  uint32_t m_issueUid = 0;        // ClientEvent: UID of the last Issue command
+  uint32_t m_slot = ~0u;          // AsyncSlot: shared result slot
+  uint32_t m_requestSeq = 0;      // AsyncSlot: request in flight or answered, 0 = none for the current Issue
+  bool m_haveResult = false;      // AsyncSlot: final result for the current Issue is cached below
+  uint32_t m_resultSize = 0;
+  uint8_t m_result[32] = {};
+
+  HRESULT getDataBlocking(void* pData, DWORD dwSize, DWORD dwGetDataFlags);
+  HRESULT getDataClientEvent(void* pData, DWORD dwSize);
+  HRESULT getDataAsync(void* pData, DWORD dwSize, DWORD dwGetDataFlags);
+  void copyResult(void* pData, DWORD dwSize) const;
+
 protected:
   BaseDirect3DDevice9Ex_LSS* const m_pDevice = nullptr;
 public:
-  Direct3DQuery9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice, D3DQUERYTYPE Type)
-    : D3DBase<IDirect3DQuery9>((IDirect3DQuery9*) nullptr, pDevice)
-    , m_pDevice(pDevice)
-    , m_type(Type) {
-  }
+  Direct3DQuery9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice, D3DQUERYTYPE Type);
 
   /*** IUnknown methods ***/
   STDMETHOD(QueryInterface)(THIS_ REFIID riid, void** ppvObj);

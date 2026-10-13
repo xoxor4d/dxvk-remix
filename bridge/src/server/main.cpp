@@ -2789,8 +2789,14 @@ void ProcessDeviceCommandQueue() {
       {
         GET_HND(pHandle);
         PULL(DWORD, dwIssueFlags);
-        const auto &pQuery = gpD3DQuery[pHandle];
-        const auto hresult = pQuery->Issue(dwIssueFlags);
+        const auto pQuery = gpD3DQuery[pHandle];
+        // A query whose (async) create failed has no server object (counted at the create).
+        const HRESULT hresult = (pQuery != nullptr) ? pQuery->Issue(dwIssueFlags) : D3DERR_INVALIDCALL;
+        // A4: the client answers event queries itself once this Issue has been executed (util_queryresults.h).
+        // Issues are processed in order, so one counter serves every query.
+        if (auto* pQueryBlock = bridge_util::QueryResults::block()) {
+          pQueryBlock->issuedProcessedUid.store((uint32_t) currentUID, std::memory_order_release);
+        }
         SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
         break;
       }
@@ -2799,12 +2805,28 @@ void ProcessDeviceCommandQueue() {
         GET_HND(pHandle);
         PULL(DWORD, dwSize);
         PULL(DWORD, dwGetDataFlags);
-        const auto& pQuery = gpD3DQuery[pHandle];
-        void* pData = NULL;
-        if (dwSize > 0) {
-          pData = new char[dwSize];
+        const auto pQuery = gpD3DQuery[pHandle];
+        std::vector<uint8_t> data(dwSize);
+        void* pData = dwSize > 0 ? data.data() : nullptr;
+        const HRESULT hresult = (pQuery != nullptr) ? pQuery->GetData(pData, dwSize, dwGetDataFlags) : D3DERR_INVALIDCALL;
+
+        if (Commands::IsAsyncResult(rpcHeader.flags)) {
+          // A4: no response. Write the answer to the client's slot, then publish the request's sequence number.
+          PULL_U(slotIndex);
+          PULL_U(requestSeq);
+          auto* pQueryBlock = bridge_util::QueryResults::block();
+          if (pQueryBlock != nullptr && slotIndex < bridge_util::QuerySharedBlock::kMaxSlots) {
+            bridge_util::QueryResultSlot& slot = pQueryBlock->slots[slotIndex];
+            const uint32_t size = std::min<uint32_t>(dwSize, bridge_util::QueryResultSlot::kMaxDataSize);
+            slot.hresult = (int32_t) hresult;
+            slot.size = size;
+            if (hresult == S_OK && size > 0) {
+              memcpy(slot.data, pData, size);
+            }
+            slot.answeredSeq.store(requestSeq, std::memory_order_release);
+          }
+          break;
         }
-        const auto hresult = pQuery->GetData(pData, dwSize, dwGetDataFlags);
 
         ServerMessage c(Commands::Bridge_Response, currentUID);
         c.send_data(hresult);
@@ -2813,10 +2835,6 @@ void ProcessDeviceCommandQueue() {
             memcpy(blobPacketPtr, pData, dwSize);
             c.end_data_blob();
           }
-        }
-      
-        if (dwSize > 0) {
-          delete[]pData;
         }
         break;
       }

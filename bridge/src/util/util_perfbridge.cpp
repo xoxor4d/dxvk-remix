@@ -65,6 +65,8 @@ namespace bridge_util {
       std::atomic<uint64_t> s_presentWaits;
       std::atomic<uint64_t> s_presentWaitTicks;
       std::atomic<uint32_t> s_lastSent;
+      std::atomic<uint64_t> s_queryCalls[size_t(QueryPath::Count)];
+      std::atomic<uint64_t> s_querySignalled[size_t(QueryPath::Count)];
       std::atomic<uint64_t> s_asyncCreateFailures;
 
       struct QueueSnapshot {
@@ -168,6 +170,10 @@ namespace bridge_util {
         s_uploadBytes.store(0, std::memory_order_relaxed);
         s_presentWaits.store(0, std::memory_order_relaxed);
         s_presentWaitTicks.store(0, std::memory_order_relaxed);
+        for (size_t i = 0; i < size_t(QueryPath::Count); ++i) {
+          s_queryCalls[i].store(0, std::memory_order_relaxed);
+          s_querySignalled[i].store(0, std::memory_order_relaxed);
+        }
       }
 
       void startInterval(const QueueWaitStats& writerFull, const QueueWaitStats& readerEmpty, int64_t t) {
@@ -264,6 +270,15 @@ namespace bridge_util {
            << " blockedUsPerFrame=" << toUs(full.blockTicks) * perFrame
            << " | responseWait: spinUsPerFrame=" << toUs(empty.spinTicks) * perFrame
            << " blockedUsPerFrame=" << toUs(empty.blockTicks) * perFrame;
+        {
+          // Query GetData calls per frame by path; after "/" the ones that returned the result (S_OK).
+          constexpr const char* kQueryPathNames[size_t(QueryPath::Count)] = { "clientEvent", "asyncCached", "asyncRequest", "blocking" };
+          ss << " | queryGetDataPerFrame:";
+          for (size_t i = 0; i < size_t(QueryPath::Count); ++i) {
+            ss << " " << kQueryPathNames[i] << "=" << double(s_queryCalls[i].load(std::memory_order_relaxed)) * perFrame
+               << "/" << double(s_querySignalled[i].load(std::memory_order_relaxed)) * perFrame;
+          }
+        }
 #else
         ss << " | idle: waitsPerFrame=" << double(empty.waits) * perFrame
            << " spinUsPerFrame=" << toUs(empty.spinTicks) * perFrame
@@ -332,6 +347,16 @@ namespace bridge_util {
     void notePresentWait(int64_t ticks) {
       s_presentWaits.fetch_add(1, std::memory_order_relaxed);
       s_presentWaitTicks.fetch_add(uint64_t(std::max<int64_t>(ticks, 0)), std::memory_order_relaxed);
+    }
+
+    void noteQuery(QueryPath path, bool signalled) {
+      const size_t i = size_t(path);
+      if (i < size_t(QueryPath::Count)) {
+        s_queryCalls[i].fetch_add(1, std::memory_order_relaxed);
+        if (signalled) {
+          s_querySignalled[i].fetch_add(1, std::memory_order_relaxed);
+        }
+      }
     }
 
     void noteUpload(uint64_t bytes) {

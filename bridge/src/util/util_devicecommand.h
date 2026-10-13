@@ -24,6 +24,7 @@
 #include "config/global_options.h"
 
 #include "util_bridgecommand.h"
+#include "util_queryresults.h"
 #include "util_singleton.h"
 
 using DeviceBridge = Bridge<BridgeId::Device>;
@@ -46,4 +47,6 @@ static void initDeviceBridge() {
                      GlobalOptions::getClientCmdQueueSize(),
                      GlobalOptions::getClientDataQueueSize());
 #endif
+  // Non-blocking query results (A4): mapped by both sides, like the channels.
+  bridge_util::QueryResults::init();
 }

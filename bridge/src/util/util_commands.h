@@ -882,7 +882,13 @@ namespace Commands {
                                     // and only allocation id(s) is transferred on the queue
     DataIsReserved   = 0b00000010,  // Data was already reserved in data queue and only its
                                     // offset is transferred
+    AsyncResult      = 0b00000100,  // IDirect3DQuery9_GetData: no response; the server writes the
+                                    // result to a shared slot (util_queryresults.h)
   };
+
+  inline bool IsAsyncResult(Flags flags) {
+    return (flags & FlagBits::AsyncResult) != 0;
+  }
 
   inline bool IsDataInSharedHeap(Flags flags) {
     return (flags & FlagBits::DataInSharedHeap) != 0;
