@@ -59,7 +59,7 @@ void sharcInsertVertex(inout SharcUpdateState state, SharcHitData hit, uint port
     return;
   }
 
-  SharcParameters p = makeSharcParameters(portalSpace);
+  SharcParameters p = makeSharcParametersAt(portalSpace, hit.positionWorld);
   HashGridKey key;
   HashGridIndex index;
   if (!HashGridInsertEntry(p.hashGridData, hit.positionWorld, hit.normalWorld,

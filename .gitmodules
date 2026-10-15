@@ -52,3 +52,6 @@
 [submodule "submodules/FidelityFX-SDK"]
 	path = submodules/FidelityFX-SDK
 	url = https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK.git
+[submodule "submodules/sharc"]
+	path = submodules/sharc
+	url = https://github.com/NVIDIAGameWorks/Spatial-Hash-Radiance-Cache.git

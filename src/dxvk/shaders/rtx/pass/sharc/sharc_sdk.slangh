@@ -61,4 +61,6 @@
 #define SHARC_SAMPLE_NUM_THRESHOLD cb.sharcArgs.minSampleCount
 #endif
 
-#include "rtx/external/sharc/SharcCommon.h"
+// The SDK is the unmodified submodules/sharc (NVIDIA-RTX/SHARC 1.8.3), found through the
+// submodules include path. Ray portal space is kept out of the SDK: see sharc_bindings.slangh.
+#include "sharc/include/SharcCommon.h"

@@ -3,8 +3,9 @@
 SHARC (Spatially Hashed Radiance Cache) is a world-space cache of irradiance that lets indirect
 paths terminate early. It is the fourth value of `rtx.integrateIndirectMode` (`3`), alongside
 Importance Sampled, ReSTIR GI and the Neural Radiance Cache, and it uses the shader headers from
-[NVIDIA-RTX/SHARC](https://github.com/NVIDIA-RTX/SHARC) vendored under
-`src/dxvk/shaders/rtx/external/sharc/`.
+[NVIDIA-RTX/SHARC](https://github.com/NVIDIA-RTX/SHARC) 1.8.3, used unmodified from the
+`submodules/sharc` git submodule (run `git submodule update --init submodules/sharc` on an existing
+clone).
 
 ## How it works
 
@@ -73,8 +74,11 @@ Portal space is part of the cache key. Radiance at a point depends on which port
 because crossing a portal rewrites the ray mask that feeds the continuation ray, the NEE shadow ray
 and the unordered resolve. Keying on it means a vertex reached through a portal occupies its own
 cell and can never be read back by a main-space path, which is what makes insertion from portal
-space safe and lets portal-only geometry be cached at all. Two bits for this are taken from the
-level field of the vendored SDK headers; see `src/dxvk/shaders/rtx/external/sharc/README.md`.
+space safe and lets portal-only geometry be cached at all. The SDK is not modified for this: each
+portal space gets its own band of 128 levels through the SDK's `levelBias` parameter, which moves
+the key's level field without changing the cell's position or size, and the resolve sets the bias
+per entry so the adjacent-level blend stays inside the band. See `makeSharcParameters` in
+`src/dxvk/shaders/rtx/pass/sharc/sharc_bindings.slangh`.
 
 ## Cache invalidation
 

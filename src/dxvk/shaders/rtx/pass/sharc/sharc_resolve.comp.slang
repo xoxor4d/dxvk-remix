@@ -37,5 +37,7 @@ void main(uint3 index : SV_DispatchThreadID) {
   p.staleFrameNumMax = cb.sharcArgs.staleFrames;
   p.frameIndex = cb.frameIdx;
 
-  SharcResolveEntry(index.x, makeSharcParameters(), p);
+  // The entry's portal-space band sets levelBias (sharc_bindings.slangh). The SDK reads the same
+  // key again straight after, so this load costs no extra memory traffic.
+  SharcResolveEntry(index.x, makeSharcParametersForKey(SharcHash[index.x]), p);
 }

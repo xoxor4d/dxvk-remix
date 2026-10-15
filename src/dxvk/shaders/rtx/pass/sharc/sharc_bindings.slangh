@@ -34,20 +34,78 @@ RWStructuredBuffer<SharcAccumulationData> SharcAccumulation;
 layout(binding = SHARC_BINDING_RESOLVED)
 RWStructuredBuffer<SharcPackedData> SharcResolved;
 
-// portalSpace defaults to main space: callers that only touch existing entries (resolve,
-// the deferred flush, miss accumulation) never recompute a spatial key, so the value is
-// unused there.
+// Ray portal space in the cache key, with the SDK unmodified.
+//
+// Radiance at a point depends on which portal space reached it, because crossing a portal rewrites
+// the ray mask that feeds the continuation ray, the NEE shadow ray and the unordered resolve, so
+// cells of different portal spaces must never mix. The SDK key (17-bit XYZ, 9-bit level, 3 normal
+// bits, user bit 63) has no spare field, so each portal space gets its own band of 128 levels:
+// levelBias = band * 128. The SDK adds levelBias to the level it stores in the key and subtracts it
+// again in the voxel size, so a cell's position and size are those of main space while its level
+// field lands in its own band. Main space is band 0, so its keys are the stock SDK keys.
+//
+// Inserted keys always have a band-relative level of 1 to 127: the SDK clamps at 1 only in absolute
+// terms, so makeSharcParametersAt applies the same floor for the other bands, and 127 is a camera
+// distance of 2^127. SHARC_BLEND_ADJACENT_LEVELS (SharcGetAdjacentLevelHashKey) only moves a key's
+// level by one, which reaches band-relative 0 or 128 at worst: levels no insert produces, so the
+// lookup misses rather than reading another band. The resolve sets levelBias per entry from the
+// key's band (sharc_resolve.comp.slang), so the blend's voxel size is the band's own.
+static const uint kSharcPortalLevelBand = 128;
+
+// PORTAL_SPACE_NONE (2) -> 0, PORTAL_0 (0) -> 2, PORTAL_1 (1) -> 3, PORTAL_COMBINED (3) -> 1.
+uint sharcPortalSpaceBand(uint portalSpace) {
+  return (portalSpace + 2u) & 3u;
+}
+
+// portalSpace defaults to main space: callers that only touch existing entries by index (miss
+// accumulation, deposits) never compute a spatial key, so the value is unused there. Callers that do compute a key use makeSharcParametersAt.
 SharcParameters makeSharcParameters(uint portalSpace = PORTAL_SPACE_NONE) {
   SharcParameters p;
-  p.hashGridParameters.portalSpace = portalSpace;
   p.hashGridParameters.cameraPosition = cb.sharcArgs.cameraPosition;
   p.hashGridParameters.logarithmBase = SHARC_GRID_LOGARITHM_BASE;
   p.hashGridParameters.sceneScale = cb.sharcArgs.gridScale;
-  p.hashGridParameters.levelBias = 0.0f;
+  p.hashGridParameters.levelBias = float(sharcPortalSpaceBand(portalSpace) * kSharcPortalLevelBand);
   p.hashGridData.capacity = cb.sharcArgs.capacity;
   p.hashGridData.hashEntriesBuffer = SharcHash;
   p.accumulationBuffer = SharcAccumulation;
   p.resolvedBuffer = SharcResolved;
   p.radianceScale = cb.sharcArgs.radianceScale;
+  return p;
+}
+
+// For callers that compute a key for samplePosition. Outside band 0 the SDK's level floor of 1 is
+// band-relative 1 - levelBias, so a sample closer than 2 units to the camera would get a finer
+// level than main space gives it. Where main space would clamp, the camera handed to the SDK is
+// moved to sqrt(8) units from the sample (band-relative level 1.5, inside [1, 2) with margin for
+// rounding up to |position| ~ 2^24), which yields band-relative level 1 and main space's voxel size.
+// The camera only feeds the level, so nothing else changes.
+SharcParameters makeSharcParametersAt(uint portalSpace, vec3 samplePosition) {
+  SharcParameters p = makeSharcParameters(portalSpace);
+  if (sharcPortalSpaceBand(portalSpace) != 0u) {
+    // HashGridGetLevel as the SDK evaluates it, without the bias.
+    const vec3 biasedPosition = samplePosition + vec3(HASH_GRID_POSITION_BIAS);
+    const vec3 cameraOffset = p.hashGridParameters.cameraPosition - biasedPosition;
+    const float distance2 = max(dot(cameraOffset, cameraOffset), 1e-10f);
+    if (0.5f * HashGridLogBase(distance2, p.hashGridParameters.logarithmBase) < 1.0f) {
+      // Offset along the axis of the smallest coordinate, where the sum rounds least.
+      const vec3 absPosition = abs(biasedPosition);
+      vec3 offset = vec3(0.0f, 0.0f, 2.828427f);
+      if (absPosition.x <= absPosition.y && absPosition.x <= absPosition.z) {
+        offset = vec3(2.828427f, 0.0f, 0.0f);
+      } else if (absPosition.y <= absPosition.z) {
+        offset = vec3(0.0f, 2.828427f, 0.0f);
+      }
+      p.hashGridParameters.cameraPosition = biasedPosition + offset;
+    }
+  }
+  return p;
+}
+
+// The resolve sees every entry with one set of parameters; the blend's voxel size needs the entry's
+// own band, which the key's level field carries.
+SharcParameters makeSharcParametersForKey(HashGridKey key) {
+  SharcParameters p = makeSharcParameters();
+  const uint level = uint(key >> HASH_GRID_LEVEL_BIT_OFFSET) & HASH_GRID_LEVEL_BIT_MASK;
+  p.hashGridParameters.levelBias = float((level / kSharcPortalLevelBand) * kSharcPortalLevelBand);
   return p;
 }

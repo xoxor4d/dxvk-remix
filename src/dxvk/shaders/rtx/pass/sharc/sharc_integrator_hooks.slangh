@@ -141,7 +141,7 @@ void sharcDebugVertex(PathState pathState, SurfaceInteraction surfaceInteraction
   case DEBUG_VIEW_SHARC_GRID_CELLS:
   case DEBUG_VIEW_SHARC_CELL_AGE:
   {
-    SharcParameters p = makeSharcParameters(pathState.portalSpace);
+    SharcParameters p = makeSharcParametersAt(pathState.portalSpace, surfaceInteraction.position);
     if (cb.debugView == DEBUG_VIEW_SHARC_GRID_CELLS)
     {
       storeInDebugView(pixel, HashGridDebugColoredHash(surfaceInteraction.position, surfaceInteraction.geometryNormal, p.hashGridParameters));
@@ -493,7 +493,7 @@ bool sharcOnResolvedVertex(
   // from portal space safe and lets portal-only geometry be cached at all.
   if (sharcEligible)
   {
-    SharcParameters sharcParameters = makeSharcParameters(pathState.portalSpace);
+    SharcParameters sharcParameters = makeSharcParametersAt(pathState.portalSpace, surfaceInteraction.position);
     SharcHitData sharcHit = (SharcHitData)0;
     sharcHit.positionWorld = surfaceInteraction.position;
     sharcHit.normalWorld = surfaceInteraction.geometryNormal;
