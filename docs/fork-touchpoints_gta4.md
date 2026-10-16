@@ -359,3 +359,18 @@ keep 64 objects so queued lists are reused instead of recreated every frame.
 - **`src/dxvk/dxvk_queue.cpp`** - inline tweak, 4 LOC. *`DxvkSubmissionQueue::submit` waits on the option instead of the constant.*
 - **`src/dxvk/dxvk_device.h`** - inline tweak, 2 LOC. *`m_recycledCommandLists` / `m_recycledDescriptorPools` capacity 16 -> 64.*
 - **`dxvk.conf`** - documents `dxvk.maxQueuedCommandBuffers`.
+---
+
+## Workstream - Bridge data ring wrap deadlock (fork - 2026-10-16)
+
+`syncDataQueue` stalled the client whenever its data ring wrapped while the server's read position was at
+the current batch start, waiting for the server to release `dataSemaphore`. The server at the batch start
+has consumed everything that was pushed (a batch's data is not readable before its command header), so
+nothing could be overwritten; and the server only evaluates the release after processing a command, which
+the stalled client never pushed. The game froze until the client's retry budget ran out (forever while the
+window was inactive). Hit more often once the server got faster (idle more often) and the API water added
+data per frame (wraps more often).
+
+- **`bridge/src/util/util_bridgecommand.cpp`** - inline tweak. *The third overwrite condition
+  (`batchStart <= server && serverResetPosRequired`) is removed; conditions 1 and 2 still cover a server
+  that is behind.*

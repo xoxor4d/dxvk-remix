@@ -132,11 +132,13 @@ DECL_BRIDGE_FUNC(void, syncDataQueue, size_t expectedMemUsage, bool posResetOnLa
     * overwrite conditions
     * 1. client < server, expectedClient >= server
     * 2. client > server, expectedClient >= server, expectedClient < client
+    * A server at the batch start has consumed everything the client pushed (the batch's own data is not
+    * readable before its command is pushed), so a wrap with the server there overwrites nothing. Stalling
+    * on it deadlocked: the server only releases the wait after a command, and the client pushes none.
     */
   if (expectedClientDataPos >= serverCount &&
       ((s_curBatchStartPos < serverCount)
-       || (s_curBatchStartPos > serverCount && expectedClientDataPos < s_curBatchStartPos)
-       || ((s_curBatchStartPos <= serverCount) && *s_pWriterChannel->serverResetPosRequired))) {
+       || (s_curBatchStartPos > serverCount && expectedClientDataPos < s_curBatchStartPos))) {
     handleOverwriteCondition();
   }
 }
