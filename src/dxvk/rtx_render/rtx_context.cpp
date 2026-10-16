@@ -1391,8 +1391,7 @@ namespace dxvk {
       constants.debugKnob = debugView.debugKnob();
       constants.forceFirstHitInGBufferPass = debugView.showFirstGBufferHit();
       constants.enableDlssNrControlMask =
-        m_common->metaNeuralUplift().useNeuralUplift() &&
-        !DxvkNeuralUplift::useAutoMask();
+        m_common->metaNeuralUplift().useNeuralUplift();
       constants.enableDlssNrVolumetricControlMask =
         constants.enableDlssNrControlMask &&
         DxvkNeuralUplift::enableVolumetricControlMask();

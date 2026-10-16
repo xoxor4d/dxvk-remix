@@ -362,11 +362,12 @@ namespace dxvk {
       Success,
     } EvaluateResult;
 
-    void initialize(
+    bool initialize(
       Rc<DxvkContext> renderContext,
       VkCommandBuffer commandList,
       uint32_t displayOutSize[2],
-      VkFormat outputFormat
+      VkFormat outputFormat,
+      bool litePreset
       );
 
     // interpolates one frame
@@ -427,7 +428,7 @@ namespace dxvk {
 
     // preset is an NVSDK_NGX_DLSSNR_Hint_Render_Preset value, taken as uint32_t so this
     // declaration does not need the DLSS-NR SDK header (which has no arm64 package).
-    void initialize(Rc<DxvkContext> renderContext, const uint32_t displaySize[2], uint32_t preset);
+    void initialize(Rc<DxvkContext> renderContext, const uint32_t displaySize[2], uint32_t preset, bool queryVramAllocation = false);
 
     bool evaluateNeuralRendering(Rc<DxvkContext> renderContext, const NGXNeuralRenderingBuffers& buffers, const NGXNeuralRenderingSettings& settings) const;
 
@@ -435,6 +436,14 @@ namespace dxvk {
 
     bool isNeuralRenderingInitialized() const {
       return m_initialized && m_neuralRenderingFeature != nullptr;
+    }
+
+    bool hasVramAllocation() const {
+      return m_hasVramAllocation;
+    }
+
+    uint64_t getVramAllocationBytes() const {
+      return m_vramAllocationBytes;
     }
 
   public:
@@ -449,6 +458,8 @@ namespace dxvk {
 
   private:
     bool m_initialized = false;
+    bool m_hasVramAllocation = false;
+    uint64_t m_vramAllocationBytes = 0;
     NVSDK_NGX_Handle* m_neuralRenderingFeature = nullptr;
   };
 
