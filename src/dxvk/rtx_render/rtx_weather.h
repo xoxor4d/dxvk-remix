@@ -63,8 +63,8 @@ namespace dxvk {
   X(float,   transmittanceMeasurementDistanceMeters, 200.0f,                      WK_Extinction, "Volumetric Fog", "Medium",           "Transmittance Measurement Distance", 1.0f, 2000.0f, 5.0f,  "%.0f") \
   X(Vector3, singleScatteringAlbedo,             Vector3(0.999f, 0.999f, 0.999f), WK_Color,      "Volumetric Fog", "Medium",           "Single Scattering Albedo",   0.0f,    1.0f,    0.005f,  "%.3f") \
   /* Volumetric appearance (full set) */ \
-  X(float, fogSunVisibilityGain, 1.0f, WK_Scalar, "Volumetric Fog", "Medium", "Fog Sun Visibility Gain", 0.0f, 4.0f, 0.05f, "%.2f") \
-  X(float, volumetricConsumerGain, 0.008f, WK_Scalar, "Volumetric Fog", "Medium", "Fog Brightness Gain", 0.0f, 0.05f, 0.0005f, "%.4f") \
+  X(float, fogSunVisibilityGain, 1.0f, WK_Scalar, "Volumetric Fog", "Medium", "Fog Sun Visibility Gain", 0.0f, 50.0f, 0.05f, "%.2f") \
+  X(float, volumetricConsumerGain, 0.008f, WK_Scalar, "Volumetric Fog", "Medium", "Fog Brightness Gain", 0.0f, 50.0f, 0.0005f, "%.4f") \
   X(bool, enableHeterogeneousFog, false, WK_Step, "Volumetric Fog", "Heterogeneous", "Enable Heterogeneous Fog", 0.0f, 1.0f, 1.0f, "%.0f") \
   X(float, noiseFieldDensityScale, 1.0f, WK_Scalar, "Volumetric Fog", "Heterogeneous", "Noise Field Density Scale", 0.0f, 5.0f, 0.05f, "%.2f") \
   X(float, noiseFieldDensityExponent, 2.0f, WK_Scalar, "Volumetric Fog", "Heterogeneous", "Noise Field Density Exponent", 0.1f, 8.0f, 0.05f, "%.2f") \
@@ -73,10 +73,10 @@ namespace dxvk {
   X(float, noiseFieldGain, 0.5f, WK_Scalar, "Volumetric Fog", "Heterogeneous", "Noise Field Gain", 0.0f, 1.0f, 0.01f, "%.2f") \
   X(float, noiseFieldTimeScale, 0.5f, WK_Scalar, "Volumetric Fog", "Heterogeneous", "Noise Field Time Scale", 0.0f, 4.0f, 0.05f, "%.2f") \
   X(float, noiseFieldSubStepSizeMeters, 10.0f, WK_Scalar, "Volumetric Fog", "Heterogeneous", "Noise Field Substep Size", 0.5f, 50.0f, 0.5f, "%.1f") \
-  X(float, froxelMaxDistanceMeters, 20.0f, WK_Scalar, "Volumetric Fog", "Reach", "Froxel Max Distance", 1.0f, 200.0f, 1.0f, "%.0f") \
+  X(float, froxelMaxDistanceMeters, 1000.0f, WK_Scalar, "Volumetric Fog", "Reach", "Froxel Max Distance", 1.0f, 4000.0f, 1.0f, "%.0f") \
   X(bool, enableFogRemap, false, WK_Step, "Volumetric Fog", "Fog Remap", "Enable Legacy Fog Remapping", 0.0f, 1.0f, 1.0f, "%.0f") \
   X(bool, enableFogColorRemap, false, WK_Step, "Volumetric Fog", "Fog Remap", "Enable Fog Color Remapping", 0.0f, 1.0f, 1.0f, "%.0f") \
-  X(bool, enableFogMaxDistanceRemap, true, WK_Step, "Volumetric Fog", "Fog Remap", "Enable Fog Max Distance Remapping", 0.0f, 1.0f, 1.0f, "%.0f") \
+  X(bool, enableFogMaxDistanceRemap, false, WK_Step, "Volumetric Fog", "Fog Remap", "Enable Fog Max Distance Remapping", 0.0f, 1.0f, 1.0f, "%.0f") \
   X(float, fogRemapMaxDistanceMinMeters, 1.0f, WK_Scalar, "Volumetric Fog", "Fog Remap", "Legacy Max Distance Min", 0.0f, 200.0f, 0.5f, "%.1f") \
   X(float, fogRemapMaxDistanceMaxMeters, 40.0f, WK_Scalar, "Volumetric Fog", "Fog Remap", "Legacy Max Distance Max", 0.0f, 500.0f, 1.0f, "%.1f") \
   X(float, fogRemapTransmittanceMeasurementDistanceMinMeters, 20.0f, WK_Scalar, "Volumetric Fog", "Fog Remap", "Remapped Transmittance Measurement Distance Min", 1.0f, 500.0f, 1.0f, "%.1f") \
