@@ -19,6 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
+#include <algorithm>
 #include <assert.h>
 #include <cstring>
 #include <mutex>
@@ -493,7 +494,7 @@ namespace dxvk {
         }
         // If new OMMs were built this frame, force a full scene rebuild next frame
         // so tryBindOpacityMicromap runs on all instances and the BLASes pick up the new OMMs.
-        if (opacityMicromapManager && opacityMicromapManager->hasNewlyBuiltOmms()) {
+        if (opacityMicromapManager && fork_hooks::ommRebindDue(opacityMicromapManager->hasNewlyBuiltOmms(), currentFrame)) {
           m_ommBindPending = true;
           instanceManager.notifySceneChanged();
         }
@@ -522,7 +523,11 @@ namespace dxvk {
         anyBucketDirty = true;
         m_ommBindPending = false;
       } else {
-        std::unordered_set<RtInstance*> currentInstanceSet(instances.begin(), instances.end());
+        // NV-DXVK start: a sorted scratch copy instead of a hash set built (one node allocation per instance) every frame
+        static std::vector<RtInstance*> s_liveInstances;
+        s_liveInstances.assign(instances.begin(), instances.end());
+        std::sort(s_liveInstances.begin(), s_liveInstances.end());
+        // NV-DXVK end
         bucketDirty.resize(m_cachedBuckets.size(), false);
 
         for (uint32_t bi = 0; bi < m_cachedBuckets.size(); ++bi) {
@@ -542,7 +547,7 @@ namespace dxvk {
             // bucket-vector cleanup), the pointer is dangling and must not be
             // dereferenced. Mark the bucket dirty so it gets rebuilt without
             // touching the stale entry.
-            if (currentInstanceSet.find(inst) == currentInstanceSet.end()) {
+            if (!std::binary_search(s_liveInstances.begin(), s_liveInstances.end(), inst)) {
               bucketDirty[bi] = true;
               anyBucketDirty = true;
               break;
@@ -1043,10 +1048,12 @@ namespace dxvk {
 
     // If new OMMs were built this frame, force a full scene rebuild next frame
     // so tryBindOpacityMicromap runs on all instances and the BLASes pick up the new OMMs.
-    if (opacityMicromapManager && opacityMicromapManager->hasNewlyBuiltOmms()) {
+    // NV-DXVK start: at most every rtx.opacityMicromap.rebindFrameInterval frames (the rebuild re-sorts every bucket)
+    if (opacityMicromapManager && fork_hooks::ommRebindDue(opacityMicromapManager->hasNewlyBuiltOmms(), currentFrame)) {
       m_ommBindPending = true;
       instanceManager.notifySceneChanged();
     }
+    // NV-DXVK end
 
     // Save baseline counts (before billboards are appended in prepareSceneData).
     // The full-skip cache path and prepareSceneData both use these to avoid

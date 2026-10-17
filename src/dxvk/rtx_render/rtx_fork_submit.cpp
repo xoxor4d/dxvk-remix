@@ -20,6 +20,7 @@
 #include "rtx_option_manager.h"   // RtxOptionManager::isDrawcallTranslationInvalid
 #include "rtx_instance_manager.h" // RtInstance
 #include "rtx_texture_manager.h"  // RtxTextureManager::getTextureCacheGeneration
+#include "rtx_preserved_object_picking.h" // preserveInstancesWithObjectPicking
 #include "rtx_scene_manager.h"    // SceneManager, DrawCallMetaInfo
 
 #include "dxvk_device.h"          // DxvkDevice::getCommon()->getResources()
@@ -119,9 +120,11 @@ namespace fork_hooks {
   // identity (dirty flags clear) is the same draw as last frame. The D3D9 path
   // then refreshes the instance instead of re-running processDrawCallState;
   // external draws always ran the dynamic path. The conditions mirror
-  // SceneManager::submitDrawState's usePreservePath, plus the material
-  // replacement lookup of the dynamic path (a replacement that shows up
-  // changes the material without changing the identity).
+  // SceneManager::submitDrawState's usePreservePath. The refresh is what
+  // preserveReplacementInstance does minus the BlasEntry input copy: that
+  // re-points billboard / beam creation at this frame's vertex memory, which
+  // D3D9 draws need because theirs gets recycled; an api mesh's geometry is
+  // owned by the replacer and does not move.
   // ---------------------------------------------------------------------------
   namespace {
     struct ExternalDrawOptions {
@@ -142,18 +145,13 @@ namespace fork_hooks {
     }
 
     DxvkDevice* device = ctx->getDevice().ptr();
+    // externalDrawObjectPicking hands out the per draw picking ids on the dynamic path
+    if (device->getCommon()->getResources().getRaytracingOutput().m_primaryObjectPicking.isValid()) {
+      return false;
+    }
     const uint32_t frame = device->getCurrentFrameId();
     const bool seenThisFrame = ri.frameLastSeen == frame;
     const RasterGeometry& submesh = (*submeshes)[0];
-
-    // the material the dynamic path draws with: the replacement for its key, else the api material itself
-    const MaterialData* material = scene.m_pReplacer->accessExternalMaterial(submesh.externalMaterial);
-    const void* replacement = nullptr;
-    if (material != nullptr) {
-      const XXH64_hash_t key = game_textures::findMaterialKey(submesh.externalMaterial);
-      replacement = scene.m_pReplacer->getReplacementMaterial(
-        applyD3DHashOverrides(state.drawCall.getMaterialData(), key != kEmptyHash ? key : material->getHash())).get();
-    }
     const XXH64_hash_t materialIdentity = state.drawCall.getMaterialData().computeIdentityHash();
 
     RtInstance* instance = ri.prims.size() == 1 ? ri.prims[0].getInstance() : nullptr;
@@ -166,23 +164,28 @@ namespace fork_hooks {
       !state.categories.test(InstanceCategories::ParticleEmitter) &&
       ri.activeReplacements == nullptr &&
       externalDrawMeshReplacement(*scene.m_pReplacer, reinterpret_cast<XXH64_hash_t>(state.mesh)) == nullptr &&
-      ri.externalReplacementMaterial == replacement &&
       ri.externalMaterialIdentityHash == materialIdentity &&
       device->getCommon()->getTextureManager().getTextureCacheGeneration() == scene.m_textureCacheGenerationValidForPreserve;
 
     if (!unchanged) {
-      // the dynamic path runs next with exactly these inputs
+      // the dynamic path runs next with exactly this material state
       if (!seenThisFrame) {
-        ri.externalReplacementMaterial = replacement;
         ri.externalMaterialIdentityHash = materialIdentity;
       }
       return false;
     }
 
-    // preserveReplacementInstance reads the draw's geometry (bounding box, billboards) and transforms
-    state.drawCall.overrideGeometryData(std::shared_ptr<const RasterGeometry>(submeshes, &submesh));
-    state.drawCall.overrideCullMode(state.doubleSided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT);
-    scene.preserveReplacementInstance(ctx, state.drawCall, nullptr, &ri);
+    preserveInstancesWithObjectPicking(
+      ri.prims,
+      state.drawCall.drawCallID,
+      [&](RtInstance& inst) {
+        scene.preserveInstance(inst, &state.drawCall);
+        scene.m_instanceManager.preserveInstance(inst, state.drawCall, nullptr);
+      },
+      [&] {
+        scene.trackObjectPickingMeta(state.drawCall, state.drawCall.drawCallID);
+      });
+    ri.recalculateBoundingBox(state.drawCall.getTransformData().objectToWorld, &submesh.boundingBox);
     ri.frameLastSeen = frame;
     return true;
   }

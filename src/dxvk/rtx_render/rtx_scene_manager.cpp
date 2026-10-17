@@ -2676,21 +2676,7 @@ namespace dxvk {
   void SceneManager::submitExternalDraw(const Rc<DxvkContext>& ctx, std::unique_ptr<ExternalDrawState> pstate) {
     ScopedCpuProfileZone();
 
-    Rc<DxvkSampler> externalSampler = getOrCreateExternalSampler();
-
     auto& state = *pstate;
-
-    {
-      state.drawCall.modifyMaterialData().samplers[0] = externalSampler;
-      state.drawCall.modifyMaterialData().samplers[1] = externalSampler;
-    }
-    {
-      const RtCamera& rtCamera = ctx->getCommonObjects()->getSceneManager().getCameraManager()
-        .getCamera(state.cameraType);
-      state.drawCall.modifyTransformData().worldToView = rtCamera.getWorldToViewf();
-      state.drawCall.modifyTransformData().viewToProjection = rtCamera.getViewToProjectionf();
-      state.drawCall.modifyTransformData().objectToView = state.drawCall.getTransformData().worldToView * state.drawCall.getTransformData().objectToWorld;
-    }
 
     if (!state.gpuInstancingTransforms.empty()) {
       state.drawCall.modifyTransformData().instancesToObject =
@@ -2720,11 +2706,25 @@ namespace dxvk {
 
     const ReplacementInstance::LookupKey externalKey { identityHash, spatialMapHash, matHash, kEmptyHash, worldPos, xform };
     ReplacementInstance* replacementInstance = m_drawCallTracker.findOrCreateReplacementInstance(externalKey);
-    // NV-DXVK start: preserve path for unchanged external draws; option reads below invalidate it like the D3D9 path
+    // NV-DXVK start: preserve path for unchanged external draws; option reads below invalidate it like the D3D9 path.
+    // The samplers and view transforms only the dynamic path needs are set up after it.
     if (fork_hooks::externalDrawTryPreserve(*this, ctx, state, submeshesRef, *replacementInstance)) {
       return;
     }
     RTX_OPTION_INVALIDATION_SCOPE(RtxOptionFlags::InvalidatesDrawcallTranslation);
+
+    Rc<DxvkSampler> externalSampler = getOrCreateExternalSampler();
+    {
+      state.drawCall.modifyMaterialData().samplers[0] = externalSampler;
+      state.drawCall.modifyMaterialData().samplers[1] = externalSampler;
+    }
+    {
+      const RtCamera& rtCamera = ctx->getCommonObjects()->getSceneManager().getCameraManager()
+        .getCamera(state.cameraType);
+      state.drawCall.modifyTransformData().worldToView = rtCamera.getWorldToViewf();
+      state.drawCall.modifyTransformData().viewToProjection = rtCamera.getViewToProjectionf();
+      state.drawCall.modifyTransformData().objectToView = state.drawCall.getTransformData().worldToView * state.drawCall.getTransformData().objectToWorld;
+    }
     // NV-DXVK end
     replacementInstance->dirtyFlags.clr(ReplacementInstance::kDynamicFeatureMask);
 

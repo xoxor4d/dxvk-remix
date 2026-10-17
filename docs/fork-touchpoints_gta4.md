@@ -190,3 +190,31 @@ their own BLAS (`rtx.dynamicBlasForAnimatedMeshes`, on by default).
 - **`src/dxvk/rtx_render/rtx_types.h`** - inline. *`ReplacementInstance::externalMaterialIdentityHash` / `externalReplacementMaterial`.*
 - **`src/dxvk/rtx_render/rtx_geometry_utils.cpp`** - hook. *`dispatchSkinning`: CPU vertex limit from `fork_hooks::skinningCpuVertexLimit()`.*
 - **`src/dxvk/rtx_render/rtx_accel_manager.cpp`** - hook. *`mergeInstancesIntoBlas`: `forceMergedBlas` no longer merges small meshes animated every frame (`fork_hooks::keepAnimatedMeshesOutOfMergedBlas`).*
+---
+
+## Workstream - CS thread cost of API instances, second pass (fork - 2026-10-12)
+
+A second capture (~9,800 instances): the preserve path itself cost ~1.3 us per
+instance (`submitExternalDraw` 8.6 ms self), the BLAS bucket cache check 6.9 ms
+and the texture garbage collection 1.3 ms per frame; every frame the opacity
+micromap manager baked something, the next frame marked all BLAS buckets dirty.
+
+The preserve hook now refreshes the instance the way `preserveReplacementInstance`
+does minus the `DrawCallState` copy into the `BlasEntry` input (that re-points
+billboard creation at this frame's vertex memory, which only D3D9 draws need; an
+api mesh's geometry is owned by the replacer), without the geometry override and
+without the per frame material replacement lookups the D3D9 path does not do
+either. The sampler and view transform setup of `submitExternalDraw` moved below
+the hook: only the dynamic path uses them. The per draw picking ids of external
+draws are handed out on the dynamic path, so the preserve hook steps aside while
+picking is active (preserved instances kept id 0, the texture picker outlined all
+static geometry as one object).
+
+- **`src/dxvk/rtx_render/rtx_fork_submit.cpp`** - fork-owned file. *`externalDrawTryPreserve` refresh path, picking check.*
+- **`src/dxvk/rtx_render/rtx_scene_manager.cpp`** - hook. *`submitExternalDraw`: sampler / view transform setup after `externalDrawTryPreserve`.*
+- **`src/dxvk/rtx_render/rtx_fork_texture_streaming.cpp`** - fork-owned file. *`rtx.textureGcFrameInterval` (default 2), `textureGarbageCollectionDue()`.*
+- **`src/dxvk/rtx_render/rtx_texture_manager.cpp`** - hook. *Sampler feedback readback: `garbageCollection` only when `fork_hooks::textureGarbageCollectionDue(curframe)`.*
+- **`src/dxvk/rtx_render/rtx_fork_skinning.cpp`** - fork-owned file. *`rtx.opacityMicromap.rebindFrameInterval` (default 16), `ommRebindDue()`.*
+- **`src/dxvk/rtx_render/rtx_accel_manager.cpp`** - inline. *`mergeInstancesIntoBlas`: the per frame `unordered_set` of live instances is a sorted static scratch vector + `binary_search`; the two `hasNewlyBuiltOmms` checks go through `fork_hooks::ommRebindDue`, which latches baked micromaps and binds them at most every N frames.*
+- **`src/dxvk/meson.build`** - fork-owned change. *Adds `rtx_fork_texture_streaming.cpp`.*
+- **`src/dxvk/rtx_render/rtx_fork_hooks.h`** - fork-owned change. *Declares the hooks.*
