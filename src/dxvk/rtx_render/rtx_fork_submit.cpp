@@ -25,6 +25,12 @@
 
 #include "dxvk_device.h"          // DxvkDevice::getCommon()->getResources()
 
+#include "../../util/log/log.h"
+#include "../../util/util_string.h"
+
+#include <unordered_map>
+#include <unordered_set>
+
 namespace dxvk {
 namespace {
 
@@ -36,6 +42,35 @@ namespace {
   ObjectPickingValue s_lastAutoPickingValue = 0;
   uint32_t s_autoPickingFrameId = kInvalidFrameIndex;
 
+  // API mesh handle hash -> remixapi_MeshInfoReplacementHashEXT key. Render thread only.
+  std::unordered_map<XXH64_hash_t, XXH64_hash_t> s_externalMeshReplacementHashes;
+
+  class GeometryHashLogOptions {
+    RTX_OPTION("rtx", bool, debugLogGeometryHashes, false,
+               "Logs the geometry asset hash and its position / index / descriptor parts once per D3D9 mesh, and the replacement key once per "
+               "API mesh, each with whether a USD replacement exists. For checking that API meshes carry the asset hash of the D3D9 draw.");
+  };
+
+  // Hashes already logged since the option was enabled. Render thread only.
+  std::unordered_set<XXH64_hash_t> s_loggedD3D9GeometryHashes;
+  std::unordered_set<XXH64_hash_t> s_loggedExternalMeshes;
+
+  void logExternalMeshReplacementKey(XXH64_hash_t meshHash, XXH64_hash_t key, XXH64_hash_t materialKey, bool replaced) {
+    if (!GeometryHashLogOptions::debugLogGeometryHashes()) {
+      if (!s_loggedExternalMeshes.empty()) {
+        s_loggedExternalMeshes.clear();
+      }
+      return;
+    }
+
+    if (s_loggedExternalMeshes.insert(meshHash).second) {
+      Logger::info(str::format("[GeometryHash] API mesh 0x", std::hex, meshHash,
+                               key != meshHash ? " key 0x" : " no key, handle hash 0x", key,
+                               " material key 0x", materialKey, std::dec,
+                               replaced ? " replaced" : ""));
+    }
+  }
+
 } // anonymous namespace
 
 namespace fork_hooks {
@@ -43,17 +78,63 @@ namespace fork_hooks {
   // ---------------------------------------------------------------------------
   // externalDrawMeshReplacement
   //
-  // Checks for a USD mesh/light replacement keyed on the API mesh handle hash,
+  // Checks for a USD mesh/light replacement keyed on externalMeshAssetHash,
   // same as the D3D9 draw-call path. Returns the replacement bucket if one is
   // found (caller must call drawReplacements and then return), or null if no
   // replacement exists.
   // ---------------------------------------------------------------------------
   std::shared_ptr<const ReplacementBucket> externalDrawMeshReplacement(
-      AssetReplacer& replacer, XXH64_hash_t meshHash) {
-    // Check for mesh/light replacements keyed on the API mesh handle, same as
-    // the D3D9 draw-call path. This lets .usd replacements target API-submitted
-    // meshes (e.g. hash the remix API mesh handle and author a replacement).
-    return replacer.getReplacementsForMesh(meshHash);
+      AssetReplacer& replacer, XXH64_hash_t meshHash,
+      remixapi_MaterialHandle materialHandle, const LegacyMaterialData& drawMaterialData) {
+    XXH64_hash_t materialKey = kEmptyHash;
+    if (s_externalMeshReplacementHashes.count(meshHash) != 0) {
+      if (const MaterialData* material = replacer.accessExternalMaterial(materialHandle)) {
+        materialKey = externalMaterialKey(materialHandle, *material, drawMaterialData);
+      }
+    }
+
+    const XXH64_hash_t key = externalMeshAssetHash(meshHash, materialKey);
+    auto replacements = replacer.getReplacementsForMesh(key);
+    logExternalMeshReplacementKey(meshHash, key, materialKey, replacements != nullptr);
+    return replacements;
+  }
+
+  void logD3D9GeometryHash(const DrawCallState& drawCall, XXH64_hash_t assetHash, bool replaced) {
+    if (!GeometryHashLogOptions::debugLogGeometryHashes()) {
+      if (!s_loggedD3D9GeometryHashes.empty()) {
+        s_loggedD3D9GeometryHashes.clear();
+      }
+      return;
+    }
+
+    if (!s_loggedD3D9GeometryHashes.insert(assetHash).second) {
+      return;
+    }
+
+    const RasterGeometry& geometry = drawCall.getGeometryData();
+    Logger::info(str::format("[GeometryHash] D3D9 hash 0x", std::hex, assetHash,
+                             " positions 0x", geometry.hashes[HashComponents::VertexPosition],
+                             " indices 0x", geometry.hashes[HashComponents::Indices],
+                             " descriptor 0x", geometry.hashes[HashComponents::GeometryDescriptor],
+                             " material 0x", drawCall.getMaterialData().getHash(), std::dec,
+                             " index count ", geometry.indexCount,
+                             " vertex count ", geometry.vertexCount,
+                             " position stride ", geometry.positionBuffer.stride(),
+                             " format ", static_cast<uint32_t>(geometry.positionBuffer.vertexFormat()),
+                             replaced ? " replaced" : ""));
+  }
+
+  void setExternalMeshReplacementHash(XXH64_hash_t meshHash, XXH64_hash_t replacementHash) {
+    if (replacementHash != 0) {
+      s_externalMeshReplacementHashes[meshHash] = replacementHash;
+    } else {
+      s_externalMeshReplacementHashes.erase(meshHash);
+    }
+  }
+
+  XXH64_hash_t externalMeshAssetHash(XXH64_hash_t meshHash, XXH64_hash_t materialKey) {
+    const auto it = s_externalMeshReplacementHashes.find(meshHash);
+    return it != s_externalMeshReplacementHashes.end() ? it->second ^ materialKey : meshHash;
   }
 
   MaterialData externalDrawPrepareReplacementInstance(
@@ -163,7 +244,7 @@ namespace fork_hooks {
       !state.optionalParticleDesc.has_value() &&
       !state.categories.test(InstanceCategories::ParticleEmitter) &&
       ri.activeReplacements == nullptr &&
-      externalDrawMeshReplacement(*scene.m_pReplacer, reinterpret_cast<XXH64_hash_t>(state.mesh)) == nullptr &&
+      externalDrawMeshReplacement(*scene.m_pReplacer, reinterpret_cast<XXH64_hash_t>(state.mesh), submesh.externalMaterial, state.drawCall.getMaterialData()) == nullptr &&
       ri.externalMaterialIdentityHash == materialIdentity &&
       device->getCommon()->getTextureManager().getTextureCacheGeneration() == scene.m_textureCacheGenerationValidForPreserve;
 

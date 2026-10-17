@@ -57,3 +57,20 @@ Row to add to the "Convention namespaces" table:
 | Namespace | Channel | Page |
 | :-- | :-- | :-- |
 | `rtx.water.*` | `SetConfigVariable` | [`RemixWaterAPI_gta4.md`](RemixWaterAPI_gta4.md) |
+
+## Meshes: `remixapi_MeshInfoReplacementHashEXT`
+
+Hub section "Meshes", after "The padding is reserved for future runtime use; leave it zeroed.":
+
+`remixapi_MeshInfo::hash` is the handle. By default it is also the key
+USD mesh replacements are looked up by and the name captures give the
+mesh. Chain `remixapi_MeshInfoReplacementHashEXT` to use another key.
+Like on D3D9 draws, where the mesh key is the geometry asset hash XOR the
+draw's material hash, the key is `replacementHash` XOR the material key
+of the drawn instance: the hash of its material's game color texture
+(`remixapi_MaterialInfoGameTexturesEXT`) with the instance's
+`remixapi_InstanceInfoD3DOverridesEXT` hash seed / override applied.
+Pass the geometry asset hash a D3D9 draw of the same geometry would get,
+and replacements authored against D3D9 captures keep applying when the
+geometry moves to the API. Several meshes may share it. `0` keeps the
+handle hash.

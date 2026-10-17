@@ -323,3 +323,22 @@ ParticleEmitter, HairCards, DisableBackfaceCulling, IgnoreOpacityMicromap, Ignor
 IgnoreBakedLighting and the player model categories were missing, so a draw moved from D3D9 to the API
 lost them (a texture in `particleEmitterTextures` stopped emitting). The list now matches
 `DrawCallState::setupCategoriesForTexture`. No upstream file is touched.
+---
+
+## Workstream - Replacement key for API meshes (fork - 2026-10-14)
+
+API `0.1000.4`: `remixapi_MeshInfoReplacementHashEXT { sType, pNext, replacementHash }`
+on `remixapi_MeshInfo`. A client can key an API mesh by the geometry asset hash a
+D3D9 draw of the same geometry gets, so existing USD mods keep applying. Like on
+D3D9 draws the key USD replacements and captures use is `replacementHash` XOR the
+material key of the drawn instance (`DrawCallState::getHash` on D3D9 draws is
+geometry asset hash XOR legacy material hash).
+
+- **`public/include/remix/remix_c.h`** - inline. *`REMIXAPI_STRUCT_TYPE_MESH_INFO_REPLACEMENT_HASH_EXT = 31`, `remixapi_MeshInfoReplacementHashEXT`, version `0.1000.4`.*
+- **`public/include/remix/remix.h`** - inline. *`MeshInfoReplacementHashEXT` wrapper.*
+- **`src/dxvk/rtx_render/rtx_remix_specialization.inl`** - inline, 3 LOC. *Registers the struct (AllTypes / ToEnum / Root = `remixapi_MeshInfo`).*
+- **`src/dxvk/rtx_render/rtx_remix_api.cpp`** - inline. *`remixapi_CreateMesh` and `remixapi_CreateMeshBatched` (`PendingMeshCreate::replacementHash`) read the extension and set it in their CS lambda / `applyPendingMeshCreatesOnCs` through `fork_hooks::setExternalMeshReplacementHash`; `remixapi_DestroyMesh` clears it.*
+- **`src/dxvk/rtx_render/rtx_game_capturer.cpp`** - inline, 1 LOC. *External meshes are captured under `fork_hooks::externalMeshAssetHash` (replacement hash ^ material key) instead of the handle hash.*
+- **`src/dxvk/rtx_render/rtx_fork_hooks.h`, `rtx_fork_submit.cpp`** - fork-owned. *Handle -> replacement hash map (render thread); `externalDrawMeshReplacement` looks replacements up by it XOR the draw's material key (`externalMaterialKey`); `submitExternalDraw` and the preserve path pass submesh 0's material and the draw's material data. `rtx.debugLogGeometryHashes` logs the key of every API mesh and the asset hash with its parts of every D3D9 mesh, once each (the diagnostic that showed the missing material XOR).*
+- **`src/dxvk/rtx_render/rtx_scene_manager.cpp`** - hook, 2 LOC. *`submitDrawState` calls `fork_hooks::logD3D9GeometryHash` after the D3D9 replacement lookup; `submitExternalDraw` passes submesh 0's material and the draw's material data to `fork_hooks::externalDrawMeshReplacement`.*
+- **`bridge/src/{client/remix_api.cpp, server/main.cpp, util/util_remixapi.{h,cpp}}`** - inline. *`CreateMesh` sends its extensions like `DrawInstance` (Bool::True + struct, Bool::False ends); `MeshInfoReplacementHash` serializer. Client and server must be built together.*

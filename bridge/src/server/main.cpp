@@ -2990,6 +2990,27 @@ void ProcessDeviceCommandQueue() {
         serialize::MeshInfo meshInfo;
         deserializeFromQueue(meshInfo);
         meshInfo.pNext = nullptr;
+
+        serialize::MeshInfoReplacementHash replacementHash;
+        memset(&replacementHash, 0, sizeof(replacementHash));
+        bool bMeshExtExists = remixapi::pullBool();
+        while (bMeshExtExists) {
+          const auto extSType = remixapi::pullSType();
+          switch (extSType) {
+            case REMIXAPI_STRUCT_TYPE_MESH_INFO_REPLACEMENT_HASH_EXT:
+            {
+              deserializeFromQueue(replacementHash);
+              meshInfo.pNext = &replacementHash;
+              break;
+            }
+            default:
+            {
+              Logger::warn("[RemixApi_CreateMesh] Unknown sType. Skipping.");
+              break;
+            }
+          }
+          bMeshExtExists = remixapi::pullBool();
+        }
         
         for(size_t iSurf = 0; iSurf < meshInfo.surfaces_count; ++iSurf) {
           // If we don't const_cast, we'd have to copy the entire

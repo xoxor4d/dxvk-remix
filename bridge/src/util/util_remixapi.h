@@ -123,6 +123,7 @@ template<> constexpr auto ToRemixApiStructEnum< remixapi_LightInfoDomeEXT       
 template<> constexpr auto ToRemixApiStructEnum< remixapi_LightInfoUSDEXT                > = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_USD_EXT;
 template<> constexpr auto ToRemixApiStructEnum< remixapi_LightInfo                      > = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
 template<> constexpr auto ToRemixApiStructEnum< remixapi_MeshInfo                       > = REMIXAPI_STRUCT_TYPE_MESH_INFO;
+template<> constexpr auto ToRemixApiStructEnum< remixapi_MeshInfoReplacementHashEXT     > = REMIXAPI_STRUCT_TYPE_MESH_INFO_REPLACEMENT_HASH_EXT;
 template<> constexpr auto ToRemixApiStructEnum< remixapi_InstanceInfo                   > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO;
 template<> constexpr auto ToRemixApiStructEnum< remixapi_InstanceInfoBoneTransformsEXT  > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT;
 template<> constexpr auto ToRemixApiStructEnum< remixapi_InstanceInfoBlendEXT           > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT;
@@ -147,6 +148,7 @@ using MaterialInfoGameTextures = bridge_util::Serializable<remixapi_MaterialInfo
 
 // MeshInfo
 using MeshInfo = bridge_util::Serializable<remixapi_MeshInfo,false>;
+using MeshInfoReplacementHash = bridge_util::Serializable<remixapi_MeshInfoReplacementHashEXT,true>;
 
 // InstanceInfo
 using InstanceInfo = bridge_util::Serializable<remixapi_InstanceInfo,true>;

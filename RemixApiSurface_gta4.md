@@ -12,7 +12,7 @@ fields of `remixapi_MaterialInfoOpaqueEXT`; neither is this branch's.)
 
 | Macro | Value |
 | :-- | :-- |
-| `REMIXAPI_VERSION_PATCH` | `3` |
+| `REMIXAPI_VERSION_PATCH` | `4` |
 
 ## `remixapi_StructType`
 
@@ -20,6 +20,7 @@ fields of `remixapi_MaterialInfoOpaqueEXT`; neither is this branch's.)
 | :-- | :-- | :-- |
 | `REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_GAME_TEXTURES_EXT` | `29` |  |
 | `REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_D3D_OVERRIDES_EXT` | `30` |  |
+| `REMIXAPI_STRUCT_TYPE_MESH_INFO_REPLACEMENT_HASH_EXT` | `31` |  |
 
 ## Structs
 
@@ -54,3 +55,17 @@ D3D9 draw of that texture gets.
 | `remixapi_StructType` | `sType` |  |
 | `void*` | `pNext` |  |
 | `IDirect3DTexture9*` | `colorTexture` |  |
+
+### `remixapi_MeshInfoReplacementHashEXT`
+
+Chained to remixapi_MeshInfo: the geometry part of the key USD mesh replacements are looked up by and
+captures name the mesh by, instead of remixapi_MeshInfo::hash (which stays the handle). Like on D3D9 draws
+the key is replacementHash ^ the material key of the drawn instance (its game color texture hash with the
+instance's D3D hash overrides), so the geometry asset hash a D3D9 draw of the same geometry gets makes
+replacements authored against D3D9 captures apply. Several meshes may share it. 0 keeps the handle hash.
+
+| Type | Field | Notes |
+| :-- | :-- | :-- |
+| `remixapi_StructType` | `sType` |  |
+| `void*` | `pNext` |  |
+| `uint64_t` | `replacementHash` |  |

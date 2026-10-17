@@ -723,6 +723,7 @@ namespace dxvk {
     trackMeshHash(activeReplacementHash);
 
     std::shared_ptr<const ReplacementBucket> pReplacements = m_pReplacer->getReplacementsForMesh(activeReplacementHash);
+    fork_hooks::logD3D9GeometryHash(input, activeReplacementHash, pReplacements != nullptr);
 
     // TODO (REMIX-656): Remove this once we can transition content to new hash
     if ((RtxOptions::geometryHashGenerationRule() & rules::LegacyAssetHash0) == rules::LegacyAssetHash0) {
@@ -2735,7 +2736,7 @@ namespace dxvk {
     // NV-DXVK end
     replacementInstance->dirtyFlags.clr(ReplacementInstance::kDynamicFeatureMask);
 
-    if (auto pReplacements = fork_hooks::externalDrawMeshReplacement(*m_pReplacer, meshHash)) {
+    if (auto pReplacements = fork_hooks::externalDrawMeshReplacement(*m_pReplacer, meshHash, submeshes[0].externalMaterial, state.drawCall.getMaterialData())) {
       // Copy the DrawCallState so we don't mutate the caller's state. Point geometryData
       // at submeshes[0] as the replacement geometry template and clear externalMaterial so
       // the USD replacement material takes precedence.

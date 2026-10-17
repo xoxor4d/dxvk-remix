@@ -88,6 +88,7 @@ namespace pnext::detail {
     remixapi_LightInfoUSDEXT,
     remixapi_LightInfo,
     remixapi_MeshInfo,
+    remixapi_MeshInfoReplacementHashEXT,
     remixapi_InstanceInfo,
     remixapi_InstanceInfoBoneTransformsEXT,
     remixapi_InstanceInfoBlendEXT,
@@ -118,6 +119,7 @@ namespace pnext::detail {
   template<> constexpr auto ToEnum< remixapi_LightInfoUSDEXT                > = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_USD_EXT;
   template<> constexpr auto ToEnum< remixapi_LightInfo                      > = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
   template<> constexpr auto ToEnum< remixapi_MeshInfo                       > = REMIXAPI_STRUCT_TYPE_MESH_INFO;
+  template<> constexpr auto ToEnum< remixapi_MeshInfoReplacementHashEXT     > = REMIXAPI_STRUCT_TYPE_MESH_INFO_REPLACEMENT_HASH_EXT;
   template<> constexpr auto ToEnum< remixapi_InstanceInfo                   > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO;
   template<> constexpr auto ToEnum< remixapi_InstanceInfoBoneTransformsEXT  > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT;
   template<> constexpr auto ToEnum< remixapi_InstanceInfoBlendEXT           > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT;
@@ -144,6 +146,7 @@ namespace pnext::detail {
   template<>           struct Root< remixapi_LightInfoDistantEXT            >{ using Type = remixapi_LightInfo;                 };
   template<>           struct Root< remixapi_LightInfoDomeEXT               >{ using Type = remixapi_LightInfo;                 };
   template<>           struct Root< remixapi_LightInfoUSDEXT                >{ using Type = remixapi_LightInfo;                 };
+  template<>           struct Root< remixapi_MeshInfoReplacementHashEXT     >{ using Type = remixapi_MeshInfo;                  };
   template<>           struct Root< remixapi_InstanceInfoBoneTransformsEXT  >{ using Type = remixapi_InstanceInfo;              };
   template<>           struct Root< remixapi_InstanceInfoBlendEXT           >{ using Type = remixapi_InstanceInfo;              };
   template<>           struct Root< remixapi_InstanceInfoD3DOverridesEXT    >{ using Type = remixapi_InstanceInfo;              };

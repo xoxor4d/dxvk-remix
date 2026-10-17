@@ -292,10 +292,18 @@ remixapi_ErrorCode REMIXAPI_CALL remixapi_CreateMesh(
     
     serializeAndSend<serialize::MeshInfo>(c, *info);
 
+    // Each extension is preceded by Bool::True, Bool::False ends the list (like DrawInstance)
     const void* infoItr = info;
     while (auto* const pNext = getPNext(infoItr)) {
       infoItr = pNext;
       switch (getSType(pNext)) {
+        case REMIXAPI_STRUCT_TYPE_MESH_INFO_REPLACEMENT_HASH_EXT:
+        {
+          auto* pReplacementHash = static_cast<const remixapi_MeshInfoReplacementHashEXT* const>(infoItr);
+          send(c, Bool::True);
+          serializeAndSend<serialize::MeshInfoReplacementHash>(c, *pReplacementHash);
+          break;
+        }
         default:
         {
           Logger::warn("[remixapi_CreateMesh] Unknown sType. Skipping.");
@@ -303,6 +311,7 @@ remixapi_ErrorCode REMIXAPI_CALL remixapi_CreateMesh(
         }
       }
     }
+    send(c, Bool::False);
     sendHandle(c, newHandle);
   }
   

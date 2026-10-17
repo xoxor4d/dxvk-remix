@@ -98,13 +98,32 @@ namespace dxvk {
     // Implementation in rtx_fork_post_processing.cpp.
     void showPostProcessingStackSettings(const Rc<DxvkContext>& ctx);
 
-    // Checks for a USD mesh/light replacement keyed on the API mesh handle hash.
+    // Checks for a USD mesh/light replacement of an API mesh (handle hash),
+    // keyed on externalMeshAssetHash with the key of the draw's material
+    // (externalMaterialKey of material and drawMaterialData).
     // Returns the replacement bucket if one exists, null otherwise.
     // Call site is responsible for calling drawReplacements and returning early
     // when a non-null value is returned.
     // Implementation in rtx_fork_submit.cpp.
     std::shared_ptr<const ReplacementBucket> externalDrawMeshReplacement(
-      AssetReplacer& replacer, XXH64_hash_t meshHash);
+      AssetReplacer& replacer, XXH64_hash_t meshHash,
+      remixapi_MaterialHandle material, const LegacyMaterialData& drawMaterialData);
+
+    // Render thread: the remixapi_MeshInfoReplacementHashEXT key of an API mesh
+    // (handle hash), set by the CreateMesh paths, removed by DestroyMesh or 0.
+    // Implementation in rtx_fork_submit.cpp.
+    void setExternalMeshReplacementHash(XXH64_hash_t meshHash, XXH64_hash_t replacementHash);
+
+    // The key USD replacements and captures use for an API mesh. With a
+    // replacement hash it is replacementHash ^ materialKey, like a D3D9 draw's
+    // geometry asset hash ^ legacy material hash (DrawCallState::getHash);
+    // without one it is the handle hash.
+    XXH64_hash_t externalMeshAssetHash(XXH64_hash_t meshHash, XXH64_hash_t materialKey);
+
+    // rtx.debugLogGeometryHashes: logs a D3D9 draw's asset hash and its parts
+    // once per hash. Called right after the D3D9 replacement lookup.
+    // Implementation in rtx_fork_submit.cpp.
+    void logD3D9GeometryHash(const DrawCallState& drawCall, XXH64_hash_t assetHash, bool replaced);
 
     // Runs before drawReplacements for an API mesh with a replacement bucket.
     // Clears the RI when it was not set up for this bucket, so drawReplacements

@@ -674,6 +674,21 @@ void InstanceInfoBlend::_dtor() {
 }
 
 
+#define MeshInfoReplacementHashVars sType,                                     replacementHash
+uint32_t MeshInfoReplacementHash::_calcSize() const {
+  return fold_helper::calcSize(MeshInfoReplacementHashVars);
+}
+void MeshInfoReplacementHash::_serialize(void*& pSerialize) const {
+  fold_helper::serialize(pSerialize, MeshInfoReplacementHashVars);
+}
+void MeshInfoReplacementHash::_deserialize(void*& pDeserialize) {
+  pNext = nullptr;
+  fold_helper::deserialize(pDeserialize, MeshInfoReplacementHashVars);
+}
+void MeshInfoReplacementHash::_dtor() {
+}
+
+
 #define InstanceInfoD3DOverridesVars sType, \
                                      categoryFlags, \
                                      modifierFlags, \

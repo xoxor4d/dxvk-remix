@@ -148,6 +148,7 @@ namespace {
   struct PendingMeshCreate {
     remixapi_MeshHandle handle;
     uint64_t hash;
+    uint64_t replacementHash = 0; // remixapi_MeshInfoReplacementHashEXT
     std::vector<OwnedSurface> surfaces;
   };
   // PendingScreenOverlay struct and s_pendingScreenOverlay optional were removed
@@ -1255,9 +1256,13 @@ namespace {
     }
     std::lock_guard lock { s_mutex };
 
-    remixDevice->EmitCs([cHandle = handle, cSurfaces = std::move(allocatedSurfaces)](dxvk::DxvkContext* ctx) mutable {
+    const auto extReplacementHash = pnext::find<remixapi_MeshInfoReplacementHashEXT>(info);
+    const uint64_t replacementHash = extReplacementHash ? extReplacementHash->replacementHash : 0;
+
+    remixDevice->EmitCs([cHandle = handle, cReplacementHash = replacementHash, cSurfaces = std::move(allocatedSurfaces)](dxvk::DxvkContext* ctx) mutable {
       auto& assets = ctx->getCommonObjects()->getSceneManager().getAssetReplacer();
       assets->registerExternalMesh(cHandle, std::move(cSurfaces));
+      dxvk::fork_hooks::setExternalMeshReplacementHash(reinterpret_cast<XXH64_hash_t>(cHandle), cReplacementHash);
     });
 
     *out_handle = handle;
@@ -1379,6 +1384,7 @@ namespace {
     for (auto& mesh : meshCreates) {
       auto allocatedSurfaces = buildExternalMeshSurfacesFromOwned(mesh.surfaces);
       assets->registerExternalMesh(mesh.handle, std::move(allocatedSurfaces));
+      dxvk::fork_hooks::setExternalMeshReplacementHash(reinterpret_cast<XXH64_hash_t>(mesh.handle), mesh.replacementHash);
     }
   }
 
@@ -1422,6 +1428,9 @@ namespace {
     PendingMeshCreate pending;
     pending.handle = handle;
     pending.hash = info->hash;
+    if (const auto ext = pnext::find<remixapi_MeshInfoReplacementHashEXT>(info)) {
+      pending.replacementHash = ext->replacementHash;
+    }
     pending.surfaces.reserve(info->surfaces_count);
 
     for (uint32_t i = 0; i < info->surfaces_count; i++) {
@@ -1481,6 +1490,7 @@ namespace {
     remixDevice->EmitCs([cHandle = handle](dxvk::DxvkContext* ctx) {
       ctx->getCommonObjects()->getSceneManager()
         .destroyExternalMesh(dxvk::Rc<dxvk::DxvkContext>(ctx), cHandle);
+      dxvk::fork_hooks::setExternalMeshReplacementHash(reinterpret_cast<XXH64_hash_t>(cHandle), 0);
     });
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }

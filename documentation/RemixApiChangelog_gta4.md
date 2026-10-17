@@ -4,6 +4,23 @@ Companion of [`RemixApiChangelog.md`](RemixApiChangelog.md), which stays at its 
 state on this branch. Same format; these entries sit on top of Remix Plus's `[0.1000.1]`.
 Merge them into the hub changelog when the branch is rebased.
 
+## [0.1000.4]
+
+Replacement key for API meshes (2026-10-14).
+
+### Added
+- `remixapi_MeshInfoReplacementHashEXT` (`REMIXAPI_STRUCT_TYPE_MESH_INFO_REPLACEMENT_HASH_EXT`),
+  chainable into `remixapi_MeshInfo` for `CreateMesh` and `CreateMeshBatched`. Its
+  `replacementHash` XOR the drawn instance's material key (as on D3D9 draws, where
+  the mesh key is the geometry asset hash XOR the material hash) is the key USD mesh
+  replacements are looked up by and captures name the mesh by, instead of the handle
+  hash. Several meshes may share it.
+- Bridge: `CreateMesh` forwards the extension.
+
+### Changed
+- `REMIXAPI_VERSION` is now `0.1000.4` (was `0.1000.3`). Additive, binaries built
+  against `0.1000.3` keep working.
+
 ## [0.1000.3]
 
 Per-draw D3D9 render-state overrides for API instances (2026-10-11).
