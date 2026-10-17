@@ -20,6 +20,12 @@ Per-draw D3D9 render-state overrides for API instances (2026-10-11).
 - `REMIXAPI_VERSION` is now `0.1000.3` (was `0.1000.2`). Additive, binaries built
   against `0.1000.2` keep working.
 
+### Fixed
+- Bridge: skinned `remixapi_MeshInfoSurfaceTriangles` sent their blend weights and
+  blend indices with a wrong size (vertex count x element count x bones per vertex);
+  both arrays are now sent with `blendWeights_count` / `blendIndices_count` elements
+  (2026-10-12).
+
 ## [0.1000.2]
 
 API materials that reuse the game's D3D9 colormap (2026-10-04).

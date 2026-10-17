@@ -121,3 +121,14 @@ descriptors point at freed BLAS memory.
 - **`src/dxvk/rtx_render/rtx_fork_hooks.h`** - fork-owned change. *Declares the three hooks.*
 - **`src/dxvk/rtx_render/rtx_accel_manager.cpp`** - fork-touchpoint hooks. *`rtx_fork_hooks.h` include; `onOpaqueTlasBuilt` after `internalBuildTlas<Tlas::Opaque>` in `buildTlas`; `onAccelStructuresCleared` at the end of `AccelManager::clear`.*
 - **`src/dxvk/rtx_render/rtx_particle_system.cpp`** - fork-touchpoint inline tweak. *`setupConstants`'s `sceneTlasValid` and the `s_spawnTraceTlasValid` diagnostic also require `isPreviousOpaqueTlasTraceable`.*
+---
+
+## Workstream - Skinned API mesh serialization (fork - 2026-10-12)
+
+The bridge sized the blend weight and blend index arrays of a skinned
+`remixapi_MeshInfoSurfaceTriangles` as vertex count x total element count x
+bones per vertex, so any skinned API mesh over-read the client buffer and
+over-allocated the IPC data. Both arrays are now sized by their total element
+count, as `remix_c.h` documents.
+
+- **`bridge/src/util/util_remixapi.cpp`** - inline. *Blend weight / index sizes of skinned mesh surfaces (size calculation, serialize, deserialize).*
