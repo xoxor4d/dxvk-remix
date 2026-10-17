@@ -26,5 +26,5 @@ $BuildFlavours = @("debugoptimized")
 $BuildSubDirs = @("_Comp64DebugOptimized")
 
 For ($i=0; $i -lt $BuildFlavours.Length; $i++) {
-  PerformBuild -BuildFlavour $BuildFlavours[$i] -BuildSubDir $BuildSubDirs[$i] -Backend ninja -EnableTracy false
+  PerformBuild -BuildFlavour $BuildFlavours[$i] -BuildSubDir $BuildSubDirs[$i] -Backend ninja -EnableTracy false -VcVarsVer 14.4
 }

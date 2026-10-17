@@ -374,3 +374,16 @@ data per frame (wraps more often).
 - **`bridge/src/util/util_bridgecommand.cpp`** - inline tweak. *The third overwrite condition
   (`batchStart <= server && serverResetPosRequired`) is removed; conditions 1 and 2 still cover a server
   that is behind.*
+
+---
+
+## Workstream - Builds pinned to the v143 toolset (fork - 2026-10-17)
+
+MSVC 14.52 (VS 2026 / VS 18 Insiders, toolset v145) marks `frexp` `[[nodiscard]]` in `<cmath>`;
+`include/MathLib/MathLib.h` discards it twice and `werror=true` turns that into C2220 in every
+translation unit. Upstream still targets v142 / v143. The fork builds therefore pin the 14.4x
+toolset wherever the environment is chosen, instead of patching MathLib:
+
+- **`vsgen/dxvk-remix.vcxproj.template`**, **`vsgen/testcase_project.vcxproj.template`** - inline tweak. *`PlatformToolset` v142 -> v143. MSBuild sets `PATH` / `INCLUDE` / `LIB` of a Makefile project from its toolset (`Microsoft.Cpp.Current.targets`, `SetEnv`); v142 is not installed in VS 18, which retargeted the generated `_vs` projects to v145. v143 exists in both VS 2022 and VS 18 and maps to 14.4x.*
+- **`build_dxvk_release.ps1`**, **`build_dxvk_opti.ps1`** - fork-owned. *`-VcVarsVer 14.4` on `PerformBuild`: `build_common.ps1` selects the newest prerelease VS, and `vcvarsall -vcvars_ver=14.4` picks the newest 14.4x toolset of that instance.*
+- `scripts/build.ps1` already limits vswhere to `[16.0,18.0)` and needs no change.
