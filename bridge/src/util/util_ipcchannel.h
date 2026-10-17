@@ -51,9 +51,8 @@ public:
     : sharedMem(new bridge_util::SharedMemory(name + "Channel", memSize + kReservedSpace))
     , m_cmdMemSize(sizeof(Header)* cmdQueueSize + CommandQueue::getExtraMemoryRequirements())
     , m_dataMemSize(memSize - m_cmdMemSize)
-    , serverDataPos(static_cast<int64_t*>(sharedMem->data()))
+    , serverDataPos(static_cast<std::atomic<int64_t>*>(sharedMem->data()))
     , clientDataExpectedPos(serverDataPos + 1)
-    , serverResetPosRequired(reinterpret_cast<bool*>(clientDataExpectedPos + 1))
     // Offsetting shared memory to account for 3 pointers used above
     , commands(new CommandQueue(name + "Command",
                                 reinterpret_cast<void*>(
@@ -77,10 +76,10 @@ public:
     commands->attachWakeEvents(hCmdDataAvailable, hCmdSpaceAvailable);
     // Initialize buffer override protection
     if constexpr (IS_WRITER(Accessor)) {
-      *serverDataPos = -1;
-      *clientDataExpectedPos = -1;
-      *serverResetPosRequired = false;
+      new (serverDataPos) std::atomic<int64_t>(0);
+      new (clientDataExpectedPos) std::atomic<int64_t>(-1);
     }
+    assert(serverDataPos->is_lock_free());
   }
 
   ~IpcChannel() {
@@ -103,9 +102,10 @@ public:
   bridge_util::SharedMemory* const   sharedMem;
   const size_t                       m_cmdMemSize;
   const size_t                       m_dataMemSize;
-  int64_t*                           serverDataPos;
-  int64_t*                           clientDataExpectedPos;
-  bool*                              serverResetPosRequired;
+  // Data ring overwrite protection (util_bridgecommand.cpp syncDataQueue): the words the reader has consumed, and the
+  // reader position the writer is waiting for (-1: not waiting).
+  std::atomic<int64_t>*              serverDataPos;
+  std::atomic<int64_t>*              clientDataExpectedPos;
   CommandQueue* const                commands;
   bridge_util::DataQueue* const      data;
   bridge_util::NamedSemaphore* const dataSemaphore;
@@ -115,8 +115,7 @@ public:
   mutable std::mutex                 m_mutex;
 
   // Extra storage needed for data queue synchronization params
-  static constexpr size_t kReservedSpace = align<size_t>(sizeof(*serverDataPos) +
-    sizeof(*clientDataExpectedPos) + sizeof(*serverResetPosRequired), 64);
+  static constexpr size_t kReservedSpace = align<size_t>(sizeof(*serverDataPos) + sizeof(*clientDataExpectedPos), 64);
 };
 using WriterChannel = IpcChannel<bridge_util::Accessor::Writer>;
 using ReaderChannel = IpcChannel<bridge_util::Accessor::Reader>;

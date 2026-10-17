@@ -3500,19 +3500,23 @@ void ProcessDeviceCommandQueue() {
       done = true;
       break;
     }
-    *DeviceBridge::getReaderChannel().serverDataPos = DeviceBridge::get_data_pos();
-    // Check if overwrite condition was met
-    if (*DeviceBridge::getReaderChannel().clientDataExpectedPos != -1) {
-      if (!gOverwriteConditionAlreadyActive) {
-        gOverwriteConditionAlreadyActive = true;
-        Logger::warn("Data Queue overwrite condition triggered");
-      }
-      // Check if server needs to complete a loop and the position was read
-      if (*DeviceBridge::getReaderChannel().serverDataPos > *DeviceBridge::getReaderChannel().clientDataExpectedPos && !(*DeviceBridge::getReaderChannel().serverResetPosRequired)) {
+    // Publish how far the data ring has been consumed and wake a client waiting to reuse that space (syncDataQueue)
+    const int64_t readPos = (int64_t) DeviceBridge::get_data_abs_pos();
+    DeviceBridge::getReaderChannel().serverDataPos->store(readPos, std::memory_order_seq_cst);
+    const int64_t clientWaitsFor = DeviceBridge::getReaderChannel().clientDataExpectedPos->load(std::memory_order_seq_cst);
+    if (clientWaitsFor != -1) {
+      if (readPos < clientWaitsFor) {
+        if (!gOverwriteConditionAlreadyActive) {
+          gOverwriteConditionAlreadyActive = true;
+          Logger::warn(format_string("Data Queue overwrite condition triggered: the client waits for word %lld, the server is at word %lld",
+                                     (long long) clientWaitsFor, (long long) readPos));
+        }
+      } else {
         DeviceBridge::getReaderChannel().dataSemaphore->release(1);
-        *DeviceBridge::getReaderChannel().clientDataExpectedPos = -1;
-        gOverwriteConditionAlreadyActive = false;
-        Logger::info("DataQueue overwrite condition resolved");
+        if (gOverwriteConditionAlreadyActive) {
+          gOverwriteConditionAlreadyActive = false;
+          Logger::info("DataQueue overwrite condition resolved");
+        }
       }
     }
 

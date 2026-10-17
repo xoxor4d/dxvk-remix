@@ -28,6 +28,7 @@ namespace {
   // [PerfBridge] counts the device bridge only (util_perfbridge.h).
   template<typename BridgeIdT>
   constexpr bool kIsDeviceBridge = std::is_same_v<BridgeIdT, ::BridgeId::Device>;
+  constexpr DWORD kOverwriteWaitSliceMs = 2;
 
   // Client: times one wait for a server response and attributes it to the request sent last.
   struct ResponseWaitTimer {
@@ -82,65 +83,40 @@ DECL_BRIDGE_FUNC(void, perfOnFrame) {
 }
 
 DECL_BRIDGE_FUNC(void, syncDataQueue, size_t expectedMemUsage, bool posResetOnLastIndex) {
-  int serverCount = *s_pWriterChannel->serverDataPos;
-  size_t currClientDataPos = s_pWriterChannel->get_data_pos();
-  size_t expectedClientDataPos = currClientDataPos + ((expectedMemUsage != 0) ? expectedMemUsage : 1) - 1;
-  size_t totalSize = s_pWriterChannel->data->get_total_size();
-
-  auto handleOverwriteCondition = [&]() {
-    // Below variable is set to let the server know that a particular position
-    // in the queue not yet accessed by it is going to be used
-    *s_pWriterChannel->clientDataExpectedPos = s_curBatchStartPos - 1;
-    Logger::warn("Data Queue overwrite condition triggered");
-    // Check to see if there is even enough space to ever succeed in pushing all the data
-    if ((expectedMemUsage + (currClientDataPos >= s_curBatchStartPos ? currClientDataPos - s_curBatchStartPos : currClientDataPos + totalSize - s_curBatchStartPos)) > totalSize) {
-      Logger::errLogMessageBoxAndExit(std::string(logger_strings::OutOfBufferMemory) + std::string(logger_strings::OutOfBufferMemory1) + logger_strings::bufferNameToOption(s_pWriterChannel->data->getName()));
-    }
-    // Wait for the server to access the data at the above postion
-    const auto maxRetries = GlobalOptions::getCommandRetries();
-    size_t numRetries = 0;
-    Logger::warn("Waiting on server to process enough data from data queue to prevent overwrite...");
-    while (RESULT_FAILURE(s_pWriterChannel->dataSemaphore->wait()) && numRetries++ < maxRetries) {
-    }
-    if (numRetries >= maxRetries) {
+  // Overwrite protection for the data ring. Positions are words produced / consumed since start (skipped tail slots
+  // included, CircularQueue::m_absPos), so a write is safe when it ends no more than one ring behind the reader's
+  // published position; no wrap has to be tracked. The reader publishes after every command (device server, main.cpp)
+  // or every read (publishReadPos) and releases dataSemaphore once it passes the position a writer waits for.
+  const auto& data = *s_pWriterChannel->data;
+  const uint64_t ringWords = data.get_total_size();
+  const uint64_t writeEnd = data.abs_pos_after(expectedMemUsage != 0 ? expectedMemUsage : 1, posResetOnLastIndex);
+  if (writeEnd <= uint64_t(s_pWriterChannel->serverDataPos->load(std::memory_order_relaxed)) + ringWords) {
+    return;
+  }
+  // The reader gets no further than the start of the batch in progress, so a batch larger than the ring never fits.
+  const uint64_t batchStart = s_curBatchStartPos >= 0 ? s_curBatchStartAbs : data.get_abs_pos();
+  if (writeEnd - batchStart > ringWords) {
+    Logger::errLogMessageBoxAndExit(std::string(logger_strings::OutOfBufferMemory) + std::string(logger_strings::OutOfBufferMemory1) + logger_strings::bufferNameToOption(s_pWriterChannel->data->getName()));
+  }
+  const int64_t required = int64_t(writeEnd - ringWords);
+  s_pWriterChannel->clientDataExpectedPos->store(required, std::memory_order_seq_cst);
+  Logger::warn(format_string("Data Queue overwrite condition triggered: the write ends at word %llu, the reader is at word %lld of a %llu word ring. Waiting for the reader to reach word %lld...",
+                             (unsigned long long) writeEnd, (long long) s_pWriterChannel->serverDataPos->load(std::memory_order_seq_cst),
+                             (unsigned long long) ringWords, (long long) required));
+  // The reader releases the semaphore when it gets there. The slices cover a reader that got there before it saw the
+  // position (it looks after a command only) and a release that happened before this wait started.
+  const DWORD timeoutMS = GlobalOptions::getCommandTimeout();
+  const ULONGLONG budgetMS = timeoutMS != 0 ? ULONGLONG(timeoutMS) * (GlobalOptions::getCommandRetries() + 1) : 0;
+  const ULONGLONG start = GetTickCount64();
+  while (gbBridgeRunning && s_pWriterChannel->serverDataPos->load(std::memory_order_seq_cst) < required) {
+    s_pWriterChannel->dataSemaphore->wait(kOverwriteWaitSliceMs);
+    if (budgetMS != 0 && GetTickCount64() - start >= budgetMS) {
       Logger::err("Max retries reached waiting on the server to process enough data to prevent a overwrite!");
+      break;
     }
-    *s_pWriterChannel->clientDataExpectedPos = -1;
-    *s_pWriterChannel->serverResetPosRequired = false;
-    Logger::info("DataQueue overwrite condition resolved");
-  };
-
-  if (expectedClientDataPos >= totalSize) {
-    if (*s_pWriterChannel->serverResetPosRequired == true) {
-      // Double Overflow Condition Detected, mitigate by stalling and waiting for a response
-      handleOverwriteCondition();
-    }
-    if (posResetOnLastIndex) {
-      // Reset index pos to 0 if the size is larger than the remaining buffer
-      expectedClientDataPos = expectedMemUsage - 1;
-    } else {
-      // Evaluate the respective pos when the end of the queue is reached
-      expectedClientDataPos = expectedClientDataPos - totalSize;
-    }
-    // Below variable is set when the server needs to complete a loop to get to
-    // the client's expected position. When this is set on pull we check if
-    // m_pos is reset and toggle this variable if it is
-    *s_pWriterChannel->serverResetPosRequired = true;
   }
-
-  /*
-    * overwrite conditions
-    * 1. client < server, expectedClient >= server
-    * 2. client > server, expectedClient >= server, expectedClient < client
-    * A server at the batch start has consumed everything the client pushed (the batch's own data is not
-    * readable before its command is pushed), so a wrap with the server there overwrites nothing. Stalling
-    * on it deadlocked: the server only releases the wait after a command, and the client pushes none.
-    */
-  if (expectedClientDataPos >= serverCount &&
-      ((s_curBatchStartPos < serverCount)
-       || (s_curBatchStartPos > serverCount && expectedClientDataPos < s_curBatchStartPos))) {
-    handleOverwriteCondition();
-  }
+  s_pWriterChannel->clientDataExpectedPos->store(-1, std::memory_order_seq_cst);
+  Logger::info("DataQueue overwrite condition resolved");
 }
 
 DECL_BRIDGE_FUNC(Header, pop_front) {
@@ -342,6 +318,7 @@ DECL_BRIDGE_FUNC(void, pushHeaderLocked, Commands::D3D9Command command, Commands
 DECL_BRIDGE_FUNC(void, openStatePacketLocked, uint32_t handle) {
   s_pWriterChannel->data->begin_batch();
   s_curBatchStartPos = (int32_t) s_pWriterChannel->data->get_pos();
+  s_curBatchStartAbs = s_pWriterChannel->data->get_abs_pos();
   s_packetOpen = true;
   s_packetHandle = handle;
   s_packetRecords = 0;
@@ -419,6 +396,7 @@ DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
   }
   s_pWriterChannel->pbCmdInProgress->store(true);
   s_curBatchStartPos = (int32_t) s_pWriterChannel->data->get_pos();
+  s_curBatchStartAbs = s_pWriterChannel->data->get_abs_pos();
   s_cmdCounter++;
 #ifdef REMIX_BRIDGE_CLIENT
   if constexpr (kIsDeviceBridge<BridgeId>) {

@@ -361,19 +361,34 @@ keep 64 objects so queued lists are reused instead of recreated every frame.
 - **`dxvk.conf`** - documents `dxvk.maxQueuedCommandBuffers`.
 ---
 
-## Workstream - Bridge data ring wrap deadlock (fork - 2026-10-16)
+## Workstream - Bridge data ring overwrite protection (fork - 2026-10-16 / 2026-10-17)
 
-`syncDataQueue` stalled the client whenever its data ring wrapped while the server's read position was at
-the current batch start, waiting for the server to release `dataSemaphore`. The server at the batch start
-has consumed everything that was pushed (a batch's data is not readable before its command header), so
-nothing could be overwritten; and the server only evaluates the release after processing a command, which
-the stalled client never pushed. The game froze until the client's retry budget ran out (forever while the
-window was inactive). Hit more often once the server got faster (idle more often) and the API water added
-data per frame (wraps more often).
+`syncDataQueue` (client, before every data push) must not let the writer overwrite ring words the reader has
+not consumed. Upstream compared ring offsets of writer, reader and batch start with three overwrite
+conditions plus a `serverResetPosRequired` flag the client set when its write wrapped and the server cleared
+when a pull wrapped. Two of those stalls could never be released, because the server only evaluates the
+release after processing a command and the stalled client pushes none: a wrap with the server already at the
+batch start (fixed 2026-10-16 by dropping that condition), and a wrap with the server still behind, where the
+flag was set before the stall and could only be cleared by a server wrap that needs the command the client
+was not sending. The game froze in `WaitForSingleObject` on both sides (client log: "Data Queue overwrite
+condition triggered", server idle in `waitForCommand`), forever while the window was inactive. A third hole
+was the flag itself: the server cleared it only on reads through `get_data` / `copy_data` that moved the ring
+offset backwards, which misses direct `data->pull` reads in `main.cpp` and a relocated blob larger than the
+offset it started at.
 
-- **`bridge/src/util/util_bridgecommand.cpp`** - inline tweak. *The third overwrite condition
-  (`batchStart <= server && serverResetPosRequired`) is removed; conditions 1 and 2 still cover a server
-  that is behind.*
+Positions are now absolute: `CircularQueue::m_absPos` counts words produced or consumed since start, skipped
+tail slots included (`ensure_space` relocation), identical on both sides. A write is safe when its end
+(`CircularBuffer::abs_pos_after`, same wrap rules as `push`) is at most one ring beyond the position the reader
+published. Otherwise the client publishes the position it needs (`clientDataExpectedPos`), waits on
+`dataSemaphore` in 2 ms slices and re-checks the reader position itself, so a reader that passed the position
+before seeing the request, or a release that happened before the wait, cannot strand it. A batch larger than
+the ring is the existing fatal "out of buffer memory" exit. The wrap flag and the three conditions are gone.
+
+- **`bridge/src/util/util_circularqueue.h`**, **`util_circularbuffer.h`** - inline. *`m_absPos` maintained in `pop`, `push_many`, `advance` and the `ensure_space` relocation; `get_abs_pos`, `abs_pos_after`.*
+- **`bridge/src/util/util_ipcchannel.h`** - inline. *`serverDataPos` / `clientDataExpectedPos` are `std::atomic<int64_t>` in the shared block (lock-free on x86 too); `serverResetPosRequired` removed. Shared memory layout changed: client and server must be built together.*
+- **`bridge/src/util/util_bridgecommand.h`** - inline. *`get_data` / `copy_data` publish the reader position (`publishReadPos`) for every reader except the device server; `get_data_abs_pos`; `s_curBatchStartAbs`.*
+- **`bridge/src/util/util_bridgecommand.cpp`** - inline. *`syncDataQueue` rewritten as above; the batch start records its absolute position.*
+- **`bridge/src/server/main.cpp`** - inline. *After each command: publish the absolute read position, release the semaphore when it reaches the position the client waits for; both log lines now carry the positions.*
 
 ---
 
