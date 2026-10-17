@@ -19,6 +19,7 @@ namespace {
 
   struct KeyedMaterial {
     XXH64_hash_t key = kEmptyHash;
+    Rc<DxvkImageView> view;
     // What a D3D9 draw takes from the game: albedo, sampler, alpha state.
     OpaqueMaterialData gameState;
     std::shared_ptr<MaterialData> legacy;
@@ -88,6 +89,23 @@ namespace {
     return legacy;
   }
 
+  // The game may stream new content into the texture object (GTA IV); the D3D9
+  // layer rehashes the image when the write is flushed. Follow it so the key
+  // stays the one a D3D9 draw of the current content gets.
+  void refreshKey(KeyedMaterial& keyed) {
+    if (keyed.view == nullptr) {
+      return;
+    }
+    const XXH64_hash_t current = keyed.view->image()->getHash();
+    if (current == kEmptyHash || current == keyed.key) {
+      return;
+    }
+    keyed.key = current;
+    keyed.legacy = nullptr;
+    keyed.replacementSource = nullptr;
+    keyed.mergedReplacement = nullptr;
+  }
+
 } // anonymous namespace
 
 namespace game_textures {
@@ -97,7 +115,11 @@ namespace game_textures {
       return kEmptyHash;
     }
     auto it = s_keyedMaterials.find(handle);
-    return it != s_keyedMaterials.end() ? it->second.key : kEmptyHash;
+    if (it == s_keyedMaterials.end()) {
+      return kEmptyHash;
+    }
+    refreshKey(it->second);
+    return it->second.key;
   }
 
   std::shared_ptr<MaterialData> keyedDrawMaterial(
@@ -108,6 +130,7 @@ namespace game_textures {
       return replacement;
     }
     KeyedMaterial& keyed = it->second;
+    refreshKey(keyed);
 
     if (replacement != nullptr) {
       if (replacement->getType() != MaterialDataType::Opaque) {
@@ -155,6 +178,7 @@ namespace fork_hooks {
     // and captures are shared between both paths.
     KeyedMaterial& keyed = s_keyedMaterials[handle];
     keyed.key = color->hash;
+    keyed.view = color->view;
 
     OpaqueMaterialData gameState = material.getOpaqueMaterialData();
     gameState.setAlbedoOpacityTexture(TextureRef(color->view));
