@@ -342,3 +342,20 @@ geometry asset hash XOR legacy material hash).
 - **`src/dxvk/rtx_render/rtx_fork_hooks.h`, `rtx_fork_submit.cpp`** - fork-owned. *Handle -> replacement hash map (render thread); `externalDrawMeshReplacement` looks replacements up by it XOR the draw's material key (`externalMaterialKey`); `submitExternalDraw` and the preserve path pass submesh 0's material and the draw's material data. `rtx.debugLogGeometryHashes` logs the key of every API mesh and the asset hash with its parts of every D3D9 mesh, once each (the diagnostic that showed the missing material XOR).*
 - **`src/dxvk/rtx_render/rtx_scene_manager.cpp`** - hook, 2 LOC. *`submitDrawState` calls `fork_hooks::logD3D9GeometryHash` after the D3D9 replacement lookup; `submitExternalDraw` passes submesh 0's material and the draw's material data to `fork_hooks::externalDrawMeshReplacement`.*
 - **`bridge/src/{client/remix_api.cpp, server/main.cpp, util/util_remixapi.{h,cpp}}`** - inline. *`CreateMesh` sends its extensions like `DrawInstance` (Bool::True + struct, Bool::False ends); `MeshInfoReplacementHash` serializer. Client and server must be built together.*
+---
+
+## Workstream - Queued command buffer limit (fork - 2026-10-15)
+
+`DxvkSubmissionQueue::submit` blocks the CS thread while more than `MaxNumQueuedCommandBuffers` command
+lists are submitted or unfinished. When the GPU runs low on pending work, `GpuFlushTracker` flushes
+aggressively; in GTA IV frames then reached ~21 command lists, `submit` waited on the GPU every frame and
+CPU and GPU work serialized, which kept the GPU idle and the flushes aggressive (100 fps at 66% GPU until a
+GPU-bound phase broke the loop, then ~150 fps GPU-bound; seen in a Tracy capture). The limit is now
+`dxvk.maxQueuedCommandBuffers` (default 32, minimum 2), and the command list / descriptor pool recyclers
+keep 64 objects so queued lists are reused instead of recreated every frame.
+
+- **`src/dxvk/dxvk_limits.h`** - inline tweak. *`MaxNumQueuedCommandBuffers` 18 -> 32, the option's default (next to Remix Plus's `MaxPushConstantSize` tweak).*
+- **`src/dxvk/dxvk_options.h`, `dxvk_options.cpp`** - inline tweak, 5 LOC. *`DxvkOptions::maxQueuedCommandBuffers` read from `dxvk.maxQueuedCommandBuffers`.*
+- **`src/dxvk/dxvk_queue.cpp`** - inline tweak, 4 LOC. *`DxvkSubmissionQueue::submit` waits on the option instead of the constant.*
+- **`src/dxvk/dxvk_device.h`** - inline tweak, 2 LOC. *`m_recycledCommandLists` / `m_recycledDescriptorPools` capacity 16 -> 64.*
+- **`dxvk.conf`** - documents `dxvk.maxQueuedCommandBuffers`.

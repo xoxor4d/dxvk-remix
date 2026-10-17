@@ -673,8 +673,10 @@ namespace dxvk {
     
     DxvkDeviceQueueSet          m_queues;
     
-    DxvkRecycler<DxvkCommandList,    16> m_recycledCommandLists;
-    DxvkRecycler<DxvkDescriptorPool, 16> m_recycledDescriptorPools;
+    // NV-DXVK start: keep as many command lists as can be queued (dxvk.maxQueuedCommandBuffers), 16 recreated the rest every frame
+    DxvkRecycler<DxvkCommandList,    64> m_recycledCommandLists;
+    DxvkRecycler<DxvkDescriptorPool, 64> m_recycledDescriptorPools;
+    // NV-DXVK end
     
     DxvkSubmissionQueue m_submissionQueue;
 

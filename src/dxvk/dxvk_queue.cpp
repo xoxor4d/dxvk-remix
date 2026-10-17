@@ -63,9 +63,12 @@ namespace dxvk {
     ScopedCpuProfileZone();
     std::unique_lock<dxvk::mutex> lock(m_mutex);
 
-    m_finishCond.wait(lock, [this] {
-      return m_submitQueue.size() + m_finishQueue.size() <= MaxNumQueuedCommandBuffers;
+    // NV-DXVK start: dxvk.maxQueuedCommandBuffers
+    const size_t maxQueued = m_device->config().maxQueuedCommandBuffers;
+    m_finishCond.wait(lock, [this, maxQueued] {
+      return m_submitQueue.size() + m_finishQueue.size() <= maxQueued;
     });
+    // NV-DXVK end
 
     DxvkSubmitEntry entry = { };
     entry.submit = std::move(submitInfo);

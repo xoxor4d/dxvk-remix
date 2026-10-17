@@ -13,7 +13,9 @@ namespace dxvk {
     MaxNumViewports             =    16,
     MaxNumResourceSlots         =  1216,
     MaxNumActiveBindings        =   384,
-    MaxNumQueuedCommandBuffers  =    18,
+    // NV-DXVK start: default of dxvk.maxQueuedCommandBuffers; 18 blocked the CS thread in DxvkSubmissionQueue::submit once a frame reached ~21 command lists
+    MaxNumQueuedCommandBuffers  =    32,
+    // NV-DXVK end
     MaxNumQueryCountPerPool     =   128,
     MaxNumSpecConstants         =    14,
     MaxUniformBufferSize        = 65536,

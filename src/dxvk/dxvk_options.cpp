@@ -21,7 +21,10 @@
 * DEALINGS IN THE SOFTWARE.
 */
 #include "dxvk_options.h"
+#include "dxvk_limits.h"
 #include "vulkan/vulkan_core.h"
+
+#include <algorithm>
 
 namespace dxvk {
 
@@ -41,6 +44,10 @@ namespace dxvk {
 
     // NV-DXVK start: early submit heuristics for memcpy work
     memcpyKickoffThreshold = config.getOption<uint32_t>("dxvk.memcpyKickoffThreshold", 16 * 1024 * 1024);
+    // NV-DXVK end
+
+    // NV-DXVK start: command lists submitted or unfinished before DxvkSubmissionQueue::submit blocks
+    maxQueuedCommandBuffers = std::max(config.getOption<uint32_t>("dxvk.maxQueuedCommandBuffers", uint32_t(MaxNumQueuedCommandBuffers)), 2u);
     // NV-DXVK end
 
     // NV-DXVK start: tell the user they cant run Remix
