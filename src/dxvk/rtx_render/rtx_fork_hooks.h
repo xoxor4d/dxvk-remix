@@ -68,6 +68,10 @@ namespace dxvk {
   struct RtLight;
   struct TextureRef;
 
+  namespace game_textures {
+    struct Texture;
+  }
+
   namespace fork_hooks {
 
     // Dispatches the fork-owned post-processing stack. The stack preserves
@@ -96,18 +100,53 @@ namespace dxvk {
     std::shared_ptr<const ReplacementBucket> externalDrawMeshReplacement(
       AssetReplacer& replacer, XXH64_hash_t meshHash);
 
+    // Runs before drawReplacements for an API mesh with a replacement bucket.
+    // Clears the RI when it was not set up for this bucket, so drawReplacements
+    // re-runs setup() with the bucket's prim count. Resolves submesh 0's API
+    // material onto drawCall like the per-submesh path (USD / keyed replacement,
+    // hash override, texture categories, object picking) and returns it as the
+    // material for includeOriginal entries.
+    // Implementation in rtx_fork_submit.cpp.
+    MaterialData externalDrawPrepareReplacementInstance(
+      DxvkDevice& device,
+      AssetReplacer& replacer,
+      SceneManager& scene,
+      DrawCallState& drawCall,
+      remixapi_MaterialHandle handle,
+      size_t submeshCount,
+      const std::shared_ptr<const ReplacementBucket>& pReplacements,
+      ReplacementInstance& replacementInstance);
+
+    // Runs after drawReplacements: marks the RI seen this frame and records the
+    // draw properties garbage collection reads, matching the D3D9 path.
+    // Implementation in rtx_fork_submit.cpp.
+    void externalDrawFinishReplacementInstance(
+      DxvkDevice& device,
+      const DrawCallState& drawCall,
+      ReplacementInstance& replacementInstance);
+
+    // Releases the prims of a replacement bucket the RI no longer has, before
+    // the API mesh is drawn without replacements.
+    // Implementation in rtx_fork_submit.cpp.
+    void externalDrawReleaseReplacementInstance(ReplacementInstance& replacementInstance);
+
     // Checks for a USD material replacement and updates the material pointer in-place.
-    // Returns the owning shared_ptr (null when there is no replacement); the caller
+    // Returns the owning shared_ptr (null when `material` is unchanged); the caller
     // must keep it alive for as long as it dereferences `material`.
+    // Materials keyed by a game colormap (see externalMaterialKey) look up their
+    // replacement by that key and draw it merged over the game state, or else
+    // their legacy-defaults material, matching the D3D9 draw path.
     // Implementation in rtx_fork_submit.cpp.
     std::shared_ptr<MaterialData> externalDrawMaterialReplacement(
-      AssetReplacer& replacer, const MaterialData*& material);
+      AssetReplacer& replacer, remixapi_MaterialHandle handle, const MaterialData*& material,
+      const LegacyMaterialData& drawMaterialData);
 
-    // Resolves the albedo texture hash from an API material and auto-applies
-    // all texture-based instance categories (Sky, Ignore, WorldUI, etc.).
-    // Writes textureHash out for use by subsequent hooks.
+    // Resolves the albedo texture hash from an API material (or its colormap key)
+    // and auto-applies all texture-based instance categories (Sky, Ignore,
+    // WorldUI, etc.). Writes textureHash out for use by subsequent hooks.
     // Implementation in rtx_fork_submit.cpp.
     void externalDrawTextureCategories(
+      remixapi_MaterialHandle handle,
       const MaterialData* material,
       DrawCallState& drawCall,
       XXH64_hash_t& textureHash);
@@ -562,6 +601,49 @@ namespace dxvk {
       const std::vector<RtInstance*>& instanceTable,
       uint32_t recordedVectorIdx,
       uint64_t recordedInstanceUid);
+
+    // -----------------------------------------------------------------------
+    // Colormap-keyed API materials (remixapi_MaterialInfoGameTexturesEXT)
+    // -----------------------------------------------------------------------
+
+    // remixapi_CreateMaterial, API thread: resolves the colorTexture of a chained
+    // remixapi_MaterialInfoGameTexturesEXT (null when absent, malformed, or the
+    // material has an albedoTexture).
+    // Implementation in rtx_fork_game_textures.cpp.
+    std::shared_ptr<const game_textures::Texture> resolveMaterialGameTextures(
+      D3D9DeviceEx* remixDevice,
+      const remixapi_MaterialInfo& info,
+      const remixapi_MaterialInfoGameTexturesEXT* ext);
+
+    // remixapi_CreateMaterial, render thread. An opaque material with a resolved
+    // color texture becomes a legacy-defaults material (as a non-replaced D3D9
+    // draw) using that texture, keyed by its hash. Pass-through when color is null.
+    // Implementation in rtx_fork_game_textures_keyed.cpp.
+    MaterialData applyMaterialGameTextures(
+      remixapi_MaterialHandle handle,
+      MaterialData&& material,
+      const std::shared_ptr<const game_textures::Texture>& color);
+
+    // remixapi_DestroyMaterial, render thread.
+    // Implementation in rtx_fork_game_textures_keyed.cpp.
+    void forgetMaterialGameTextures(remixapi_MaterialHandle handle);
+
+    // Drops every keyed-material reference to device resources.
+    // remixapi_Shutdown and D3D9DeviceEx teardown; synchronizes the CS thread
+    // first when remixDevice is given.
+    // Implementation in rtx_fork_game_textures.cpp.
+    void shutdownGameTextures(D3D9DeviceEx* remixDevice);
+
+    // Replacement / capture key of an API material: the colormap image hash for
+    // materials using a game color texture as albedo, material.getHash() otherwise.
+    // Render thread. Implementation in rtx_fork_game_textures_keyed.cpp.
+    // The draw's hash seed / override (remixapi_InstanceInfoD3DOverridesEXT) is applied like on D3D9 draws.
+    XXH64_hash_t externalMaterialKey(remixapi_MaterialHandle handle, const MaterialData& material,
+                                     const LegacyMaterialData& drawMaterialData);
+
+    // Applies a draw's hash seed / override to a material hash, same as LegacyMaterialData::updateCachedHash.
+    // Implementation in rtx_fork_game_textures_keyed.cpp.
+    XXH64_hash_t applyD3DHashOverrides(const LegacyMaterialData& drawMaterialData, XXH64_hash_t hash);
 
   } // namespace fork_hooks
 

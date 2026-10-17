@@ -113,6 +113,7 @@ template<> constexpr auto ToRemixApiStructEnum< remixapi_MaterialInfoPortalEXT  
 template<> constexpr auto ToRemixApiStructEnum< remixapi_MaterialInfoTranslucentEXT     > = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TRANSLUCENT_EXT;
 template<> constexpr auto ToRemixApiStructEnum< remixapi_MaterialInfoOpaqueEXT          > = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
 template<> constexpr auto ToRemixApiStructEnum< remixapi_MaterialInfoOpaqueSubsurfaceEXT> = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_SUBSURFACE_EXT;
+template<> constexpr auto ToRemixApiStructEnum< remixapi_MaterialInfoGameTexturesEXT    > = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_GAME_TEXTURES_EXT;
 template<> constexpr auto ToRemixApiStructEnum< remixapi_LightInfoSphereEXT             > = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
 template<> constexpr auto ToRemixApiStructEnum< remixapi_LightInfoRectEXT               > = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_RECT_EXT;
 template<> constexpr auto ToRemixApiStructEnum< remixapi_LightInfoDiskEXT               > = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISK_EXT;
@@ -125,6 +126,7 @@ template<> constexpr auto ToRemixApiStructEnum< remixapi_MeshInfo               
 template<> constexpr auto ToRemixApiStructEnum< remixapi_InstanceInfo                   > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO;
 template<> constexpr auto ToRemixApiStructEnum< remixapi_InstanceInfoBoneTransformsEXT  > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT;
 template<> constexpr auto ToRemixApiStructEnum< remixapi_InstanceInfoBlendEXT           > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT;
+template<> constexpr auto ToRemixApiStructEnum< remixapi_InstanceInfoD3DOverridesEXT    > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_D3D_OVERRIDES_EXT;
 template<> constexpr auto ToRemixApiStructEnum< remixapi_InstanceInfoObjectPickingEXT   > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_OBJECT_PICKING_EXT;
 template<> constexpr auto ToRemixApiStructEnum< remixapi_InstanceInfoParticleSystemEXT  > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_PARTICLE_SYSTEM_EXT;
 template<> constexpr auto ToRemixApiStructEnum< remixapi_InstanceInfoGpuInstancingEXT   > = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_GPU_INSTANCING_EXT;
@@ -141,6 +143,7 @@ using MaterialInfoOpaque = bridge_util::Serializable<remixapi_MaterialInfoOpaque
 using MaterialInfoOpaqueSubsurface = bridge_util::Serializable<remixapi_MaterialInfoOpaqueSubsurfaceEXT,false>;
 using MaterialInfoTranslucent = bridge_util::Serializable<remixapi_MaterialInfoTranslucentEXT,false>;
 using MaterialInfoPortal = bridge_util::Serializable<remixapi_MaterialInfoPortalEXT,true>;
+using MaterialInfoGameTextures = bridge_util::Serializable<remixapi_MaterialInfoGameTexturesEXT,false>;
 
 // MeshInfo
 using MeshInfo = bridge_util::Serializable<remixapi_MeshInfo,false>;
@@ -149,6 +152,7 @@ using MeshInfo = bridge_util::Serializable<remixapi_MeshInfo,false>;
 using InstanceInfo = bridge_util::Serializable<remixapi_InstanceInfo,true>;
 using InstanceInfoObjectPicking = bridge_util::Serializable<remixapi_InstanceInfoObjectPickingEXT,true>;
 using InstanceInfoBlend = bridge_util::Serializable<remixapi_InstanceInfoBlendEXT,true>;
+using InstanceInfoD3DOverrides = bridge_util::Serializable<remixapi_InstanceInfoD3DOverridesEXT,true>;
 using InstanceInfoTransforms = bridge_util::Serializable<remixapi_InstanceInfoBoneTransformsEXT,false>;
 using InstanceInfoParticleSystem = bridge_util::Serializable<remixapi_InstanceInfoParticleSystemEXT, false>;
 using InstanceInfoGpuInstancing = bridge_util::Serializable<remixapi_InstanceInfoGpuInstancingEXT, false>;

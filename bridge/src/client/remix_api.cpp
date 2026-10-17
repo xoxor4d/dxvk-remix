@@ -20,12 +20,15 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+#include <cstddef>
 #include <cstring>
+#include <vector>
 
 #include "log/log.h"
 #include "util_bridgecommand.h"
 #include "util_devicecommand.h"
 #include "util_remixapi.h"
+#include "d3d9_texture.h"
 
 using namespace remixapi::util;
 
@@ -106,6 +109,30 @@ auto serializeAndSend(ClientMessage& msg, const SerializableT& serializable) {
   delete pSlzd;
 }
 
+// Game texture pointers are client-side proxies, so send the D3D object id the
+// server keys its resources by instead (0 == null)
+uint32_t toGameTextureId(IDirect3DTexture9* const pTexture) {
+  if (!pTexture) {
+    return 0;
+  }
+  if (pTexture->GetType() != D3DRTYPE_TEXTURE) {
+    static bool warned = false;
+    if (!warned) {
+      Logger::warn("[remixapi] Game texture is not a 2D texture. Treating as null.");
+      warned = true;
+    }
+    return 0;
+  }
+  auto* const pLssTexture = bridge_cast<Direct3DTexture9_LSS*>(pTexture);
+  return (uint32_t) pLssTexture->D3D<IDirect3DBaseTexture9>();
+}
+
+void sendGameTextures(ClientMessage& msg, const remixapi_MaterialInfoGameTexturesEXT& info) {
+  auto translated = info;
+  translated.colorTexture = reinterpret_cast<IDirect3DTexture9*>((uintptr_t) toGameTextureId(info.colorTexture));
+  serializeAndSend<serialize::MaterialInfoGameTextures>(msg, translated);
+}
+
 
 remixapi_ErrorCode REMIXAPI_CALL remixapi_CreateMaterial(
   const remixapi_MaterialInfo* info,
@@ -168,6 +195,13 @@ remixapi_ErrorCode REMIXAPI_CALL remixapi_CreateMaterial(
           auto* pPortalMat = static_cast<const remixapi_MaterialInfoPortalEXT* const>(infoItr);
           send(c, Bool::True);
           serializeAndSend<serialize::MaterialInfoPortal>(c, *pPortalMat);
+          break;
+        }
+        case REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_GAME_TEXTURES_EXT:
+        {
+          auto* pGameTextures = static_cast<const remixapi_MaterialInfoGameTexturesEXT* const>(infoItr);
+          send(c, Bool::True);
+          sendGameTextures(c, *pGameTextures);
           break;
         }
         default:
@@ -260,6 +294,7 @@ remixapi_ErrorCode REMIXAPI_CALL remixapi_CreateMesh(
 
     const void* infoItr = info;
     while (auto* const pNext = getPNext(infoItr)) {
+      infoItr = pNext;
       switch (getSType(pNext)) {
         default:
         {
@@ -317,6 +352,13 @@ remixapi_ErrorCode REMIXAPI_CALL remixapi_DrawInstance(const remixapi_InstanceIn
           auto* pBlend = static_cast<const remixapi_InstanceInfoBlendEXT* const>(infoItr);
           send(c, Bool::True);
           serializeAndSend<serialize::InstanceInfoBlend>(c, *pBlend);
+          break;
+        }
+        case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_D3D_OVERRIDES_EXT:
+        {
+          auto* pOverrides = static_cast<const remixapi_InstanceInfoD3DOverridesEXT* const>(infoItr);
+          send(c, Bool::True);
+          serializeAndSend<serialize::InstanceInfoD3DOverrides>(c, *pOverrides);
           break;
         }
         case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT:

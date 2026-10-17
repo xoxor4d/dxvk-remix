@@ -226,6 +226,40 @@ void deserialize(void*& deserializeFrom, remixapi_Path& deserializeTo) {
   }
 }
 
+// const char* (nullable)
+static inline uint32_t strSize(const char* const str) {
+  return str ? (uint32_t) strlen(str) + 1 : 0;
+}
+template<>
+static inline uint32_t sizeOf(const char* const& str) {
+  return sizeOf<bool>() + (str ? sizeOf<uint32_t>() + strSize(str) : 0);
+}
+template<>
+void serialize(const char* const& serializeFrom, void*& pSerialize) {
+  serialize((serializeFrom) ? true : false, pSerialize);
+  if (serializeFrom) {
+    const uint32_t size = strSize(serializeFrom);
+    serialize(size, pSerialize);
+    serialize(serializeFrom, pSerialize, size);
+  }
+}
+template<>
+void deserialize(void*& deserializeFrom, const char*& deserializeTo) {
+  bool bIsValidString = false;
+  deserialize(deserializeFrom, bIsValidString);
+  deserializeTo = nullptr;
+  if (bIsValidString) {
+    uint32_t size = 0;
+    deserialize(deserializeFrom, size);
+    if (size > 0) {
+      auto str = new char[size];
+      deserialize(deserializeFrom, str, size);
+      str[size - 1] = '\0';
+      deserializeTo = str;
+    }
+  }
+}
+
 // remixapi_HardcodedVertex
 template<>
 static inline constexpr uint32_t sizeOf<remixapi_HardcodedVertex>() {
@@ -409,6 +443,26 @@ void MaterialInfoPortal::_deserialize(void*& pDeserialize) {
   fold_helper::deserialize(pDeserialize, MaterialInfoPortalVars);
 }
 void MaterialInfoPortal::_dtor() {
+}
+
+
+// colorTexture crosses the bridge as the client's D3D object id: the client translates
+// its texture proxy before serializing and the server resolves the id afterwards
+uint32_t MaterialInfoGameTextures::_calcSize() const {
+  return fold_helper::calcSize(sType) + sizeOf<uint32_t>();
+}
+void MaterialInfoGameTextures::_serialize(void*& pSerialize) const {
+  fold_helper::serialize(pSerialize, sType);
+  bridge_util::serialize((uint32_t) (uintptr_t) colorTexture, pSerialize);
+}
+void MaterialInfoGameTextures::_deserialize(void*& pDeserialize) {
+  pNext = nullptr;
+  fold_helper::deserialize(pDeserialize, sType);
+  uint32_t textureId = 0;
+  bridge_util::deserialize(pDeserialize, textureId);
+  colorTexture = reinterpret_cast<IDirect3DTexture9*>((uintptr_t) textureId);
+}
+void MaterialInfoGameTextures::_dtor() {
 }
 
 //////////////
@@ -616,6 +670,33 @@ void InstanceInfoBlend::_deserialize(void*& pDeserialize) {
   fold_helper::deserialize(pDeserialize, InstanceInfoBlendVars);
 }
 void InstanceInfoBlend::_dtor() {
+}
+
+
+#define InstanceInfoD3DOverridesVars sType, \
+                                     categoryFlags, \
+                                     modifierFlags, \
+                                     hashOverride, \
+                                     hashSeed, \
+                                     emissiveScale, \
+                                     packedWetness, \
+                                     multiUse[0], \
+                                     multiUse[1], \
+                                     multiUse[2], \
+                                     multiUse[3], \
+                                     multiUse[4], \
+                                     multiUse[5]
+uint32_t InstanceInfoD3DOverrides::_calcSize() const {
+  return fold_helper::calcSize(InstanceInfoD3DOverridesVars);
+}
+void InstanceInfoD3DOverrides::_serialize(void*& pSerialize) const {
+  fold_helper::serialize(pSerialize, InstanceInfoD3DOverridesVars);
+}
+void InstanceInfoD3DOverrides::_deserialize(void*& pDeserialize) {
+  pNext = nullptr;
+  fold_helper::deserialize(pDeserialize, InstanceInfoD3DOverridesVars);
+}
+void InstanceInfoD3DOverrides::_dtor() {
 }
 
 

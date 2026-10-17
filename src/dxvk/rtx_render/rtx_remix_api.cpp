@@ -64,6 +64,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -1042,6 +1043,23 @@ std::unique_ptr<dxvk::ExternalDrawState> dxvk::RemixAPIPrivateAccessor::toRtDraw
     prototype.materialData.blendMode.writeMask = (VkColorComponentFlags) extBlend->writeMask;
   }
 
+  // NV-DXVK start: per draw overrides, the same fields the D3D9 path reads from unused render states
+  if (auto extOverrides = pnext::find<remixapi_InstanceInfoD3DOverridesEXT>(&info)) {
+    prototype.materialData.remixTextureCategoryFlagsFromD3D = extOverrides->categoryFlags;
+    prototype.materialData.remixModifierFromD3D = extOverrides->modifierFlags;
+    prototype.materialData.remixHashFromD3D = extOverrides->hashOverride;
+    prototype.materialData.remixHashModifierFromD3D = extOverrides->hashSeed;
+    prototype.materialData.remixTempFloat01FromD3D = extOverrides->emissiveScale;
+    prototype.materialData.remixPackedFloat4_RS210FromD3D = extOverrides->packedWetness;
+    prototype.materialData.remixFloatRS211FromD3D = extOverrides->multiUse[0];
+    prototype.materialData.remixFloatRS212FromD3D = extOverrides->multiUse[1];
+    prototype.materialData.remixFloatRS213FromD3D = extOverrides->multiUse[2];
+    prototype.materialData.remixFloatRS214FromD3D = extOverrides->multiUse[3];
+    prototype.materialData.remixFloatRS215FromD3D = extOverrides->multiUse[4];
+    prototype.materialData.remixFloatRS216FromD3D = extOverrides->multiUse[5];
+  }
+  // NV-DXVK end
+
   if (auto extParticles = pnext::find<remixapi_InstanceInfoParticleSystemEXT>(&info)) {
     state->optionalParticleDesc.emplace(convert::toRtParticleDesc(*extParticles));
   }
@@ -1084,16 +1102,19 @@ namespace {
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
     }
 
+    auto gameTextures = dxvk::fork_hooks::resolveMaterialGameTextures(remixDevice, *info, pnext::find<remixapi_MaterialInfoGameTexturesEXT>(info));
+
     // async load
     std::lock_guard lock { s_mutex };
     remixDevice->EmitCs([cHandle = handle,
                          cMaterialData = convert::toRtMaterialWithoutTexturePreload(*info),
-                         cPreloadSrc = convert::makePreloadSource(*info)](dxvk::DxvkContext* ctx) {
+                         cPreloadSrc = convert::makePreloadSource(*info),
+                         cGameTextures = std::move(gameTextures)](dxvk::DxvkContext* ctx) {
       auto& assets = ctx->getCommonObjects()->getSceneManager().getAssetReplacer();
       assets->makeMaterialWithTexturePreload(
         *ctx,
         cHandle,
-        convert::toRtMaterialFinalized(*ctx, cMaterialData, cPreloadSrc));
+        dxvk::fork_hooks::applyMaterialGameTextures(cHandle, convert::toRtMaterialFinalized(*ctx, cMaterialData, cPreloadSrc), cGameTextures));
     });
 
     *out_handle = handle;
@@ -1107,6 +1128,7 @@ namespace {
       remixDevice->EmitCs([cHandle = handle](dxvk::DxvkContext* ctx) {
         auto& assets = ctx->getCommonObjects()->getSceneManager().getAssetReplacer();
         assets->destroyExternalMaterial(cHandle);
+        dxvk::fork_hooks::forgetMaterialGameTextures(cHandle);
       });
       return REMIXAPI_ERROR_CODE_SUCCESS;
     }
@@ -1451,6 +1473,11 @@ namespace {
       return REMIXAPI_ERROR_CODE_REMIX_DEVICE_WAS_NOT_REGISTERED;
     }
     std::lock_guard lock { s_mutex };
+    // A batched create that was never flushed must not resurrect the mesh later.
+    s_pendingMeshCreates.erase(
+      std::remove_if(s_pendingMeshCreates.begin(), s_pendingMeshCreates.end(),
+                     [handle](const PendingMeshCreate& pending) { return pending.handle == handle; }),
+      s_pendingMeshCreates.end());
     remixDevice->EmitCs([cHandle = handle](dxvk::DxvkContext* ctx) {
       ctx->getCommonObjects()->getSceneManager()
         .destroyExternalMesh(dxvk::Rc<dxvk::DxvkContext>(ctx), cHandle);
@@ -2205,6 +2232,7 @@ namespace {
   remixapi_ErrorCode REMIXAPI_CALL remixapi_Shutdown(void) {
     // Clear fork-owned callback state (lives in rtx_fork_api_entry.cpp)
     dxvk::fork_hooks::shutdownCallbacks();
+    dxvk::fork_hooks::shutdownGameTextures(s_dxvkDevice);
     if (s_dxvkDevice) {
       dxvk::g_dxvkDeviceNative = nullptr;
       while (true) {

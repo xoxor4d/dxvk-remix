@@ -168,6 +168,25 @@ static void deserializeFromQueue(SerializableT& serializableT) {
   dslz.deserialize();
   serializableT = std::move(dslz);
 }
+
+// Game textures arrive as client D3D object ids, map them to the server-side textures
+static void resolveGameTextures(serialize::MaterialInfoGameTextures& info) {
+  const uint32_t textureId = (uint32_t) (uintptr_t) info.colorTexture;
+  info.colorTexture = nullptr;
+  if (textureId == 0) {
+    return;
+  }
+  const auto it = gpD3DResources.find(textureId);
+  if (it != gpD3DResources.end() && it->second && it->second->GetType() == D3DRTYPE_TEXTURE) {
+    info.colorTexture = (IDirect3DTexture9*) it->second;
+  } else {
+    static bool warned = false;
+    if (!warned) {
+      Logger::warn("[RemixApi] Game texture is not a known 2D texture. Treating as null.");
+      warned = true;
+    }
+  }
+}
 }
 
 static inline void safeDestroy(IUnknown* obj, uint32_t x86handle) {
@@ -2827,6 +2846,7 @@ void ProcessDeviceCommandQueue() {
           serialize::MaterialInfoOpaqueSubsurface opaqueSubsurface;
           serialize::MaterialInfoTranslucent translucent;
           serialize::MaterialInfoPortal portal;
+          serialize::MaterialInfoGameTextures gameTextures;
         } exts;
         memset(&exts, 0, sizeof(MaterialExtensions));
 
@@ -2872,6 +2892,15 @@ void ProcessDeviceCommandQueue() {
               deserializeFromQueue(exts.portal);
               pInfoProto->pNext = &(exts.portal);
               pInfoProto = &getInfoProto(exts.portal);
+              break;
+            }
+            case REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_GAME_TEXTURES_EXT:
+            {
+              assert(!exts.gameTextures.pNext);
+              deserializeFromQueue(exts.gameTextures);
+              resolveGameTextures(exts.gameTextures);
+              pInfoProto->pNext = &(exts.gameTextures);
+              pInfoProto = &getInfoProto(exts.gameTextures);
               break;
             }
             default:
@@ -3003,6 +3032,7 @@ void ProcessDeviceCommandQueue() {
         struct InstanceExtensions {
           serialize::InstanceInfoObjectPicking objectPicking;
           serialize::InstanceInfoBlend blend;
+          serialize::InstanceInfoD3DOverrides d3dOverrides;
           serialize::InstanceInfoTransforms boneXforms;
           serialize::InstanceInfoParticleSystem particleSystem;
         } exts;
@@ -3041,6 +3071,14 @@ void ProcessDeviceCommandQueue() {
               deserializeFromQueue(exts.blend);
               pInfoProto->pNext = &(exts.blend);
               pInfoProto = &getInfoProto(exts.blend);
+              break;
+            }
+            case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_D3D_OVERRIDES_EXT:
+            {
+              assert(!exts.d3dOverrides.pNext);
+              deserializeFromQueue(exts.d3dOverrides);
+              pInfoProto->pNext = &(exts.d3dOverrides);
+              pInfoProto = &getInfoProto(exts.d3dOverrides);
               break;
             }
             case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT:

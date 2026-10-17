@@ -67,9 +67,15 @@
 // DLSS control-mask fields. The runtime (and the bridge client) only read those
 // fields from callers reporting >= 0.1000.1, so binaries built against 0.1000.0
 // keep working and receive upstream's defaults.
+//
+// PATCH 2 adds remixapi_MaterialInfoGameTexturesEXT (game colormap as albedo
+// and replacement key of an API material).
+//
+// PATCH 3 adds remixapi_InstanceInfoD3DOverridesEXT (the per draw values the
+// D3D9 path reads from unused render states).
 #define REMIXAPI_VERSION_MAJOR 0
 #define REMIXAPI_VERSION_MINOR 1000
-#define REMIXAPI_VERSION_PATCH 1
+#define REMIXAPI_VERSION_PATCH 3
 
 
 // External
@@ -144,6 +150,8 @@ extern "C" {
     REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_PARTICLE_SYSTEM_EXT    = 26,
     REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_GPU_INSTANCING_EXT     = 27,
     REMIXAPI_STRUCT_TYPE_CAMERA_MEDIUM_INFO                   = 28,
+    REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_GAME_TEXTURES_EXT      = 29,
+    REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_D3D_OVERRIDES_EXT      = 30,
     // NOTE: if adding a new struct, register it in 'rtx_remix_specialization.inl'
     //       and only extend this enum by appending, never adjust the order of these 
     //       as that will break backwards compatibility.
@@ -477,6 +485,22 @@ extern "C" {
     uint32_t            writeMask;
     remixapi_Bool       isVertexColorBakedLighting;
   } remixapi_InstanceInfoBlendEXT;
+
+  // Per draw overrides that the D3D9 path reads from unused render states (GTA4 compatibility).
+  // Categories and modifier flags are applied like RS42 / RS149, the hash fields change the material
+  // hash used for replacement lookups, the remaining values feed the modifier flags. Absent fields
+  // behave like a D3D9 draw with those render states at 0.
+  typedef struct remixapi_InstanceInfoD3DOverridesEXT {
+    remixapi_StructType sType;
+    void*               pNext;
+    uint32_t            categoryFlags;   // RS42: runtime InstanceCategories bit order, OR'ed into the instance categories
+    uint32_t            modifierFlags;   // RS149: REMIX_MODIFIER_FROM_D3D bits
+    uint64_t            hashOverride;    // RS150: replaces the material hash when non-zero
+    uint32_t            hashSeed;        // RS220: re-hashes the material hash when non-zero, takes precedence over hashOverride
+    float               emissiveScale;   // RS169: emissive intensity multiplier (EMISSIVE_SCALAR modifier)
+    uint32_t            packedWetness;   // RS210: two 16 bit wetness parameters (ROUGHNESS_SCALAR modifier)
+    float               multiUse[6];     // RS211-216: UV animation / translucent parameters
+  } remixapi_InstanceInfoD3DOverridesEXT;
 
   typedef struct remixapi_InstanceInfoObjectPickingEXT {
     remixapi_StructType            sType;
@@ -934,6 +958,16 @@ extern "C" {
     uint32_t          height,
     remixapi_Format   format,
     float             opacity);
+
+  // Chained from remixapi_MaterialInfoOpaqueEXT::pNext. On an opaque material with an empty
+  // albedoTexture, this D3D9 texture (filled before CreateMaterial) is used as albedo and its
+  // image hash becomes the material's replacement / capture / category key, the same key a
+  // D3D9 draw of that texture gets.
+  typedef struct remixapi_MaterialInfoGameTexturesEXT {
+    remixapi_StructType sType;
+    void*               pNext;
+    IDirect3DTexture9*  colorTexture;
+  } remixapi_MaterialInfoGameTexturesEXT;
 
 
   typedef struct remixapi_InitializeLibraryInfo {
