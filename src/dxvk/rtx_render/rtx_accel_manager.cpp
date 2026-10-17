@@ -733,8 +733,12 @@ namespace dxvk {
                                       RtxOptions::minimizeBlasMerging() ||                 // Option to attempt putting as many objects into dynamic BLAS as possible.
                                       blasEntry->input.usesVertexShader;                   // GTA4: meshes rendered through vertex shaders are animated every frame.
 
+      // NV-DXVK start: a small mesh whose geometry changes every frame would dirty and rebuild its whole merged bucket every frame
+      const bool animatedEveryFrame = fork_hooks::keepAnimatedMeshesOutOfMergedBlas() &&
+                                      (blasEntry->input.getSkinningState().numBones != 0 || blasEntry->input.usesVertexShader);
+      // NV-DXVK end
       const bool forceMergedBlas = (blasEntry->buildGeometries.size() > 1 ||                                       // Currently we use multiple build geometries for particle billboards, which we prefer to merge into large BLAS
-                                    (!RtxOptions::minimizeBlasMerging() && blasPrims < minPrimsInDynamicBLAS) ||   // Avoid creating lots of small dynamic BLAS
+                                    (!RtxOptions::minimizeBlasMerging() && blasPrims < minPrimsInDynamicBLAS && !animatedEveryFrame) ||   // Avoid creating lots of small dynamic BLAS
                                     RtxOptions::forceMergeAllMeshes()) &&                                          // Setting to force all meshes into the merged BLAS
                                       instance->surface.instancesToObject == nullptr;                              // Never merge point instancer geometry
 

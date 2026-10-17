@@ -2720,6 +2720,12 @@ namespace dxvk {
 
     const ReplacementInstance::LookupKey externalKey { identityHash, spatialMapHash, matHash, kEmptyHash, worldPos, xform };
     ReplacementInstance* replacementInstance = m_drawCallTracker.findOrCreateReplacementInstance(externalKey);
+    // NV-DXVK start: preserve path for unchanged external draws; option reads below invalidate it like the D3D9 path
+    if (fork_hooks::externalDrawTryPreserve(*this, ctx, state, submeshesRef, *replacementInstance)) {
+      return;
+    }
+    RTX_OPTION_INVALIDATION_SCOPE(RtxOptionFlags::InvalidatesDrawcallTranslation);
+    // NV-DXVK end
     replacementInstance->dirtyFlags.clr(ReplacementInstance::kDynamicFeatureMask);
 
     if (auto pReplacements = fork_hooks::externalDrawMeshReplacement(*m_pReplacer, meshHash)) {

@@ -17,6 +17,9 @@
 #include "rtx_asset_replacer.h"   // AssetReplacer, AssetReplacement
 #include "rtx_fork_game_textures.h" // game_textures::findMaterialKey, keyedDrawMaterial
 #include "rtx_options.h"          // RtxOptions::*, fast_unordered_set, InstanceCategories
+#include "rtx_option_manager.h"   // RtxOptionManager::isDrawcallTranslationInvalid
+#include "rtx_instance_manager.h" // RtInstance
+#include "rtx_texture_manager.h"  // RtxTextureManager::getTextureCacheGeneration
 #include "rtx_scene_manager.h"    // SceneManager, DrawCallMetaInfo
 
 #include "dxvk_device.h"          // DxvkDevice::getCommon()->getResources()
@@ -106,6 +109,82 @@ namespace fork_hooks {
     if (replacementInstance.activeReplacements != nullptr) {
       replacementInstance.clear();
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // externalDrawTryPreserve
+  //
+  // The identity hash of an external draw covers mesh, material, bones,
+  // categories and transform, so a ReplacementInstance found by its exact
+  // identity (dirty flags clear) is the same draw as last frame. The D3D9 path
+  // then refreshes the instance instead of re-running processDrawCallState;
+  // external draws always ran the dynamic path. The conditions mirror
+  // SceneManager::submitDrawState's usePreservePath, plus the material
+  // replacement lookup of the dynamic path (a replacement that shows up
+  // changes the material without changing the identity).
+  // ---------------------------------------------------------------------------
+  namespace {
+    struct ExternalDrawOptions {
+      RTX_OPTION("rtx", bool, preserveUnchangedExternalDraws, true,
+                 "Remix API instances unchanged since the last frame (same mesh, transform, material, bones and categories) "
+                 "keep their instance instead of running the per draw scene processing again, like unchanged D3D9 draws.");
+    };
+  }
+
+  bool externalDrawTryPreserve(SceneManager& scene, const Rc<DxvkContext>& ctx, ExternalDrawState& state,
+                               const std::shared_ptr<const std::vector<RasterGeometry>>& submeshes,
+                               ReplacementInstance& ri) {
+    if (!RtxOptions::enablePreservePath() || !ExternalDrawOptions::preserveUnchangedExternalDraws()) {
+      return false;
+    }
+    if (submeshes->size() != 1) {
+      return false;
+    }
+
+    DxvkDevice* device = ctx->getDevice().ptr();
+    const uint32_t frame = device->getCurrentFrameId();
+    const bool seenThisFrame = ri.frameLastSeen == frame;
+    const RasterGeometry& submesh = (*submeshes)[0];
+
+    // the material the dynamic path draws with: the replacement for its key, else the api material itself
+    const MaterialData* material = scene.m_pReplacer->accessExternalMaterial(submesh.externalMaterial);
+    const void* replacement = nullptr;
+    if (material != nullptr) {
+      const XXH64_hash_t key = game_textures::findMaterialKey(submesh.externalMaterial);
+      replacement = scene.m_pReplacer->getReplacementMaterial(
+        applyD3DHashOverrides(state.drawCall.getMaterialData(), key != kEmptyHash ? key : material->getHash())).get();
+    }
+    const XXH64_hash_t materialIdentity = state.drawCall.getMaterialData().computeIdentityHash();
+
+    RtInstance* instance = ri.prims.size() == 1 ? ri.prims[0].getInstance() : nullptr;
+    const bool unchanged =
+      instance != nullptr && instance->getBlas() != nullptr &&
+      instance->getBlas()->frameLastUpdated != frame &&
+      !seenThisFrame && ri.dirtyFlags.isClear() &&
+      !RtxOptionManager::isDrawcallTranslationInvalid() &&
+      !state.optionalParticleDesc.has_value() &&
+      !state.categories.test(InstanceCategories::ParticleEmitter) &&
+      ri.activeReplacements == nullptr &&
+      externalDrawMeshReplacement(*scene.m_pReplacer, reinterpret_cast<XXH64_hash_t>(state.mesh)) == nullptr &&
+      ri.externalReplacementMaterial == replacement &&
+      ri.externalMaterialIdentityHash == materialIdentity &&
+      device->getCommon()->getTextureManager().getTextureCacheGeneration() == scene.m_textureCacheGenerationValidForPreserve;
+
+    if (!unchanged) {
+      // the dynamic path runs next with exactly these inputs
+      if (!seenThisFrame) {
+        ri.externalReplacementMaterial = replacement;
+        ri.externalMaterialIdentityHash = materialIdentity;
+      }
+      return false;
+    }
+
+    // preserveReplacementInstance reads the draw's geometry (bounding box, billboards) and transforms
+    state.drawCall.overrideGeometryData(std::shared_ptr<const RasterGeometry>(submeshes, &submesh));
+    state.drawCall.overrideCullMode(state.doubleSided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT);
+    scene.preserveReplacementInstance(ctx, state.drawCall, nullptr, &ri);
+    ri.frameLastSeen = frame;
+    return true;
   }
 
   // ---------------------------------------------------------------------------

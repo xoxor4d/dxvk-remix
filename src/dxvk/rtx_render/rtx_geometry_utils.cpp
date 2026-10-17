@@ -32,6 +32,7 @@
 #include <rtx_shaders/interleave_geometry.h>
 #include <rtx_shaders/smooth_normals.h>
 #include "dxvk_scoped_annotation.h"
+#include "rtx_fork_hooks.h"
 
 #include "rtx_context.h"
 #include "rtx_options.h"
@@ -311,7 +312,9 @@ namespace dxvk {
     bool mustUseGPU = drawCallState.getGeometryData().positionBuffer.mapPtr() == nullptr;
 
     // At some point, its more efficient to do these calculations on the GPU, this limit is somewhat arbitrary however, and might require better tuning...
-    const uint32_t kNumVerticesToProcessOnCPU = 256;
+    // NV-DXVK start: fork option (the CPU path issues two buffer updates per vertex)
+    const uint32_t kNumVerticesToProcessOnCPU = fork_hooks::skinningCpuVertexLimit();
+    // NV-DXVK end
 
     // Check we have appropriate CPU access
     const bool pendingGpuWrite = drawCallState.getGeometryData().positionBuffer.isPendingGpuWrite() ||

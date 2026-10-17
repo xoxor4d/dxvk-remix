@@ -157,3 +157,36 @@ is attached (always 0), and the weight loop ran to `bonesPerVertex - 1` as
 D3D9 fixed function skinning copies the same value into both.
 
 - **`src/dxvk/rtx_render/rtx_game_capturer.cpp`** - inline. *`captureMesh` reads `bonesPerVertex` from the raster geometry.*
+---
+
+## Workstream - CS thread cost of API instances (fork - 2026-10-12)
+
+A Tracy capture (GTA IV through the bridge, ~3,800 API instances per frame) showed
+the dxvk-cs thread as the frame limiter: ~9 ms of per-draw processing and ~7 ms of
+scene build per frame.
+
+External draws never took the preserve path D3D9 draws take for unchanged
+draws (`SceneManager::submitDrawState`, `usePreservePath`); every API instance
+ran `processDrawCallState` (draw call cache, instance update, surface material)
+every frame. `fork_hooks::externalDrawTryPreserve` (rtx_fork_submit.cpp) takes
+the preserve path for a one-submesh external draw found by its exact identity
+when nothing it depends on changed (`rtx.preserveUnchangedExternalDraws`).
+
+`RtxGeometryUtils::dispatchSkinning` skinned draws of up to 256 vertices on the
+CPU and wrote every vertex to the GPU with its own buffer update (16k
+`vkCmdUpdateBuffer` per frame). `rtx.skinningCpuVertexLimit` (default 0) sends
+everything through the compute shader. `mergeInstancesIntoBlas` then put every
+small skinned mesh into the merged BLAS, where one skinned part updated every
+frame re-sorted and rebuilt the whole bucket (~6 ms per frame on the CS thread
+with ~9,000 instances); meshes with bones or drawn through a vertex shader keep
+their own BLAS (`rtx.dynamicBlasForAnimatedMeshes`, on by default).
+
+- **`src/dxvk/rtx_render/rtx_fork_submit.cpp`** - fork-owned file. *`externalDrawTryPreserve`, `rtx.preserveUnchangedExternalDraws`.*
+- **`src/dxvk/rtx_render/rtx_fork_skinning.cpp`** - fork-owned file. *`rtx.skinningCpuVertexLimit`, `skinningCpuVertexLimit()`; `rtx.dynamicBlasForAnimatedMeshes`, `keepAnimatedMeshesOutOfMergedBlas()`.*
+- **`src/dxvk/rtx_render/rtx_fork_hooks.h`** - fork-owned change. *Declares the hooks.*
+- **`src/dxvk/meson.build`** - fork-owned change. *Adds `rtx_fork_skinning.cpp`.*
+- **`src/dxvk/rtx_render/rtx_scene_manager.cpp`** - hook. *`submitExternalDraw`: `externalDrawTryPreserve` after the ReplacementInstance lookup, `RTX_OPTION_INVALIDATION_SCOPE` over the dynamic path (as the D3D9 path).*
+- **`src/dxvk/rtx_render/rtx_scene_manager.h`** - inline. *Forward declaration and friend for `externalDrawTryPreserve`.*
+- **`src/dxvk/rtx_render/rtx_types.h`** - inline. *`ReplacementInstance::externalMaterialIdentityHash` / `externalReplacementMaterial`.*
+- **`src/dxvk/rtx_render/rtx_geometry_utils.cpp`** - hook. *`dispatchSkinning`: CPU vertex limit from `fork_hooks::skinningCpuVertexLimit()`.*
+- **`src/dxvk/rtx_render/rtx_accel_manager.cpp`** - hook. *`mergeInstancesIntoBlas`: `forceMergedBlas` no longer merges small meshes animated every frame (`fork_hooks::keepAnimatedMeshesOutOfMergedBlas`).*
