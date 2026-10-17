@@ -34,6 +34,9 @@ namespace lss {
   struct Export;
 } // namespace lss
 
+// Shader-shared constant buffer struct (rtx/pass/raytrace_args.h), global namespace.
+struct RaytraceArgs;
+
 // remixapi_LightHandle for the light-manager hooks. Guard against redefinition
 // when rtx_light_manager.h is also included in the same translation unit.
 #ifndef REMIXAPI_LIGHTHANDLE_DEFINED
@@ -696,6 +699,14 @@ namespace dxvk {
     // Applies a draw's hash seed / override to a material hash, same as LegacyMaterialData::updateCachedHash.
     // Implementation in rtx_fork_game_textures_keyed.cpp.
     XXH64_hash_t applyD3DHashOverrides(const LegacyMaterialData& drawMaterialData, XXH64_hash_t hash);
+
+    // Fills the rtx.water.* shoreline fade constants.
+    // Implementation in rtx_fork_water.cpp.
+    void fillWaterShaderParams(RaytraceArgs& constants);
+
+    // Shoreline fade settings under Material Options -> PBR Material Modifiers -> Translucent.
+    // Implementation in rtx_fork_water.cpp.
+    void showWaterShoreSettings();
 
   } // namespace fork_hooks
 

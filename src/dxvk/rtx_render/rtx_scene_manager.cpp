@@ -2047,6 +2047,10 @@ namespace dxvk {
       if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_TRANSLUCENT_FADE_NORMAL_UNTIL_DIST) {
         freeFloat02 = legacyMaterialData.remixFloatRS212FromD3D;
       }
+
+      if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_WATER_SHORELINE) {
+        d3dModifierFlags |= D3D_TRANSLUCENT_MODIFIER_WATER_SHORELINE;
+      }
     }
 
     return RtTranslucentSurfaceMaterial{

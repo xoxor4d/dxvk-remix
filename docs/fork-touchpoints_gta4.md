@@ -218,3 +218,67 @@ static geometry as one object).
 - **`src/dxvk/rtx_render/rtx_accel_manager.cpp`** - inline. *`mergeInstancesIntoBlas`: the per frame `unordered_set` of live instances is a sorted static scratch vector + `binary_search`; the two `hasNewlyBuiltOmms` checks go through `fork_hooks::ommRebindDue`, which latches baked micromaps and binds them at most every N frames.*
 - **`src/dxvk/meson.build`** - fork-owned change. *Adds `rtx_fork_texture_streaming.cpp`.*
 - **`src/dxvk/rtx_render/rtx_fork_hooks.h`** - fork-owned change. *Declares the hooks.*
+
+---
+
+## Workstream - AnimatedWater shoreline fade (fork - 2026-10-13)
+
+Removes the bright seam and the hard edge where translucent water meets
+opaque geometry. Near the shore, PSTR shows the terrain under shallow water
+with almost no absorption, and the water's Fresnel reflection is added on
+top. That makes the shallow strip brighter than both dry ground and deep
+water, and DLSS-RR / NRD smear the reflection onto the dry side, because
+the guide buffers describe the continuous terrain. At each resolved
+AnimatedWater translucent hit, `forkWaterShoreFade` traces a short
+opaque-only probe straight down for the water depth and offsets it by a
+pseudo-height (the signed slope of the animated normal). The resulting
+fade drives base reflectivity, normal perturbation (blended toward the
+view direction so grazing Schlick Fresnel vanishes too), IOR, thin-wall
+absorption, diffuse layer and emission to zero toward the shore.
+
+The depth probes force non-opaque traversal and commit only `isStatic && isFullyOpaque`
+surfaces, so moving and skinned objects are skipped (a body standing in the water would
+otherwise read as shallow ground directly above it); those are faded by a soft-intersection
+probe along the incoming ray (`rtx.water.objectFadeWidth`, smoothstep). When the center probe
+misses, two more probes offset horizontally by `rtx.water.shoreProbeSpread` plus the pixel
+footprint are traced and the shallowest hit is used, so cracks / T-junctions between merged
+API chunks do not read as deep water (a bright zig-zag line). Inside the fade, thick water is
+a thin layer as thick as the water is deep (or the object distance), absorbing with the
+material's coefficient scaled by the fade (`rtx.water.shoreThinLayer`); thick water otherwise
+absorbs along the ray inside its volume, which the fade does not reach, and faded shallow
+water stayed as dark as deep water. Defaults are tuned for GTA IV (shore fade width 0.2).
+Plugin-facing options: `rtx.water.*`, see docs/RemixWaterAPI_gta4.md.
+
+- **`src/dxvk/shaders/rtx/algorithm/rtx_fork_water_shore.slangh`** - fork-owned file. *`forkWaterShoreFade`: depth probes + pseudo-height fade applied to the TranslucentSurfaceMaterialInteraction; returns true when fully faded.*
+- **`src/dxvk/shaders/rtx/algorithm/resolve.slangh`** - fork-touchpoint hook. *Includes the fork header; in `resolveVertex`'s translucent branch, dispatches `forkWaterShoreFade` guarded by `cb.waterShoreFadeEnable` and AnimatedWater or the `D3D_TRANSLUCENT_MODIFIER_WATER_SHORELINE` material flag.*
+- **`src/dxvk/rtx_render/rtx_materials.h`** - inline. *RS149 bit 3 is `REMIX_MODIFIER_FROM_D3D_WATER_SHORELINE` (was the unused decal dirt bit).*
+- **`src/dxvk/shaders/rtx/utility/shared_constants.h`** - inline. *`D3D_TRANSLUCENT_MODIFIER_WATER_SHORELINE`.*
+- **`src/dxvk/rtx_render/rtx_scene_manager.cpp`** - inline. *Translucent `createSurfaceMaterial` sets `D3D_TRANSLUCENT_MODIFIER_WATER_SHORELINE` from RS149 bit 3, so the GTA4 mod can request the fade per draw.*
+- **`src/dxvk/shaders/rtx/pass/raytrace_args.h`** - fork-touchpoint inline tweak. *`waterShoreFadeEnable`, `waterShoreFadeDistance`, `waterShoreCutDepth`, `waterShoreFadeWidth`, `waterShoreHeightScale`, `waterShoreProbeSpread`, `waterObjectFadeWidth`, `waterShoreThinLayer` appended at the END of RaytraceArgs (no existing offsets move).*
+- **`src/dxvk/rtx_render/rtx_fork_water.h` / `.cpp`** - fork-owned files. *`WaterOptions` (`rtx.water.*`), constant fill (probe range raised to cover the full fade band) and ImGui widgets.*
+- **`src/dxvk/rtx_render/rtx_fork_hooks.h`** - fork-owned change. *Declares `fillWaterShaderParams` and `showWaterShoreSettings`; forward-declares `RaytraceArgs`.*
+- **`src/dxvk/rtx_render/rtx_context.cpp`** - fork-touchpoint hook. *One line after `TranslucentMaterialOptions::fillShaderParams` dispatches `fillWaterShaderParams`.*
+- **`src/dxvk/imgui/dxvk_imgui.cpp`** - fork-touchpoint hook. *One line at the end of Material Options -> PBR Material Modifiers -> Translucent dispatches `showWaterShoreSettings`.*
+- **`src/dxvk/meson.build`** - fork-touchpoint inline tweak. *Registers `rtx_fork_water.cpp/.h`.*
+- **`docs/RemixWaterAPI_gta4.md`**, **`docs/RemixApi_gta4.md`** - spoke page + Convention namespaces row for `rtx.water.*`.
+
+---
+
+## Workstream - Transmission origin clamp at translucent/opaque contact (fork - 2026-10-13)
+
+Fixes a sawtooth of bright pixels exactly where a translucent surface intersects opaque geometry
+(water meeting the shore, also in stock Remix). Rays that penetrate a surface are offset along the
+flipped triangle normal (`rayOffsetSurfaceOriginHelper`, ray.slangh). In the thin wedge next to the
+contact line, the opaque surface lies closer behind the hit than that offset, so the transmission
+origin lands behind it. With thin-walled translucents the ray stays outside the medium and culls
+back faces, so it passes under the terrain and picks up sky. With thick ones it hits the terrain
+from below. The wedge is sub-pixel, but the leaked radiance is high-dynamic-range, so it survives
+anti-aliasing as a line. `forkClampTransmissionRay` traces an opaque-only probe across the offset
+for translucent penetration; if it hits, the origin is moved to half the hit distance, in front
+of the opaque surface. The shore fade also skips fully faded water hits outright, continuing the
+ray from a clamped origin.
+
+- **`src/dxvk/shaders/rtx/algorithm/rtx_fork_transmission_origin.slangh`** - fork-owned file. *`forkClampPenetratingOrigin`, `forkClampTransmissionRay`.*
+- **`src/dxvk/shaders/rtx/algorithm/resolve.slangh`** - fork-touchpoint hook. *Includes the header; the shore fade dispatch continues the ray (`resolveVertexFinalContinue` + clamped origin) when `forkWaterShoreFade` reports the water fully faded.*
+- **`src/dxvk/shaders/rtx/algorithm/geometry_resolver.slangh`** - fork-touchpoint hooks. *The three transmission PSR spawns (first hit, PSR continuation, PSR prepare) wrap `rayCreateDirection` in `forkClampTransmissionRay`.*
+- **`src/dxvk/shaders/rtx/algorithm/integrator.slangh`** - fork-touchpoint hook. *`sampleDirection` wraps `rayCreateDirection` in `forkClampTransmissionRay`.*

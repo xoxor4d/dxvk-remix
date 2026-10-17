@@ -49,3 +49,11 @@ Hub section "Instances (per-frame draw)", extension table: a new row before
 Hub section "`SetupCamera`", after "...to specify position/forward/up/right + FOV + aspect + planes.":
 
 The bridge forwards both forms (32-bit clients included).
+
+## Convention namespaces: `rtx.water.*`
+
+Row to add to the "Convention namespaces" table:
+
+| Namespace | Channel | Page |
+| :-- | :-- | :-- |
+| `rtx.water.*` | `SetConfigVariable` | [`RemixWaterAPI_gta4.md`](RemixWaterAPI_gta4.md) |

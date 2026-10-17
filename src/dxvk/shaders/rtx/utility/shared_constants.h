@@ -83,5 +83,6 @@ static const uint8_t surfaceMaterialTypeMask = uint8_t(0x3u);
 
 #define D3D_TRANSLUCENT_MODIFIER_RAINDROPS (1 << 0)
 #define D3D_TRANSLUCENT_MODIFIER_WORLDPOS_AS_TEXUV (1 << 1)
+#define D3D_TRANSLUCENT_MODIFIER_WATER_SHORELINE (1 << 2)
 
 #endif // ifndef SHARED_CONSTANTS_H

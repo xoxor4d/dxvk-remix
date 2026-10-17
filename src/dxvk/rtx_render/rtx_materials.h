@@ -83,13 +83,13 @@ static_assert((int)AlphaTestType::kGreaterOrEqual == (int)VkCompareOp::VK_COMPAR
 static_assert((int)AlphaTestType::kAlways == (int)VkCompareOp::VK_COMPARE_OP_ALWAYS);
 
 // Per draw call modifier bits sent by the GTA4 compatibility mod through the unused D3D render state 149.
-// Must match the mod's RemixModifier enum; bit 3 (decal dirt) is no longer handled but stays reserved.
+// Must match the mod's RemixModifier enum.
 enum REMIX_MODIFIER_FROM_D3D : std::uint16_t {
   REMIX_MODIFIER_FROM_D3D_NONE = 0,
   REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR = 1 << 0,
   REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR = 1 << 1,
   REMIX_MODIFIER_FROM_D3D_ENABLE_VERTEX_COLOR = 1 << 2,
-  REMIX_MODIFIER_FROM_D3D_DECAL_DIRT = 1 << 3,
+  REMIX_MODIFIER_FROM_D3D_WATER_SHORELINE = 1 << 3,
   REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA = 1 << 4,
   REMIX_MODIFIER_FROM_D3D_VEHICLE_DECAL_DIRT = 1 << 5,
   REMIX_MODIFIER_FROM_D3D_GLOBAL_UV_MODIFIER = 1 << 6,
