@@ -1,0 +1,83 @@
+#pragma once
+
+// Fork-owned. Froxel in-scatter integration in two segments.
+//
+// integrateVolumetricNEE spends froxelDepthSlices / 4 steps on the whole path and places them with the
+// grid's depth exponent. On a sky ray (or a far hit) with a 1500 unit grid the first step lands 9 units
+// out and the second 35, so the fog around the camera is sampled by one or two steps while a wall at
+// 100 units behind the same fog is sampled by a dozen. The sky then reads less fog than the wall next
+// to it, every depth edge gets a silhouette (strongest inside a light cone), and the few near samples
+// make the fog pulse from frame to frame. The near field is therefore integrated with its own full set
+// of steps for every ray, and the rest of the path with a second set, so near and far backgrounds see
+// the same fog in front of them. Only rays that reach past the near segment pay for the second set.
+//
+// Included by composite.comp.slang after its bindings: the froxel samplers it passes on are globals there.
+
+// Length of the near segment as a fraction of the froxel grid depth. 1/8 of a 1500 unit grid puts the
+// first step at about one unit from the camera.
+static const float kForkVolumetricNearSegmentFraction = 0.125f;
+
+void forkIntegrateVolumetricNEE(
+  inout RNG randomState,
+  const VolumeArgs volumeArgs, const float timeMS,
+  const uint2 pixelCoordinate, const float2 screenUV, const bool primaryMiss,
+  const float3 cameraPosition, const float hitDistance, const float3 viewDir,
+  out float3 preintegratedRadiance, out float3 accumulatedTransmittance,
+  // Transmittance at the far end of the froxel grid, before the homogeneous tail a miss (or a hit past
+  // the grid) gets: what everything behind the grid, the aerial perspective included, is seen through.
+  out float3 gridTransmittance)
+{
+  preintegratedRadiance = float3(0.0f, 0.0f, 0.0f);
+  accumulatedTransmittance = float3(1.0f, 1.0f, 1.0f);
+  gridTransmittance = float3(1.0f, 1.0f, 1.0f);
+
+  if (!volumeArgs.enable)
+  {
+    return;
+  }
+
+  // The helper ends this much short of the distance it is given (its depth offset against leaking)
+  const float sliceOffset = (volumeArgs.froxelMaxDistance / float(volumeArgs.froxelDepthSlices)) * volumeArgs.depthOffset;
+  const float nearSegment = volumeArgs.froxelMaxDistance * kForkVolumetricNearSegmentFraction;
+
+  if (!primaryMiss && hitDistance <= nearSegment + sliceOffset)
+  {
+    integrateVolumetricNEE(
+      randomState, VolumeFilteredRadianceAge, VolumeFilteredRadianceY, VolumeFilteredRadianceCoCg,
+      volumeArgs, timeMS, pixelCoordinate, screenUV, false, cameraPosition, hitDistance, viewDir,
+      preintegratedRadiance, accumulatedTransmittance);
+    gridTransmittance = accumulatedTransmittance;
+    return;
+  }
+
+  // [0, nearSegment]
+  integrateVolumetricNEE(
+    randomState, VolumeFilteredRadianceAge, VolumeFilteredRadianceY, VolumeFilteredRadianceCoCg,
+    volumeArgs, timeMS, pixelCoordinate, screenUV, false, cameraPosition, nearSegment + sliceOffset, viewDir,
+    preintegratedRadiance, accumulatedTransmittance);
+
+  // [nearSegment, end of the path]: a hit inside the grid ends sliceOffset short of it like the single
+  // pass did, a miss or a hit past the grid ends at the grid's far plane.
+  const bool pastGrid = primaryMiss || hitDistance > volumeArgs.froxelMaxDistance;
+  const float farLength = pastGrid
+    ? volumeArgs.froxelMaxDistance - nearSegment + sliceOffset
+    : hitDistance - nearSegment;
+  const float3 segmentStart = cameraPosition + viewDir * nearSegment;
+  integrateVolumetricNEE(
+    randomState, VolumeFilteredRadianceAge, VolumeFilteredRadianceY, VolumeFilteredRadianceCoCg,
+    volumeArgs, timeMS, pixelCoordinate, screenUV, false, segmentStart, farLength, viewDir,
+    preintegratedRadiance, accumulatedTransmittance);
+  gridTransmittance = accumulatedTransmittance;
+
+  // Beyond the grid the medium continues homogeneously, as the helper assumes for its own miss and
+  // far-hit cases.
+  const float3 gridEnd = cameraPosition + viewDir * volumeArgs.froxelMaxDistance;
+  if (primaryMiss)
+  {
+    accumulatedTransmittance *= calcVolumetricAttenuation(volumeArgs, none, true, 0.0f, gridEnd, viewDir);
+  }
+  else if (hitDistance > volumeArgs.froxelMaxDistance)
+  {
+    accumulatedTransmittance *= calcVolumetricAttenuation(volumeArgs, none, false, hitDistance - volumeArgs.froxelMaxDistance, gridEnd, viewDir);
+  }
+}

@@ -339,8 +339,11 @@ namespace {
       RemixGui::DragFloat("Star Brightness", &RtxAtmosphere::starBrightnessObject(),
                           0.1f, 0.0f, 50.0f, "%.1f", sliderFlags);
       RemixGui::DragFloat("Star Magnitude Limit", &RtxAtmosphere::starMagnitudeLimitObject(),
-                          0.01f, 0.0f, 1.0f, "%.2f", sliderFlags);
-      RemixGui::SetTooltipToLastWidgetOnHover("Threshold: 0 = all stars visible, 1 = no stars.");
+                          0.05f, 0.0f, 6.5f, "%.1f", sliderFlags);
+      RemixGui::SetTooltipToLastWidgetOnHover(
+        "Faintest star drawn, in visual magnitude. 6.5 is the naked-eye limit and takes the whole "
+        "catalogue, which ends there; 4.5 is a suburban sky, 2 leaves the constellation figures, 0 a "
+        "handful. Larger is fainter.");
       RemixGui::DragFloat("Star Twinkle Speed", &RtxAtmosphere::starTwinkleSpeedObject(),
                           0.1f, 0.0f, 10.0f, "%.1f", sliderFlags);
       ImGui::TreePop();
@@ -1523,6 +1526,13 @@ void RtxAtmosphere::showWeatherSettings(WeatherBlender* blender, const WeatherSn
       "Radiance of the transient light that flashes the ground / "
       "scene, independent of the in-cloud glow. 0 = cloud-only "
       "lightning.");
+    RemixGui::DragFloat("Scene Flash In Fog", &RtxAtmosphere::lightningSceneLightVolumetricScaleObject(),
+      0.01f, 0.0f, 1.0f, "%.2f", sliderFlags);
+    RemixGui::SetTooltipToLastWidgetOnHover(
+      "Weight of the scene flash in the global volumetrics. The froxel fog "
+      "accumulates over frames and only covers the view frustum, so a flash "
+      "leaves a slowly fading trail that stops where the camera looked. 0 = "
+      "the flash lights surfaces only; 1 = full weight like any other light.");
     RemixGui::DragFloat("Max Strike Distance", &RtxAtmosphere::lightningRangeKmObject(),
       0.1f, 1.5f, 30.0f, "%.1f km", sliderFlags);
     RemixGui::SetTooltipToLastWidgetOnHover(

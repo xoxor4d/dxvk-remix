@@ -452,3 +452,38 @@ per pixel (moving objects never dry the road); the per pixel ray stays for quali
 - **`src/dxvk/imgui/dxvk_imgui.cpp`** - fork-touchpoint hook. *A "Global Wetness" collapsing header between Shader Support and View Model (Game Setup -> Parameter Tuning) dispatches `showWetnessSettings`.*
 - **`src/dxvk/meson.build`** - fork-touchpoint inline tweak. *Registers `rtx_fork_wetness.cpp/.h`.*
 - **`docs/RemixWetnessAPI_gta4.md`**, **`docs/RemixApi_gta4.md`** - spoke page + Convention namespaces row for `rtx.wet.*`.
+
+## Workstream - Froxel volumetrics in front of the sky and the clouds (fork - 2026-10-18)
+
+`compositeResult` folded the froxel in-scatter into `radianceOutput` first and composited the cloud deck over
+that, so the in-scatter was scaled by (1 - cloud opacity). Under an overcast night deck (opacity near 1, cloud
+radiance near black) every sky pixel lost its fog while the geometry next to it kept it: a black sky cut into
+the volumetrics. The aerial perspective transmittance scaled the same in-scatter on geometry hits. The
+in-scatter (and its alpha-blend counterpart) is now added after the cloud composite, which also matches where
+the air it describes is on the ray.
+
+Second round (same date): that moved the fog in front of the clouds but the silhouettes stayed, because
+they come from the integration itself. `integrateVolumetricNEE` (volumetrics SDK, read-only submodule)
+spends `froxelDepthSlices / 4` steps on the whole path with the grid's depth exponent: on a sky ray over a
+1500 unit grid the first step lands 9 units out and the second 35, while a wall at 100 units behind the
+same fog is sampled by a dozen steps. The sky read less of the fog around the camera than the wall next to
+it, worst inside a light cone, and the few near samples made the fog pulse. The fork integrates the near
+eighth of the grid with its own full set of steps for every ray and the rest with a second set. The
+aerial perspective had the same asymmetry on top: its in-scatter was scaled by the full miss attenuation
+(grid plus homogeneous tail) on the sky but only by the attenuation to the hit on geometry, its local-light
+term also hit surfaces inside the grid (the LUT's first slice is not empty), and its in-scatter was added
+before the cloud composite, so a cloud behind the haze scaled it away.
+
+- **`src/dxvk/shaders/rtx/algorithm/rtx_fork_volumetric_integration.slangh`** - fork-owned file. *`forkIntegrateVolumetricNEE`: two-segment wrapper around the SDK integrator, also returns the grid-end transmittance.*
+- **`src/dxvk/shaders/rtx/pass/composite/composite.comp.slang`** - inline. *`applyVolumetricLighting` no longer seeds `radianceOutput` with the froxel in-scatter, calls the fork integrator, returns the alpha-blend surface's in-scatter (`alphaVolumetricInScatter`) and the grid-end transmittance (`volumeGridAttenuation`); `applyAerialPerspective` returns its in-scatter through `inScatterOutput` and skips the local-light term inside the grid; `compositeResult` scales the aerial terms by the grid-end transmittance and adds aerial and froxel in-scatter after `applyCloudComposite`.*
+
+## Workstream - Lightning flash out of the fog, star limit slider (fork - 2026-10-18)
+
+The lightning scene flash is an RtSphereLight, so it fed the froxel volumetrics like any other light. The froxel
+grid accumulates over frames and only covers the view frustum, so a flash left a bright trail that faded
+slowly and ended where the camera had looked. `rtx.atmosphere.lightningSceneLightVolumetricScale` (default 0)
+is the light's volumetric radiance scale; the surface flash is unchanged. The Star Magnitude Limit slider was
+still the 0..1 range of the retired starDensity threshold while the option is a magnitude (default 6.5); the
+option is now clamped to 6.5, where the catalogue ends.
+
+- **`src/dxvk/rtx_render/rtx_atmosphere.h` / `.cpp` / `rtx_atmosphere_ui.cpp`** - fork-owned files. *New option passed as `volumetricRadianceScale` to `RtSphereLight::tryCreate` in `syncDistantLights`; "Scene Flash In Fog" slider; `starMagnitudeLimit` clamped 0..6.5 with the slider to match.*

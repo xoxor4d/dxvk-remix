@@ -725,15 +725,17 @@ public:
                "~3 as deliberate stylisation.\n"
                "Game-drivable per-frame (plugins can fade stars in/out around sunset and "
                "sunrise); persists when saved unless overridden by a runtime push.");
-    RTX_OPTION("rtx.atmosphere", float, starMagnitudeLimit, 6.5f,
+    RTX_OPTION_ARGS("rtx.atmosphere", float, starMagnitudeLimit, 6.5f,
                "Faintest star drawn, in visual magnitude. 6.5 is the naked-eye limit under a "
-               "dark sky and takes the whole catalogue (9096 stars); ~4.5 is a suburban sky, "
+               "dark sky and takes the whole catalogue (9096 stars), which is also where the "
+               "catalogue ends, so the value is capped there; ~4.5 is a suburban sky, "
                "2.0 leaves the constellation figures alone, 0 leaves a handful.\n"
                "Magnitudes run backwards - larger is fainter - so lowering this removes "
                "stars. It is also the per-ray loop's only early-out, which makes it the "
                "cheapest control over star cost. Replaces starDensity, which thinned a "
                "procedural field by a fraction of grid cells; that has no meaning against a "
-               "real catalogue, where which stars exist is not ours to choose.");
+               "real catalogue, where which stars exist is not ours to choose.",
+               args.minValue = 0.0f, args.maxValue = 6.5f);
     RTX_OPTION("rtx.atmosphere", float, starTwinkleSpeed, 1.0f,
                "Speed of star twinkling animation (0 = no twinkle).");
     RTX_OPTION("rtx.atmosphere", float, starRotation, 0.0f,
@@ -1287,6 +1289,13 @@ public:
                "SCENE at the strike position (independent of the in-cloud "
                "glow's intensity). 0 = cloud-only lightning (no ground "
                "flash).");
+    RTX_OPTION("rtx.atmosphere", float, lightningSceneLightVolumetricScale, 0.0f,
+               "How much the scene flash light feeds the global volumetrics "
+               "(froxel fog), as a multiplier on its radiance there. The froxel "
+               "grid accumulates over frames and only covers the view frustum, so "
+               "a flash leaves a bright trail that fades slowly and ends at the "
+               "edge of where the camera looked. 0 keeps the flash on surfaces "
+               "only; 1 is the same weight every other light gets.");
     RTX_OPTION("rtx.atmosphere", float, lightningRangeKm, 15.0f,
                "Maximum strike distance from the camera in km [1.5..30]. "
                "Strikes distribute uniformly by area between 1 km and this "

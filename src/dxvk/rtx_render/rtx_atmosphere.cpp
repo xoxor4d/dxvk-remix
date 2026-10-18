@@ -4620,7 +4620,8 @@ void RtxAtmosphere::syncDistantLights(LightManager& lm, const AtmosphereArgs& ar
         posWorld = toWorld(posKmYUp) * args.worldUnitsPerKm;
       }
       const float radiusWorld = 0.15f * args.worldUnitsPerKm;
-      auto sl = RtSphereLight::tryCreate(posWorld, radiance, radiusWorld, RtLightShaping());
+      auto sl = RtSphereLight::tryCreate(posWorld, radiance, radiusWorld, RtLightShaping(),
+                                         std::max(RtxAtmosphere::lightningSceneLightVolumetricScale(), 0.0f));
       if (sl) {
         RtLight rtl(*sl);
         rtl.isDynamic = true;

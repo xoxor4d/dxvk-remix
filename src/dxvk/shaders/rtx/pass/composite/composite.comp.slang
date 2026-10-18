@@ -37,6 +37,7 @@
 #include "rtx/utility/geometry_flags.slangh"
 
 #include "rtx/algorithm/volume_composite_helpers.slangh"
+#include "rtx/algorithm/rtx_fork_volumetric_integration.slangh"
 #include "rtx/algorithm/accumulate.slangh"
 #include "rtx/pass/atmosphere/aerial_perspective_camera.slangh"
 #include "rtx/pass/sparse_rendering/sparse_rendering.slangh"
@@ -424,6 +425,8 @@ void applyVolumetricLighting(
   vec3 sharedRadiance,
   out vec3 volumetricPreintegratedRadiance,
   out vec3 volumeAttenuation,
+  // Fork: transmittance at the far end of the froxel grid (no homogeneous tail), see forkIntegrateVolumetricNEE
+  out vec3 volumeGridAttenuation,
   out vec3 controlMaskVolumeAttenuation,
   out vec3 alphaBlendOutput,
   out float backgroundAlpha,
@@ -435,11 +438,15 @@ void applyVolumetricLighting(
   // through a cloud the ground beneath it is already fogged by is the artefact this exists to avoid.
   out bool alphaBlendSurfaceValid,
   out float alphaBlendHitDistance,
-  out vec3 alphaVolumeAttenuation)
+  out vec3 alphaVolumeAttenuation,
+  // Fork: the froxel in-scatter in front of the alpha-blend surface, weighted by its coverage. Kept out of
+  // alphaBlendOutput so the cloud composite cannot scale it; compositeResult adds it afterwards.
+  out vec3 alphaVolumetricInScatter)
 {
   alphaBlendSurfaceValid = false;
   alphaBlendHitDistance = 0.0f;
   alphaVolumeAttenuation = vec3(1.0f);
+  alphaVolumetricInScatter = vec3(0.0f);
 
   // Override the default volume sampling RNG seed offset
   setVolumeSamplingRngSeed(1);
@@ -448,6 +455,7 @@ void applyVolumetricLighting(
 
   volumetricPreintegratedRadiance = vec3(0);
   volumeAttenuation = vec3(1);
+  volumeGridAttenuation = vec3(1);
   controlMaskVolumeAttenuation = vec3(1);
   alphaBlendOutput = vec3(0);
   backgroundAlpha = 1.0f;
@@ -466,10 +474,10 @@ void applyVolumetricLighting(
   {
     vec2 volumeUV = cameraPixelCoordinateToScreenUV(cb.camera, pixelCoordinate);
     volumeUV.x /= cb.volumeArgs.numFroxelVolumes;
-    integrateVolumetricNEE(
-      randomState, VolumeFilteredRadianceAge, VolumeFilteredRadianceY, VolumeFilteredRadianceCoCg,
-      cb.volumeArgs, cb.timeSinceStartMS, pixelCoordinate, volumeUV, primaryMiss, cameraGetWorldPosition(cb.camera), viewDistance, primaryRayDirections.worldDirection,
-      volumetricPreintegratedRadiance, volumeAttenuation);
+    forkIntegrateVolumetricNEE(
+      randomState, cb.volumeArgs, cb.timeSinceStartMS, pixelCoordinate, volumeUV, primaryMiss,
+      cameraGetWorldPosition(cb.camera), viewDistance, primaryRayDirections.worldDirection,
+      volumetricPreintegratedRadiance, volumeAttenuation, volumeGridAttenuation);
     controlMaskVolumeAttenuation = volumeAttenuation;
   }
   else if (cb.enableDlssNrVolumetricControlMask)
@@ -555,13 +563,14 @@ void applyVolumetricLighting(
         volumeUV.x /= cb.volumeArgs.numFroxelVolumes;
         
         vec3 alphaVolumetricPreintegratedRadiance = vec3(0.0f, 0.0f, 0.0f);
-        integrateVolumetricNEE(
-          randomState, VolumeFilteredRadianceAge, VolumeFilteredRadianceY, VolumeFilteredRadianceCoCg,
-          cb.volumeArgs, cb.timeSinceStartMS, pixelCoordinate, volumeUV, false, cameraGetWorldPosition(cb.camera), surface.hitT, primaryRayDirections.worldDirection,
-          alphaVolumetricPreintegratedRadiance, alphaVolumeAttenuation);
+        vec3 alphaGridAttenuation;
+        forkIntegrateVolumetricNEE(
+          randomState, cb.volumeArgs, cb.timeSinceStartMS, pixelCoordinate, volumeUV, false,
+          cameraGetWorldPosition(cb.camera), surface.hitT, primaryRayDirections.worldDirection,
+          alphaVolumetricPreintegratedRadiance, alphaVolumeAttenuation, alphaGridAttenuation);
 
         alphaBlendOutput *= alphaVolumeAttenuation * (1 - backgroundAlpha);
-        alphaBlendOutput += alphaVolumetricPreintegratedRadiance * (1 - backgroundAlpha);
+        alphaVolumetricInScatter = alphaVolumetricPreintegratedRadiance * (1 - backgroundAlpha);
       }
       else
       {
@@ -585,8 +594,9 @@ void applyVolumetricLighting(
     updateAlphaBlendDebugView(pixelCoordinate, surface);
   }
 
-  radianceOutput = volumetricPreintegratedRadiance * volumetricRadianceScale;
-  radianceOutput += remodulatedTotalSecondaryRadiance * volumeAttenuation;
+  // Fork: the froxel in-scatter is not part of radianceOutput here. It is the nearest thing on the ray, so
+  // compositeResult adds it after the sky, the clouds and aerial perspective have been composited.
+  radianceOutput = remodulatedTotalSecondaryRadiance * volumeAttenuation;
 }
 
 void applySkyContribution(
@@ -641,7 +651,9 @@ void applyAerialPerspective(
   float viewDistance,
   vec3 volumeAttenuation,
   vec3 radianceThroughput,
-  inout vec3 radianceOutput)
+  inout vec3 radianceOutput,
+  // Fork: the in-scatter is returned instead of added, so the caller can place it in front of the clouds
+  inout vec3 inScatterOutput)
 {
   if (cb.atmosphereArgs.aerialPerspectiveLutSize == 0 ||
       cb.domeLightArgs.active)
@@ -687,7 +699,8 @@ void applyAerialPerspective(
       // multiply.
       const float transmittance = lerp(1.0f, saturate(aerialPerspective.a), nearFade);
 
-      radianceOutput = radianceOutput * transmittance + inScatter;
+      radianceOutput *= transmittance;
+      inScatterOutput += inScatter;
     }
   }
 
@@ -707,13 +720,17 @@ void applyAerialPerspective(
   // by the column in front of it, so folding this into the multiply would charge the far
   // transmittance a second time - and most visibly on the near lights, which have the least air in
   // front of them and would lose the most to it.
-  if (cb.atmosphereArgs.aerialPerspectiveLocalLightCount != 0)
+  //
+  // Fork: skipped for a surface inside the froxel grid (uvw.z <= 0) like the atmospheric term. The LUT's
+  // first slice is not empty, so such a surface read a slab of haze the grid had already integrated,
+  // more than the sky behind the same air got.
+  if (cb.atmosphereArgs.aerialPerspectiveLocalLightCount != 0 && (primaryMiss || uvw.z > 0.0f))
   {
     const vec3 localInScatter = max(sampleAerialPerspectiveLut(
       AtmosphereAerialPerspectiveLocalLut, AtmosphereAerialPerspectiveSampler,
       uvw, cb.atmosphereArgs).rgb, vec3(0.0f));
 
-    radianceOutput += localInScatter * volumeAttenuation * radianceThroughput;
+    inScatterOutput += localInScatter * volumeAttenuation * radianceThroughput;
   }
 }
 
@@ -1009,6 +1026,7 @@ vec4 compositeResult(
 
   vec3 volumetricPreintegratedRadiance;
   vec3 volumeAttenuation;
+  vec3 volumeGridAttenuation;
   vec3 controlMaskVolumeAttenuation;
   vec3 alphaBlendOutput;
   float backgroundAlpha;
@@ -1017,6 +1035,7 @@ vec4 compositeResult(
   bool alphaBlendSurfaceValid;
   float alphaBlendHitDistance;
   vec3 alphaVolumeAttenuation;
+  vec3 alphaVolumetricInScatter;
 
   // Determine radiance scales for sparse rendering. Scaling only applies at active pixels;
   // at inactive pixels the contributions that would be scaled (alpha blend, fog, sky) come from
@@ -1060,9 +1079,9 @@ vec4 compositeResult(
   applyVolumetricLighting(
     pixelCoordinate, randomState, primaryRayDirections, pixelIsActive, primaryMiss, viewDistance,
     radianceScale, volumetricRadianceScale, remodulatedTotalSecondaryRadiance, sharedRadiance,
-    volumetricPreintegratedRadiance, volumeAttenuation, controlMaskVolumeAttenuation,
+    volumetricPreintegratedRadiance, volumeAttenuation, volumeGridAttenuation, controlMaskVolumeAttenuation,
     alphaBlendOutput, backgroundAlpha, radianceOutput,
-    alphaBlendSurfaceValid, alphaBlendHitDistance, alphaVolumeAttenuation);
+    alphaBlendSurfaceValid, alphaBlendHitDistance, alphaVolumeAttenuation, alphaVolumetricInScatter);
 
   // Calculate final combined radiance output
   // Note: The primary hit accumulated radiance value is not affected by the throughput (rather takes attenuation into account
@@ -1079,19 +1098,28 @@ vec4 compositeResult(
     const float foregroundDistance = foreground.w * cb.atmosphereArgs.worldUnitsPerKm;
     const vec3 foregroundVolumeAttenuation = calcVolumetricAttenuation(cb.volumeArgs, none, false,
       foregroundDistance, cameraGetWorldPosition(cb.camera), primaryRayDirections.worldDirection);
+    vec3 foregroundAerialInScatter = vec3(0.0f);
     applyAerialPerspective(pixelCoordinate, false, foregroundDistance, foregroundVolumeAttenuation,
-      saturate(vec3(1.0f) - primaryAttenuation), foregroundRadiance);
+      saturate(vec3(1.0f) - primaryAttenuation), foregroundRadiance, foregroundAerialInScatter);
+    foregroundRadiance += foregroundAerialInScatter;
   }
 
   // Applied before the sky so it only affects geometry; the sky already carries its full column.
   // Background radiance already carries foreground transparency from the geometry resolver.
   // Fork: on PSR pixels PrimaryAttenuation is the reflection / transmission throughput, not a foreground
   // transparency. The whole surface sits behind the same air, so its in-scatter is not scaled by it.
-  applyAerialPerspective(pixelCoordinate, primaryMiss, viewDistance, volumeAttenuation,
-    geometryFlags.performedAnyPSR() ? vec3(1.0f) : primaryAttenuation, radianceOutput);
+  // Fork: the air behind the froxel grid is seen through the grid's transmittance for every pixel, a miss
+  // included. Scaling it by the full miss attenuation (the grid plus a homogeneous tail) gave the sky a
+  // fraction of the haze a wall behind the same air got. The in-scatter is held back until the clouds
+  // are composited, otherwise a cloud behind the haze scaled it by its opacity.
+  vec3 aerialInScatter = vec3(0.0f);
+  applyAerialPerspective(pixelCoordinate, primaryMiss, viewDistance, volumeGridAttenuation,
+    geometryFlags.performedAnyPSR() ? vec3(1.0f) : primaryAttenuation, radianceOutput, aerialInScatter);
   if (alphaBlendSurfaceValid) {
+    vec3 alphaAerialInScatter = vec3(0.0f);
     applyAerialPerspective(pixelCoordinate, false, alphaBlendHitDistance, alphaVolumeAttenuation,
-      vec3(1.0f - backgroundAlpha), alphaBlendOutput);
+      vec3(1.0f - backgroundAlpha), alphaBlendOutput, alphaAerialInScatter);
+    alphaBlendOutput += alphaAerialInScatter;
   }
 
   // Cloud composite (fork — 2026-09-05, world-space cloud migration Stage 4b). Placed immediately
@@ -1101,8 +1129,8 @@ vec4 compositeResult(
   // exactly what evalSkyRadiance's primary branch used to see as `radiance` right before its own
   // (now-removed) composite: for a sky pixel that is remodulatedTotalPrimaryRadiance (clearColor,
   // zero contribution) + sharedRadiance (the cloudless sky/atmosphere/star/moon radiance
-  // geometry_resolver.slangh wrote) + volumetrics; for a geometry hit it is the denoised primary
-  // radiance with aerial perspective already folded in.
+  // geometry_resolver.slangh wrote); for a geometry hit it is the denoised primary radiance with
+  // aerial perspective already folded in. The froxel in-scatter is added below, after the clouds.
   // backgroundAlpha (fork — 2026-09-05, ghosting follow-up): the alpha-blend coverage the
   // in-scatter must be weighted by -- see applyCloudComposite's alpha-blend composite block. The
   // particleLayerOutput argument 794ffd716 added (DLSS-RR transparency-layer routing) was removed
@@ -1113,6 +1141,15 @@ vec4 compositeResult(
     foregroundRadiance, separateForeground ? foreground.w : 0.0f,
     geometryFlags.performedAnyPSR());
   radianceOutput += foregroundRadiance;
+
+  // Fork: the froxel volume is the air between the camera and whatever the pixel shows, so its in-scatter goes in
+  // front of the sky, the cloud deck and the aerial perspective. Added into radianceOutput before the cloud
+  // composite it was scaled by (1 - cloud opacity): an overcast night deck wiped the fog off every sky pixel while
+  // the geometry next to it kept it. The aerial perspective in-scatter sits behind the grid but in
+  // front of the clouds, so it joins here as well.
+  radianceOutput += aerialInScatter;
+  radianceOutput += volumetricPreintegratedRadiance * volumetricRadianceScale;
+  alphaBlendOutput += alphaVolumetricInScatter;
 
   // Add sky radiance
   applySkyContribution(pixelCoordinate, primaryRayDirections, primaryMiss, radianceScale, volumeAttenuation, radianceOutput);
