@@ -2922,6 +2922,12 @@ namespace dxvk {
         ImGui::Unindent();
       }
 
+      if (RemixGui::CollapsingHeader("Global Wetness", collapsingHeaderClosedFlags)) {
+        ImGui::Indent();
+        fork_hooks::showWetnessSettings();
+        ImGui::Unindent();
+      }
+
       if (RemixGui::CollapsingHeader("View Model", collapsingHeaderClosedFlags)) {
         ImGui::Indent();
         RemixGui::Checkbox("Enable View Model", &RtxOptions::ViewModel::enableObject());

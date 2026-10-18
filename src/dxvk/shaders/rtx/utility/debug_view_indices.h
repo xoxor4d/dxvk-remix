@@ -379,6 +379,11 @@
 // rtx_debug_view.cpp.
 #define DEBUG_VIEW_CLOUD_CALIBRATION_RINGS 884
 
+// Per draw wetness (fork, 2026-10-18), written by rtx_fork_wetness.slangh on primary hits.
+// 890: rain map at the hit (R covered, G depression x5, B slope x2). 891: puddles (R water, G shore, B wet blend).
+#define DEBUG_VIEW_FORK_RAIN_MAP 890
+#define DEBUG_VIEW_FORK_PUDDLES 891
+
 enum class CompositeDebugView : uint32_t {
   Disabled = 0,
   FinalRenderWithMaterialProperties,

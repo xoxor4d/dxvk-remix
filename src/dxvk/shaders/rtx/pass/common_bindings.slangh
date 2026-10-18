@@ -174,6 +174,10 @@ Texture3D<float> AtmosphereCloudDAmbient;
 layout(binding = BINDING_ATMOSPHERE_SKY_VIEW_SAMPLER)
 SamplerState AtmosphereSkyViewSampler;
 
+// Fork: rain map (rtx_fork_rain_map.cpp). x cover height (world Z), y depression (m), z slope, w valid.
+layout(binding = BINDING_FORK_RAIN_MAP)
+Texture2D<float4> ForkRainMap;
+
 // Secondary-ray cloud LUT (fork — 2026-06-10, perf; full-sphere fork — 2026-09-05, world-space
 // cloud migration Stage 2). 256x256 RGBA16F dome (was 256x128, upper hemisphere only): rgb =
 // premultiplied cloud radiance, a = view transmittance, keyed (azimuth, signed elevation =

@@ -403,3 +403,52 @@ toolset wherever the environment is chosen, instead of patching MathLib:
 - **`vsgen/dxvk-remix.vcxproj.template`**, **`vsgen/testcase_project.vcxproj.template`** - inline tweak. *`PlatformToolset` v142 -> v143. MSBuild sets `PATH` / `INCLUDE` / `LIB` of a Makefile project from its toolset (`Microsoft.Cpp.Current.targets`, `SetEnv`); v142 is not installed in VS 18, which retargeted the generated `_vs` projects to v145. v143 exists in both VS 2022 and VS 18 and maps to 14.4x.*
 - **`build_dxvk_release.ps1`**, **`build_dxvk_opti.ps1`** - fork-owned. *`-VcVarsVer 14.4` on `PerformBuild`: `build_common.ps1` selects the newest prerelease VS, and `vcvarsall -vcvars_ver=14.4` picks the newest 14.4x toolset of that instance.*
 - `scripts/build.ps1` already limits vswhere to `[16.0,18.0)` and needs no change.
+
+---
+
+## Workstream - Per draw wetness: detail levels, rain shadow and noise cost (fork - 2026-10-17)
+
+The wetness block (render state 210 packed into the opaque material's d3dData0 / d3dData1) ran inline in
+`opaqueSurfaceMaterialInteractionCreate`, so it was evaluated at every path vertex: primary hit, every GI
+bounce, PSR hits, alpha tested hits on shadow rays and NEE cache samples. Each evaluation of a wet surface
+near the camera traced a 600 unit upward ray with a forced non-opaque candidate loop, evaluated six to eight
+simplex 3D noises and ran the raindrop grids. The block now lives in a fork-owned include and is dispatched
+with a detail flag: `RAY_TRACING_PRIMARY_RAY` passes (primary and PSR) get the full model, everything else
+only the base roughness scaling. The rain shadow ray is 80 units by default, starts 2.5 units above the surface (cars and street
+furniture cast no rain shadow), forces non-opaque candidates so moving objects and foliage are looked through
+and ends at the first static, fully opaque hit. Noise comes from the shared
+value noise LUT (`ValueNoiseSampler`, four decorrelated fields per fetch): two to four fetches replace the
+simplex calls. World raindrops skip dead cells after one hash and cells neither the impact nor the ring
+reaches; the surface raindrops use the stable object space position without the two `inverse()` calls and
+reject by distance before the shape math. Dead state (the `wetblend` rewrite of the surface raindrops, the
+per layer roughness array) is gone. The per draw packing is unchanged, the mod needs no change.
+
+Look (2026-10-18): the model is layered and tunable (`rtx.wet.*`, docs/RemixWetnessAPI_gta4.md). Wet ground keeps
+a roughness floor instead of going to zero, darkens and saturates by porosity (also on bounces, so GI matches).
+Puddles are a water level in world units against the ground height: a small noise unevenness minus the
+depression measured by the rain map, so water pools in gutters and dips, stops at curbs and continues when the
+curb ends. Inside, the water surface replaces the ground (flat normal, `normalDetail` zeroed, three-wave wind
+ripples, own roughness, depth darkening) with a damp shore band around it. Raindrop impacts are stronger inside
+puddles.
+
+Rain map (same date): `rtx_fork_rain_map.cpp` traces a top-down height field of the static geometry around the
+camera every frame (two compute passes, `pass/fork_rain_map/rain_map_trace.comp.slang` and
+`rain_map_relief.comp.slang`): cover height, depression, slope. The rain shadow reads it instead of tracing a ray
+per pixel (moving objects never dry the road); the per pixel ray stays for quality 1 and beyond the map.
+
+- **`src/dxvk/shaders/rtx/pass/common_binding_indices.h`** - fork-touchpoint inline tweak. *`BINDING_FORK_RAIN_MAP` (220) and its `TEXTURE2D` line at the end of the common binding macro.*
+- **`src/dxvk/shaders/rtx/pass/common_bindings.slangh`** - fork-touchpoint inline tweak. *`ForkRainMap` declaration after `AtmosphereSkyViewSampler`.*
+- **`src/dxvk/rtx_render/rtx_context.cpp`** - fork-touchpoint hooks. *`bindCommonRayTracingResources` binds `fork_hooks::rainMapView`; `injectRTX` calls `fork_hooks::dispatchRainMap` before `dispatchPathTracing`; `fillWetnessShaderParams` takes the context.*
+- **`src/dxvk/shaders/rtx/utility/debug_view_indices.h`**, **`src/dxvk/rtx_render/rtx_debug_view.cpp`** - fork-touchpoint inline tweaks. *Debug views 890 (rain map) and 891 (puddles).*
+- **`src/dxvk/shaders/rtx/concept/surface_material/opaque_surface_material_interaction.slangh`** - hook. *The wetness dispatch also passes `normalDetail`.*
+- **`src/dxvk/rtx_render/rtx_fork_rain_map.h` / `.cpp`**, **`src/dxvk/shaders/rtx/pass/fork_rain_map/*`** - fork-owned files.
+
+- **`src/dxvk/shaders/rtx/concept/surface_material/rtx_fork_wetness.slangh`** - fork-owned file. *`forkApplyD3DWetness` and its helpers; `FORK_WETNESS_DEFAULT_DETAIL` from `RAY_TRACING_PRIMARY_RAY`.*
+- **`src/dxvk/shaders/rtx/concept/surface_material/opaque_surface_material_interaction.slangh`** - hook. *Includes the fork file where the raindrop / occlusion helpers were; `opaqueSurfaceMaterialInteractionCreate` gains a defaulted `bool d3dWetnessDetail` parameter; the `d3dModRoughnessScalar` block is one dispatch.*
+- **`src/dxvk/shaders/rtx/pass/raytrace_args.h`** - fork-touchpoint inline tweak. *The `wet*` constants (34 scalars: distances, look parameters, rain map window) appended at the END of RaytraceArgs after the water fields.*
+- **`src/dxvk/rtx_render/rtx_fork_wetness.h` / `.cpp`** - fork-owned files. *`WetnessOptions` (`rtx.wet.*`), constant fill.*
+- **`src/dxvk/rtx_render/rtx_fork_hooks.h`** - fork-owned change. *Declares `fillWetnessShaderParams` and `showWetnessSettings`.*
+- **`src/dxvk/rtx_render/rtx_context.cpp`** - fork-touchpoint hook. *One line after `fillWaterShaderParams` dispatches `fillWetnessShaderParams`.*
+- **`src/dxvk/imgui/dxvk_imgui.cpp`** - fork-touchpoint hook. *A "Global Wetness" collapsing header between Shader Support and View Model (Game Setup -> Parameter Tuning) dispatches `showWetnessSettings`.*
+- **`src/dxvk/meson.build`** - fork-touchpoint inline tweak. *Registers `rtx_fork_wetness.cpp/.h`.*
+- **`docs/RemixWetnessAPI_gta4.md`**, **`docs/RemixApi_gta4.md`** - spoke page + Convention namespaces row for `rtx.wet.*`.

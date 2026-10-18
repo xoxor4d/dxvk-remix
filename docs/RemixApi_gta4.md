@@ -74,3 +74,11 @@ Pass the geometry asset hash a D3D9 draw of the same geometry would get,
 and replacements authored against D3D9 captures keep applying when the
 geometry moves to the API. Several meshes may share it. `0` keeps the
 handle hash.
+
+## Convention namespaces: `rtx.wet.*`
+
+Row to add to the "Convention namespaces" table:
+
+| Namespace | Channel | Page |
+| :-- | :-- | :-- |
+| `rtx.wet.*` | `SetConfigVariable` | [`RemixWetnessAPI_gta4.md`](RemixWetnessAPI_gta4.md) |

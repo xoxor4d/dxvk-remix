@@ -451,6 +451,42 @@ struct RaytraceArgs {
   float waterObjectFadeWidth;
   uint waterShoreThinLayer;
 
+  // Fork: per draw wetness model (rtx.wet.*), filled by rtx_fork_wetness.cpp and rtx_fork_rain_map.cpp.
+  float wetOcclusionRayLength;
+  float wetOcclusionDistance;
+  float wetDetailDistance;
+  float wetRaindropDistance;
+  float wetMinRoughness;
+  float wetAlbedoDarkening;
+  float wetSaturationBoost;
+  float wetPuddleCoverage;
+  float wetPuddleRoughness;
+  float wetPuddleDarkening;
+  float wetShoreDarkening;
+  float wetRippleStrength;
+  float wetRippleWavelength;
+  float wetRippleSpeed;
+  float wetRaindropGroundScale;
+  float wetOcclusionMinHeight;
+  float wetPuddleOcclusion;
+  float wetNoiseScale;
+  float wetMicroAmplitude;
+  float wetDepressionWeight;
+  float wetSlopeLimit;
+  float wetEdgeWidth;
+  float wetShoreWidth;
+  float wetSlopeFeather;
+  float wetRippleVariation;
+  float wetOcclusionFeather;
+  uint wetPuddleQuality;
+  uint wetMapResolution;
+  float wetMapOriginX;
+  float wetMapOriginY;
+  float wetMapExtent;
+  float wetMapTexel;
+  float wetMapTraceTop;
+  float wetMapTraceBottom;
+
   // NOTE: Add structs to the top section of RaytraceArgs, not the bottom.
   // NOTE: bool does not work in debug builds, use uint instead.
 };

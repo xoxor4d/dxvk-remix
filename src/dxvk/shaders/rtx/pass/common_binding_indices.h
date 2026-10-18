@@ -94,6 +94,11 @@
 // the same texture.
 #define BINDING_ATMOSPHERE_SKY_VIEW_SAMPLER 214
 
+// Rain map (fork, 2026-10-18). RGBA32F top-down height field of the static geometry around the camera,
+// traced each frame by rtx_fork_rain_map.cpp: x cover height (world Z), y depression (m), z slope, w valid.
+// Read by the per draw wetness model (rtx_fork_wetness.slangh) with AtmosphereSkyViewSampler.
+#define BINDING_FORK_RAIN_MAP 220
+
 // Secondary-ray cloud LUT (fork — 2026-06-10, perf; full-sphere fork — 2026-09-05, world-space
 // cloud migration Stage 2). 256x256 RGBA16F dome (was 256x128, upper hemisphere only) keyed
 // (azimuth, signed elevation = l*l*sign(l) * (pi/2)) holding the full Nubis cloud march
@@ -191,6 +196,7 @@
   TEXTURE2D(BINDING_ATMOSPHERE_CLOUD_SECONDARY_LUT)                 \
   TEXTURE2D(BINDING_ATMOSPHERE_CLOUD_DEPTH_RT)                      \
   STRUCTURED_BUFFER(BINDING_ATMOSPHERE_STAR_ENTRIES)                \
-  STRUCTURED_BUFFER(BINDING_ATMOSPHERE_STAR_CELL_OFFSETS)
+  STRUCTURED_BUFFER(BINDING_ATMOSPHERE_STAR_CELL_OFFSETS)           \
+  TEXTURE2D(BINDING_FORK_RAIN_MAP)
 
 #endif

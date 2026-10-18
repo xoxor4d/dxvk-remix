@@ -701,6 +701,9 @@ namespace dxvk {
         dispatchVolumetrics(rtOutput);
         recordGpuStageTiming("Volumetrics");
         
+        // Rain map (fork): the wetness model reads it in the G-buffer pass
+        fork_hooks::dispatchRainMap(*this, rtOutput);
+
         // Path Tracing
         dispatchPathTracing(rtOutput);
 
@@ -1447,6 +1450,7 @@ namespace dxvk {
     constants.opaqueMaterialArgs.legacyFresnelGrazing = std::clamp(LegacyMaterialDefaults::fresnelGrazing(), 0.0f, 1.0f);
     TranslucentMaterialOptions::fillShaderParams(constants.translucentMaterialArgs);
     fork_hooks::fillWaterShaderParams(constants);
+    fork_hooks::fillWetnessShaderParams(*this, constants);
     ViewDistanceOptions::fillShaderParams(constants.viewDistanceArgs, RtxOptions::getMeterToWorldUnitScale());
     constants.alphaBlendSurfacePackMult = RtxOptions::getMeterToWorldUnitScale();
 
@@ -1620,6 +1624,7 @@ namespace dxvk {
     bindResourceBuffer(BINDING_SAMPLER_READBACK_BUFFER, DxvkBufferSlice(samplerFeedbackBuffer, 0, samplerFeedbackBuffer.ptr() ? samplerFeedbackBuffer->info().size : 0));
 
     getCommonObjects()->metaAtmosphere().bindResources(*this);
+    bindResourceView(BINDING_FORK_RAIN_MAP, fork_hooks::rainMapView(*this), nullptr);
   }
 
   void RtxContext::bindResourceView(const uint32_t slot, const Rc<DxvkImageView>& imageView, const Rc<DxvkBufferView>& bufferView)

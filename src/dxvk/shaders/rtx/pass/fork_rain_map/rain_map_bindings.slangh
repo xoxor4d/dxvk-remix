@@ -1,0 +1,18 @@
+#pragma once
+
+#include "rtx/pass/fork_rain_map/rain_map_binding_indices.h"
+
+// Per texel, world Z of the static opaque hits along the downward ray: x the lowest (the ground), y the cover above
+// it (the highest hit when it is at least the rain shadow min height above the ground, the ground otherwise).
+// Both below the trace range when nothing was hit.
+layout(binding = RAIN_MAP_BINDING_HEIGHT_OUTPUT, rg32f)
+RWTexture2D<float2> RainMapHeightOutput;
+
+layout(binding = RAIN_MAP_BINDING_HEIGHT_INPUT)
+Texture2D<float2> RainMapHeightInput;
+
+// x: rain cover (0 exposed .. 1 covered, blurred over the feather radius), y: ground height (world Z), z: depression
+// of the ground in meters (positive: lower than the surroundings), w: slope of the ground. Ground below the trace
+// range marks a texel without geometry.
+layout(binding = RAIN_MAP_BINDING_MAP_OUTPUT, rgba32f)
+RWTexture2D<float4> RainMapOutput;

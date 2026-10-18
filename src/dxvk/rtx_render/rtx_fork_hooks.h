@@ -727,6 +727,22 @@ namespace dxvk {
     // Implementation in rtx_fork_water.cpp.
     void showWaterShoreSettings();
 
+    // Fills the rtx.wet.* constants of the per draw wetness model and picks this frame's rain map window.
+    // Implementation in rtx_fork_wetness.cpp.
+    void fillWetnessShaderParams(RtxContext& ctx, RaytraceArgs& constants);
+
+    // Traces the rain map (top-down height field of the static geometry around the camera) for this frame.
+    // After the acceleration structures are built, before the G-buffer pass. Implementation in rtx_fork_rain_map.cpp.
+    void dispatchRainMap(RtxContext& ctx, const Resources::RaytracingOutput& rtOutput);
+
+    // The view bound at BINDING_FORK_RAIN_MAP in the common ray tracing set (a placeholder while the map is off).
+    // Implementation in rtx_fork_rain_map.cpp.
+    Rc<DxvkImageView> rainMapView(RtxContext& ctx);
+
+    // Body of the "Global Wetness" header under Game Setup -> Parameter Tuning (between Shader Support and View Model).
+    // Implementation in rtx_fork_wetness.cpp.
+    void showWetnessSettings();
+
   } // namespace fork_hooks
 
 } // namespace dxvk
