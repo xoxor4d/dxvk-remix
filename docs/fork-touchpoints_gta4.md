@@ -521,3 +521,14 @@ added for a later change.
 
 - **`src/dxvk/rtx_render/rtx_pathtracer_gbuffer.cpp`** - fork-touchpoint inline tweak. *`RW_TEXTURE2D(GBUFFER_BINDING_ATMOSPHERE_FOREGROUND_OUTPUT)` in the ray-gen parameter list.*
 - **`src/dxvk/rtx_render/rtx_composite.cpp`** - fork-touchpoint inline tweak. *`TEXTURE2D(COMPOSITE_ATMOSPHERE_FOREGROUND_INPUT)` in the composite parameter list.*
+
+## Workstream - Precipitation landing trace commits the closest hit (fork - 2026-10-18)
+
+The spawn-time landing trace that ends a drop's life at the surface below it used
+`RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH`, which commits the first hit traversal finds, not the nearest.
+The ray is as long as the drop's life (spawn height plus fall margin): with a fall margin it reaches past the
+camera, and when the floor was found before the roof the drop was told to die at the floor and fell through
+the ceiling. With the margin at zero the ray ended at eye height and only the roof could be hit, which is why
+the margin appeared to cause it. The upward shelter probe keeps the flag, it only asks whether cover exists.
+
+- **`src/dxvk/shaders/rtx/pass/particles/particle_system_spawn.comp.slang`** - fork-owned change. *Landing trace query without the accept-first-hit flag.*

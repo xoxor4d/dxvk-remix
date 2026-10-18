@@ -357,8 +357,10 @@ GpuParticle respawn(uint particleIdx, uint spawnCtxIdx, const GpuParticleSystem 
         ray.TMin = 0.0f;
         ray.TMax = maxDistance;
 
-        RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_CULL_NON_OPAQUE> rayQuery;
-        rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_CULL_NON_OPAQUE, OBJECT_MASK_OPAQUE, ray);
+        // Closest hit, not the first one traversal happens to find: with the fall margin the ray reaches past
+        // the camera, and accepting the first hit let a drop under a roof die at the floor instead of the roof.
+        RayQuery<RAY_FLAG_CULL_NON_OPAQUE> rayQuery;
+        rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_CULL_NON_OPAQUE, OBJECT_MASK_OPAQUE, ray);
         rayQuery.Proceed();
 
         if (rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
