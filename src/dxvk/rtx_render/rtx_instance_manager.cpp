@@ -83,7 +83,7 @@ namespace dxvk {
     if (!RtxOptions::enableCulling())
       flags |= VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
 
-    if (drawCall.testCategoryFlags(InstanceCategories::HairCards)) {
+    if (drawCall.testCategoryFlags(InstanceCategories::HairCards) || drawCall.testCategoryFlags(InstanceCategories::DisableBackfaceCulling)) {
       flags |= VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
     }
 
@@ -1032,7 +1032,9 @@ namespace dxvk {
     // These can change in the Runtime UI so need to check during update
     currentInstance.m_isHidden = currentInstance.testCategoryFlags(InstanceCategories::Hidden);
     currentInstance.m_isPlayerModel = currentInstance.testCategoryFlags(InstanceCategories::ThirdPersonPlayerModel);
-    currentInstance.m_isWorldSpaceUI = currentInstance.testCategoryFlags(InstanceCategories::WorldUI);
+    // GTA4 tags emissive surfaces as WorldUI; IgnoreLights on top keeps the game-controlled emissive strength
+    // of a replacement material instead of the unlit WorldUI override.
+    currentInstance.m_isWorldSpaceUI = currentInstance.testCategoryFlags(InstanceCategories::WorldUI) && !currentInstance.testCategoryFlags(InstanceCategories::IgnoreLights);
 
     // Hide the sky instance since it is not raytraced.
     // Sky mesh and material are only good for capture and replacement purposes.
@@ -1128,7 +1130,7 @@ namespace dxvk {
             materialData = &tmpMaterialData;
             // For worldspace UI, we want to show the UI (unlit) in the world.  So configure the blend mode if blending is used accordingly.
             tmpMaterialData.getOpaqueMaterialData().setEnableEmission(true);
-            tmpMaterialData.getOpaqueMaterialData().setEmissiveIntensity(2.0f);
+            tmpMaterialData.getOpaqueMaterialData().setEmissiveIntensity(1.0f);
             tmpMaterialData.getOpaqueMaterialData().setEmissiveColorTexture(tmpMaterialData.getOpaqueMaterialData().getAlbedoOpacityTexture());
           } else if (currentInstance.surface.alphaState.emissiveBlend && RtxOptions::enableEmissiveBlendEmissiveOverride() && useLegacyAlphaState) {
             // Here we need to do deep copy and patch the material
@@ -1169,7 +1171,20 @@ namespace dxvk {
         // So instead of offsetting the digits or making them live in unordered TLAS (either of which would solve the problem), we offset the screen background backwards.
         const float worldSpaceUiBackgroundOffset = RtxOptions::worldSpaceUiBackgroundOffset();
         if (worldSpaceUiBackgroundOffset != 0.f && currentInstance.testCategoryFlags(InstanceCategories::WorldMatte)) {
-          objectToWorld[3] += objectToWorld[2] * worldSpaceUiBackgroundOffset;
+          // Offset along the thinnest AABB axis, which is the surface normal of flat planes regardless of their orientation.
+          const AxisAlignedBoundingBox& boundingBox = drawCall.getGeometryData().boundingBox;
+          if (boundingBox.isValid()) {
+            const Vector3 aabbSize = boundingBox.maxPos - boundingBox.minPos;
+            uint32_t smallestAxis = 0;
+            if (aabbSize.y < aabbSize[smallestAxis]) {
+              smallestAxis = 1;
+            }
+            if (aabbSize.z < aabbSize[smallestAxis]) {
+              smallestAxis = 2;
+            }
+            const Vector3 surfaceNormal = safeNormalize(Vector3(objectToWorld[smallestAxis].data), Vector3(0.0f, 0.0f, 1.0f));
+            objectToWorld[3] += Vector4(surfaceNormal * worldSpaceUiBackgroundOffset, 0.0f);
+          }
         }
 
         // Update the transform based on what state we're in

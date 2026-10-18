@@ -144,8 +144,9 @@ Ray sampleDirection(
 
   // Create a ray from the material sample
 
-  Ray sampledRay = rayCreateDirection(
-    minimalRayInteraction, minimalSurfaceInteraction, ray, surfaceMaterialInteractionSample.inputDirection, penetrateSurface);
+  Ray sampledRay = forkClampTransmissionRay(rayCreateDirection(
+    minimalRayInteraction, minimalSurfaceInteraction, ray, surfaceMaterialInteractionSample.inputDirection, penetrateSurface),
+    minimalSurfaceInteraction, polymorphicSurfaceMaterialInteraction, penetrateSurface);
 
   sampledRay.spreadAngle = calculateSpreadAngleFromSolidAnglePdf(sampledRay.spreadAngle, solidAnglePdf);
 

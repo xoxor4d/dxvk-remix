@@ -51,21 +51,8 @@ void GlobalOptions::initSharedHeapPolicy() {
     }
 
     const bool bPolicyTextures = sharedHeapPolicy & SharedHeapPolicy::Textures;
-          bool bPolicyDynamicBufs = sharedHeapPolicy & SharedHeapPolicy::DynamicBuffers;
+    const bool bPolicyDynamicBufs = sharedHeapPolicy & SharedHeapPolicy::DynamicBuffers;
     const bool bPolicyStaticBufs = sharedHeapPolicy & SharedHeapPolicy::StaticBuffers;
-    
-    if(bridge_util::Config::isOptionDefined("useShadowMemoryForDynamicBuffers")) {
-      const bool bUseShadowMemoryForDynamicBuffers =
-        bridge_util::Config::getOption<bool>("useShadowMemoryForDynamicBuffers");
-      if(bUseShadowMemoryForDynamicBuffers == bPolicyDynamicBufs) {
-        std::stringstream conflictSS;
-        conflictSS << "SharedHeap dynamic buffer policy: [" << ((bPolicyDynamicBufs) ? "True" : "False") << "] ";
-        conflictSS << "superceded by useShadowMemoryForDynamicBuffers config setting: [" << ((bUseShadowMemoryForDynamicBuffers) ? "True" : "False") << "]";
-        bridge_util::Logger::info(conflictSS.str());
-        sharedHeapPolicy ^= SharedHeapPolicy::DynamicBuffers; // If 1, becomes 0; If 0, becomes 1
-        bPolicyDynamicBufs = sharedHeapPolicy & SharedHeapPolicy::DynamicBuffers;
-      }
-    }
 
     std::stringstream policySS;
     policySS << "SharedHeap policy: ";

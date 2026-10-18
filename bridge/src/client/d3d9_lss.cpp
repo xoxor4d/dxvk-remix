@@ -371,7 +371,12 @@ void InitServer() {
 
   BridgeState::setServerState(BridgeState::ProcessState::Handshaking);
   Logger::info("Ack received! Handshake completed! Telling server to continue waiting for commands...");
-  ClientMessage { Commands::Bridge_Continue };
+  {
+    // The server adopts the client's response policy, so the two sides always agree on which calls get answered
+    // (GlobalOptions::applyResponsePolicyFlags).
+    ClientMessage c(Commands::Bridge_Continue);
+    c.send_data(GlobalOptions::getResponsePolicyFlags());
+  }
 
 #ifdef DEBUG
   {
@@ -549,7 +554,11 @@ bool RemixAttach(HMODULE hModule) {
     initModuleBridge();
     initDeviceBridge();
 
-    gpPresent = new NamedSemaphore("Present", 0, GlobalOptions::getPresentSemaphoreMaxFrames());
+    // The client creates this semaphore before it launches the server, so these counts are the ones that apply (the
+    // server's are ignored when it opens the existing semaphore). Initial count = presentSemaphoreMaxFrames: the
+    // client may run that many frames ahead of the server. 0 = lock-step (each Present waits for the server's).
+    gpPresent = new NamedSemaphore("Present", GlobalOptions::getPresentSemaphoreMaxFrames(),
+                                   std::max<size_t>(GlobalOptions::getPresentSemaphoreMaxFrames(), 1));
 
     BridgeState::setClientState(BridgeState::ProcessState::Init);
 

@@ -45,6 +45,20 @@ static const uint8_t surfaceMaterialTypeMask = uint8_t(0x3u);
 #define OPAQUE_SURFACE_MATERIAL_FLAG_IS_RAYTRACED_RENDER_TARGET (1 << COMMON_MATERIAL_FLAG_TYPE_OFFSET(3))
 #define OPAQUE_SURFACE_MATERIAL_FLAG_HAS_DISPLACEMENT (1 << COMMON_MATERIAL_FLAG_TYPE_OFFSET(4))
 #define OPAQUE_SURFACE_MATERIAL_FLAG_IS_HAIR_CARD (1 << COMMON_MATERIAL_FLAG_TYPE_OFFSET(5))
+// Set when the albedo/emissive source texture uses an sRGB VkFormat, so the sampler hardware already
+// linearized it on read. The shader skips its own gammaToLinear() for that channel to avoid double
+// linearization (constants remain gamma-encoded and are always converted). See opaque_surface_material_interaction.slangh.
+#define OPAQUE_SURFACE_MATERIAL_FLAG_ALBEDO_TEXTURE_IS_SRGB (1 << COMMON_MATERIAL_FLAG_TYPE_OFFSET(6))
+#define OPAQUE_SURFACE_MATERIAL_FLAG_EMISSIVE_TEXTURE_IS_SRGB (1 << COMMON_MATERIAL_FLAG_TYPE_OFFSET(7))
+// Fork (2026-07-26): marks a particle material whose sprites are known to see open sky (weather
+// precipitation - the spawn-time shelter probe guarantees it). The resolver's opacity lighting
+// approximation adds a sky-ambient term for such particles on top of the froxel radiance sample,
+// supplying the skylight that the froxel grid does not contain (its integrator has no sky term).
+#define OPAQUE_SURFACE_MATERIAL_FLAG_SKY_LIT_PARTICLE (1 << COMMON_MATERIAL_FLAG_TYPE_OFFSET(8))
+// NV-DXVK start: Preserve legacy material provenance through material and G-buffer flags.
+#define OPAQUE_SURFACE_MATERIAL_FLAG_USE_LEGACY_DEFAULTS (1 << COMMON_MATERIAL_FLAG_TYPE_OFFSET(9))
+#define OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_USE_LEGACY_DEFAULTS (1 << 2)
+// NV-DXVK end
 
 
 #define OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_HAS_HEIGHT_TEXTURE (1 << 0)
@@ -56,5 +70,20 @@ static const uint8_t surfaceMaterialTypeMask = uint8_t(0x3u);
 // Note: Bits for flags field in TranslucentSurfaceMaterial and TranslucentSurfaceMaterialInteraction
 // If set, then the texture bound to transmittanceOrDiffuseTextureIndex is an albedo map for the diffuse layer
 #define TRANSLUCENT_SURFACE_MATERIAL_FLAG_USE_DIFFUSE_LAYER (1 << COMMON_MATERIAL_FLAG_TYPE_OFFSET(0))
+
+// Per draw call modifiers from the GTA4 compatibility mod, stored in the d3dModifierFlags field of
+// OpaqueSurfaceMaterial / TranslucentSurfaceMaterial (set on the CPU in rtx_scene_manager.cpp).
+// Opaque payload (d3dData0/1): ROUGHNESS_SCALAR -> packed wetness params 1/2,
+// GLOBAL_UV_MODIFIER -> half floats globUV0.x/.y (the other four affine terms live in albedoOpacityConstant).
+#define D3D_OPAQUE_MODIFIER_ROUGHNESS_SCALAR (1 << 0)
+#define D3D_OPAQUE_MODIFIER_ENABLE_VERTEX_COLOR (1 << 1)
+#define D3D_OPAQUE_MODIFIER_REM_VERTEX_COLOR_KEEP_ALPHA (1 << 2)
+#define D3D_OPAQUE_MODIFIER_VEHICLE_DECAL_DIRT (1 << 3)
+#define D3D_OPAQUE_MODIFIER_GLOBAL_UV_MODIFIER (1 << 4)
+
+#define D3D_TRANSLUCENT_MODIFIER_RAINDROPS (1 << 0)
+#define D3D_TRANSLUCENT_MODIFIER_WORLDPOS_AS_TEXUV (1 << 1)
+// Water: the shoreline modifier or the AnimatedWater category
+#define D3D_TRANSLUCENT_MODIFIER_WATER_SHORELINE (1 << 2)
 
 #endif // ifndef SHARED_CONSTANTS_H

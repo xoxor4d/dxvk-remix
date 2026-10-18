@@ -44,6 +44,7 @@
 namespace dxvk {
 
   class D3D9Surface;
+  class DxvkFSRFGPresenter;
 
   using D3D9SwapChainExBase = D3D9DeviceChild<IDirect3DSwapChain9Ex>;
   class D3D9SwapChainEx : public D3D9SwapChainExBase {
@@ -120,6 +121,7 @@ namespace dxvk {
     }
 
     void onWindowMessageEvent(UINT message, WPARAM wParam);
+    void processPendingRtxEndOfFrame();
     // NV-DXVK end
 
     void SyncFrameLatency();
@@ -170,6 +172,12 @@ namespace dxvk {
     Rc <DxvkDLFGPresenter>    m_dlfgPresenter;
     // NV-DXVK end
 
+    // NV-DXVK begin: FSR FG integration
+    Rc <DxvkFSRFGPresenter>   m_fsrfgPresenter;
+    // Null-tolerant sibling of GetPresenter; see d3d9_swapchain.cpp.
+    vk::Presenter* GetActivePresenterOrNull() const;
+    // NV-DXVK end
+
     Rc<hud::Hud>              m_hud;
 
     std::vector<Com<D3D9Surface, false>> m_backBuffers;
@@ -206,6 +214,10 @@ namespace dxvk {
     dxvk::mutex               m_inputPingMutex;
     dxvk::condition_variable  m_inputPingCond;
     bool                      m_inputPingStop = false;
+    // NV-DXVK end
+
+    // NV-DXVK start: end-of-frame events requested by a window message, steady clock ms (0 = none)
+    std::atomic<int64_t>      m_rtxEndOfFramePendingSince = { 0 };
     // NV-DXVK end
 
     WindowState               m_windowState;

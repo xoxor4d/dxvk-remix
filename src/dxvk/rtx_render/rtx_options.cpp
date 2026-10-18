@@ -22,6 +22,7 @@
 #include "rtx_options.h"
 
 #include <filesystem>
+#include <mutex>
 #include <nvapi.h>
 #include "../imgui/imgui.h"
 #include "rtx_bridge_message_channel.h"
@@ -31,6 +32,7 @@
 #include "rtx_restir_gi_rayquery.h"
 #include "rtx_composite.h"
 #include "rtx_demodulate.h"
+#include "rtx_dlfg.h"
 #include "rtx_neural_radiance_cache.h"
 #include "rtx_ray_reconstruction.h"
 #include "../util/util_global_time.h"
@@ -38,6 +40,7 @@
 #include "dxvk_device.h"
 #include "rtx_global_volumetrics.h"
 #include "rtx_scene_manager.h"
+#include "rtx_sharc.h"
 
 namespace dxvk {
   RtxOptions* RtxOptions::s_instance = nullptr;
@@ -316,7 +319,6 @@ namespace dxvk {
       DxvkRtxdiRayQuery::permutationSamplingNthFrame.setDeferred(1);
       DxvkRtxdiRayQuery::enableDenoiserConfidence.setDeferred(false);
       DxvkRtxdiRayQuery::enableBestLightSampling.setDeferred(false);
-      DxvkRtxdiRayQuery::initialSampleCount.setDeferred(3);
       DxvkRtxdiRayQuery::spatialSamples.setDeferred(2);
       DxvkRtxdiRayQuery::disocclusionSamples.setDeferred(2);
       DxvkRtxdiRayQuery::enableSampleStealing.setDeferred(false);
@@ -503,6 +505,18 @@ namespace dxvk {
     };
 
     auto enableNrcPreset = [&](NeuralRadianceCache::QualityPreset nrcPreset) {
+      // A graphics preset selects a quality level, not an indirect backend, so an explicit SHARC
+      // selection survives it and takes the matching cache tier instead.
+      if (RtxOptions::integrateIndirectMode() == IntegrateIndirectMode::Sharc) {
+        RtxSharc::QualityPreset sharcPreset = RtxSharc::QualityPreset::Medium;
+        if (nrcPreset == NeuralRadianceCache::QualityPreset::Ultra) {
+          sharcPreset = RtxSharc::QualityPreset::Ultra;
+        } else if (nrcPreset == NeuralRadianceCache::QualityPreset::High) {
+          sharcPreset = RtxSharc::QualityPreset::High;
+        }
+        device->getCommon()->metaSharc().setQualityPreset(sharcPreset);
+        return;
+      }
       NeuralRadianceCache& nrc = device->getCommon()->metaNeuralRadianceCache();
       // TODO[REMIX-4105] trying to use NRC for a frame when it isn't supported will cause a crash, so this needs to be setImmediately.
       // Should refactor this to use a separate global for the final state, and indicate user preference with the option. 
@@ -517,6 +531,12 @@ namespace dxvk {
     assert(graphicsPreset() != GraphicsPreset::Auto);
 
     RtxGlobalVolumetrics& volumetrics = device->getCommon()->metaGlobalVolumetrics();
+
+    // Clear the previous graphics preset's FG override before applying opt-in defaults.
+    {
+      std::lock_guard<std::mutex> lock(RtxOptionImpl::getUpdateMutex());
+      DxvkDLFG::litePreset.disableLayerValue(RtxOptionLayer::getQualityLayer());
+    }
 
     if (graphicsPreset() == GraphicsPreset::Ultra) {
       pathMinBounces.setDeferred(1);
@@ -561,6 +581,8 @@ namespace dxvk {
       enableNrcPreset(NeuralRadianceCache::QualityPreset::High);
 
     } else if (graphicsPreset() == GraphicsPreset::Medium) {
+      DxvkDLFG::litePreset.setDeferred(true);
+
       lowGraphicsPresetCommonSettings();
 
       russianRouletteMaxContinueProbability.setDeferred(0.7f);
@@ -569,6 +591,8 @@ namespace dxvk {
       volumetrics.setQualityLevel(RtxGlobalVolumetrics::Medium);
       enableNrcPreset(NeuralRadianceCache::QualityPreset::Medium);
     } else if (graphicsPreset() == GraphicsPreset::Low) {
+      DxvkDLFG::litePreset.setDeferred(true);
+
       lowGraphicsPresetCommonSettings();
 
       russianRouletteMaxContinueProbability.setDeferred(0.7f);

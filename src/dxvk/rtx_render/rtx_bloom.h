@@ -45,7 +45,7 @@ namespace dxvk {
       Rc<DxvkSampler> linearSampler,
       const Resources::Resource& inOutColorBuffer);
 
-    void showImguiSettings();
+    void showEffectSettings();
 
   private:
     void dispatchDownsampleStep(

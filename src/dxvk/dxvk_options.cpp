@@ -21,7 +21,10 @@
 * DEALINGS IN THE SOFTWARE.
 */
 #include "dxvk_options.h"
+#include "dxvk_limits.h"
 #include "vulkan/vulkan_core.h"
+
+#include <algorithm>
 
 namespace dxvk {
 
@@ -43,9 +46,12 @@ namespace dxvk {
     memcpyKickoffThreshold = config.getOption<uint32_t>("dxvk.memcpyKickoffThreshold", 16 * 1024 * 1024);
     // NV-DXVK end
 
+    // NV-DXVK start: command lists submitted or unfinished before DxvkSubmissionQueue::submit blocks
+    maxQueuedCommandBuffers = std::max(config.getOption<uint32_t>("dxvk.maxQueuedCommandBuffers", uint32_t(MaxNumQueuedCommandBuffers)), 2u);
+    // NV-DXVK end
+
     // NV-DXVK start: tell the user they cant run Remix
-    // Note: NRC 0.15.0.0 requires driver 610.47 or newer.
-    float nvidiaMinDriverFloat = config.getOption<float>("dxvk.nvidiaMinDriver", 610.47f, "DXVK_REMIX_NVIDIA_MIN_DRIVER");
+    float nvidiaMinDriverFloat = config.getOption<float>("dxvk.nvidiaMinDriver", 616.92f, "DXVK_REMIX_NVIDIA_MIN_DRIVER");
     float nvidiaGfnMinDriverFloat = config.getOption<float>("dxvk.nvidiaGfnMinDriver", 527.01f);
     float nvidiaLinuxMinDriverFloat = config.getOption<float>("dxvk.nvidiaLinuxMinDriver", 525.60f);
 

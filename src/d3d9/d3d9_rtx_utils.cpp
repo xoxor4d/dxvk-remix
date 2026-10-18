@@ -221,6 +221,30 @@ namespace dxvk {
 
     // Allow the users to configure vertex color as baked lighting for legacy draw calls.
     materialData.isVertexColorBakedLighting = RtxOptions::vertexColorIsBakedLighting();
+
+    // NV-DXVK start: per draw call data sent through unused D3D render states (GTA4 compatibility mod)
+    const auto readRenderState = [&d3d9State](uint32_t index) -> uint32_t {
+      // Unused render states default to 0, 0xfefefefe is the "unset" sentinel of the D3D runtime.
+      const uint32_t value = d3d9State.renderStates[index];
+      return value != 0xfefefefe ? value : 0u;
+    };
+    const auto readRenderStateFloat = [&readRenderState](uint32_t index) -> float {
+      return bit::cast<float>(readRenderState(index));
+    };
+
+    materialData.remixTextureCategoryFlagsFromD3D = readRenderState(42);
+    materialData.remixModifierFromD3D = readRenderState(149);
+    materialData.remixHashFromD3D = readRenderState(150);
+    materialData.remixTempFloat01FromD3D = readRenderStateFloat(169);
+    materialData.remixPackedFloat4_RS210FromD3D = readRenderState(210);
+    materialData.remixFloatRS211FromD3D = readRenderStateFloat(211);
+    materialData.remixFloatRS212FromD3D = readRenderStateFloat(212);
+    materialData.remixFloatRS213FromD3D = readRenderStateFloat(213);
+    materialData.remixFloatRS214FromD3D = readRenderStateFloat(214);
+    materialData.remixFloatRS215FromD3D = readRenderStateFloat(215);
+    materialData.remixFloatRS216FromD3D = readRenderStateFloat(216);
+    materialData.remixHashModifierFromD3D = readRenderState(220);
+    // NV-DXVK end
   }
 
 

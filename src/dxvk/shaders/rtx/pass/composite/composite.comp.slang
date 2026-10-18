@@ -37,7 +37,9 @@
 #include "rtx/utility/geometry_flags.slangh"
 
 #include "rtx/algorithm/volume_composite_helpers.slangh"
+#include "rtx/algorithm/rtx_fork_volumetric_integration.slangh"
 #include "rtx/algorithm/accumulate.slangh"
+#include "rtx/pass/atmosphere/aerial_perspective_camera.slangh"
 #include "rtx/pass/sparse_rendering/sparse_rendering.slangh"
 #include "rtx/pass/sparse_rendering/compact_active_pixels.slangh"
 
@@ -423,11 +425,29 @@ void applyVolumetricLighting(
   vec3 sharedRadiance,
   out vec3 volumetricPreintegratedRadiance,
   out vec3 volumeAttenuation,
+  // Fork: transmittance at the far end of the froxel grid (no homogeneous tail), see forkIntegrateVolumetricNEE
+  out vec3 volumeGridAttenuation,
   out vec3 controlMaskVolumeAttenuation,
   out vec3 alphaBlendOutput,
   out float backgroundAlpha,
-  out vec3 radianceOutput)
+  out vec3 radianceOutput,
+  // Alpha-blend surface hit distance, world/game units, and whether one was actually found at this
+  // pixel (fork — 2026-09-05, world-space cloud migration Stage 4b). AlphaBlendSurface is otherwise
+  // fully local to this function; applyCloudComposite needs the surface's own distance to decide how
+  // much of the cloud it should be fogged by (see cloudDepthVisibility) -- foliage rendered crisp
+  // through a cloud the ground beneath it is already fogged by is the artefact this exists to avoid.
+  out bool alphaBlendSurfaceValid,
+  out float alphaBlendHitDistance,
+  out vec3 alphaVolumeAttenuation,
+  // Fork: the froxel in-scatter in front of the alpha-blend surface, weighted by its coverage. Kept out of
+  // alphaBlendOutput so the cloud composite cannot scale it; compositeResult adds it afterwards.
+  out vec3 alphaVolumetricInScatter)
 {
+  alphaBlendSurfaceValid = false;
+  alphaBlendHitDistance = 0.0f;
+  alphaVolumeAttenuation = vec3(1.0f);
+  alphaVolumetricInScatter = vec3(0.0f);
+
   // Override the default volume sampling RNG seed offset
   setVolumeSamplingRngSeed(1);
 
@@ -435,6 +455,7 @@ void applyVolumetricLighting(
 
   volumetricPreintegratedRadiance = vec3(0);
   volumeAttenuation = vec3(1);
+  volumeGridAttenuation = vec3(1);
   controlMaskVolumeAttenuation = vec3(1);
   alphaBlendOutput = vec3(0);
   backgroundAlpha = 1.0f;
@@ -453,10 +474,10 @@ void applyVolumetricLighting(
   {
     vec2 volumeUV = cameraPixelCoordinateToScreenUV(cb.camera, pixelCoordinate);
     volumeUV.x /= cb.volumeArgs.numFroxelVolumes;
-    integrateVolumetricNEE(
-      randomState, VolumeFilteredRadianceAge, VolumeFilteredRadianceY, VolumeFilteredRadianceCoCg,
-      cb.volumeArgs, cb.timeSinceStartMS, pixelCoordinate, volumeUV, primaryMiss, cameraGetWorldPosition(cb.camera), viewDistance, primaryRayDirections.worldDirection,
-      volumetricPreintegratedRadiance, volumeAttenuation);
+    forkIntegrateVolumetricNEE(
+      randomState, cb.volumeArgs, cb.timeSinceStartMS, pixelCoordinate, volumeUV, primaryMiss,
+      cameraGetWorldPosition(cb.camera), viewDistance, primaryRayDirections.worldDirection,
+      volumetricPreintegratedRadiance, volumeAttenuation, volumeGridAttenuation);
     controlMaskVolumeAttenuation = volumeAttenuation;
   }
   else if (cb.enableDlssNrVolumetricControlMask)
@@ -486,6 +507,8 @@ void applyVolumetricLighting(
     {
       vec3 particleNormal = surface.normal;
       backgroundAlpha = surface.backgroundTransparency;
+      alphaBlendSurfaceValid = true;
+      alphaBlendHitDistance = surface.hitT;
 
       vec4 totalLight = vec4(centerLight.xyz, 1);
 
@@ -540,14 +563,14 @@ void applyVolumetricLighting(
         volumeUV.x /= cb.volumeArgs.numFroxelVolumes;
         
         vec3 alphaVolumetricPreintegratedRadiance = vec3(0.0f, 0.0f, 0.0f);
-        vec3 alphaVolumetricAttenuation = vec3(1.0f, 1.0f, 1.0f);
-        integrateVolumetricNEE(
-          randomState, VolumeFilteredRadianceAge, VolumeFilteredRadianceY, VolumeFilteredRadianceCoCg,
-          cb.volumeArgs, cb.timeSinceStartMS, pixelCoordinate, volumeUV, false, cameraGetWorldPosition(cb.camera), surface.hitT, primaryRayDirections.worldDirection,
-          alphaVolumetricPreintegratedRadiance, alphaVolumetricAttenuation);
+        vec3 alphaGridAttenuation;
+        forkIntegrateVolumetricNEE(
+          randomState, cb.volumeArgs, cb.timeSinceStartMS, pixelCoordinate, volumeUV, false,
+          cameraGetWorldPosition(cb.camera), surface.hitT, primaryRayDirections.worldDirection,
+          alphaVolumetricPreintegratedRadiance, alphaVolumeAttenuation, alphaGridAttenuation);
 
-        alphaBlendOutput *= alphaVolumetricAttenuation * (1 - backgroundAlpha);
-        alphaBlendOutput += alphaVolumetricPreintegratedRadiance * (1 - backgroundAlpha);
+        alphaBlendOutput *= alphaVolumeAttenuation * (1 - backgroundAlpha);
+        alphaVolumetricInScatter = alphaVolumetricPreintegratedRadiance * (1 - backgroundAlpha);
       }
       else
       {
@@ -571,8 +594,9 @@ void applyVolumetricLighting(
     updateAlphaBlendDebugView(pixelCoordinate, surface);
   }
 
-  radianceOutput = volumetricPreintegratedRadiance * volumetricRadianceScale;
-  radianceOutput += remodulatedTotalSecondaryRadiance * volumeAttenuation;
+  // Fork: the froxel in-scatter is not part of radianceOutput here. It is the nearest thing on the ray, so
+  // compositeResult adds it after the sky, the clouds and aerial perspective have been composited.
+  radianceOutput = remodulatedTotalSecondaryRadiance * volumeAttenuation;
 }
 
 void applySkyContribution(
@@ -588,16 +612,16 @@ void applySkyContribution(
     return;
   }
 
-  vec3 skyContribution;
-  if (cb.domeLightArgs.active)
+  if (!cb.domeLightArgs.active)
   {
-    skyContribution = cb.domeLightArgs.radiance * sampleDomeLightTexture(SkyLight, primaryRayDirections.worldDirection, cb.domeLightArgs.worldToLightTransform) * volumeAttenuation;
+    // Sky radiance (rasterized SkyProbe cubemap for skyMode==0, Hillaire
+    // atmosphere for skyMode==1) is already accumulated into SharedRadiance
+    // by the primary-miss handler in geometry_resolver.slangh. Adding SkyMatte
+    // here as well double-counts the sky (NV-DXVK fork bug since sync 1448e4e77).
+    return;
   }
-  else
-  {
-    vec2 screenUV = cameraPixelCoordinateToScreenUV(cb.camera, pixelCoordinate);
-    skyContribution = cb.skyBrightness * SkyLight.SampleLevel(screenUV, 0) * volumeAttenuation;
-  }
+
+  vec3 skyContribution = cb.domeLightArgs.radiance * sampleDomeLightTexture(SkyLight, primaryRayDirections.worldDirection, cb.domeLightArgs.worldToLightTransform) * volumeAttenuation;
 
   if (cb.sparseRenderingArgs.mode != SparseRenderingMode::Off &&
       cb.sparseRenderingArgs.enableSparsePrimaryRayMissComposition)
@@ -608,8 +632,331 @@ void applySkyContribution(
   radianceOutput += skyContribution;
 }
 
+// Aerial perspective (Hillaire EGSR 2020, Section 5.4): the atmosphere's
+// extinction and in-scatter between the camera and the shaded surface, which is what makes distant
+// geometry hazy and desaturated.
+//
+// The atmospheric half is skipped on primary misses: those directions carry the sky, whose radiance
+// already integrates the whole atmospheric column. The local-light half is not, because the sky
+// carries no scene lights - see the two blocks below. PSR pixels use their camera-to-mirror
+// distance, so a reflection is correctly attenuated by the air in front of the mirror.
+//
+// The volume covers only the segment past the global volumetrics froxel grid, so its in-scatter is
+// attenuated by that grid's transmittance. Strictly the near in-scatter already in radianceOutput
+// should not then pick up the far transmittance in turn, but the froxel grid spans tens of metres
+// against this volume's kilometres, so its transmittance is near one wherever the far term matters.
+void applyAerialPerspective(
+  uint2 pixelCoordinate,
+  bool primaryMiss,
+  float viewDistance,
+  vec3 volumeAttenuation,
+  vec3 radianceThroughput,
+  inout vec3 radianceOutput,
+  // Fork: the in-scatter is returned instead of added, so the caller can place it in front of the clouds
+  inout vec3 inScatterOutput)
+{
+  if (cb.atmosphereArgs.aerialPerspectiveLutSize == 0 ||
+      cb.domeLightArgs.active)
+  {
+    return;
+  }
+
+  const vec2 screenUV = cameraPixelCoordinateToScreenUV(cb.camera, ivec2(pixelCoordinate));
+
+  // A primary miss has no surface to stop the column at, so it reads the volume's far bound - the
+  // whole depth of air in that direction. viewDistance is not meaningful there (it is whatever the
+  // miss path left behind), which is why it is replaced rather than clamped.
+  const vec3 uvw = primaryMiss
+    ? vec3(screenUV, 1.0f)
+    : aerialPerspectiveScreenUvToUvw(screenUV, viewDistance, cb.camera, cb.atmosphereArgs);
+
+  // Atmospheric term: primary hits only.
+  //
+  // A primary miss carries the sky, whose radiance already integrates the whole atmospheric column,
+  // so applying this volume's version of it there would be a second helping of the same air. That
+  // exclusion is also what clips the sun's scene shadowing to an occluder's screen-space
+  // silhouette - the known limitation documented on aerialPerspectiveSceneShadow.
+  //
+  // Surfaces at or inside the volume's near bound (uvw.z <= 0) are skipped for the same reason at
+  // the other end: that whole segment belongs to the global volumetrics froxel grid, which has
+  // already integrated it.
+  if (!primaryMiss && viewDistance > 0.0f && uvw.z > 0.0f)
+  {
+    // Near-field exclusion, modelled on how fog holds off until fogStart. Driven by this pixel's own
+    // view distance, so unlike the volume it gates it carries no neighbourhood term and cannot bleed
+    // across a silhouette - see aerialPerspectiveNearFade.
+    const float nearFade = aerialPerspectiveNearFade(viewDistance, cb.atmosphereArgs);
+
+    if (nearFade > 0.0f)
+    {
+      const vec4 aerialPerspective = sampleAerialPerspectiveLut(
+        AtmosphereAerialPerspectiveLut, AtmosphereAerialPerspectiveSampler, uvw, cb.atmosphereArgs);
+
+      const vec3 inScatter = max(aerialPerspective.rgb, vec3(0.0f)) * volumeAttenuation * radianceThroughput * nearFade;
+
+      // Fade toward the identity transform, not toward zero: at nearFade 0 this has to leave the
+      // surface exactly as it found it, which means a transmittance of one rather than a black
+      // multiply.
+      const float transmittance = lerp(1.0f, saturate(aerialPerspective.a), nearFade);
+
+      radianceOutput *= transmittance;
+      inScatterOutput += inScatter;
+    }
+  }
+
+  // Scene lights in the air between the camera and this pixel.
+  //
+  // Applied on primary misses as well as hits, which is the one thing the atmospheric term above
+  // structurally cannot do: nothing in the sky contains a lamp, so there is no double count to
+  // avoid. A shaft thrown by a street light therefore keeps going past the roof edge and across the
+  // sky behind it, the way the global volumetrics froxel grid draws it, instead of being stamped
+  // off at the silhouette.
+  //
+  // No near fade either. That fade exists to stop a coarse sun-shadow grid painting haloes on
+  // interior walls; a light two metres away is the entire point of this term, and fading it out
+  // over the first fifty metres would remove every case it was added for.
+  //
+  // Added AFTER the transform above rather than before it. The bake already attenuates each sample
+  // by the column in front of it, so folding this into the multiply would charge the far
+  // transmittance a second time - and most visibly on the near lights, which have the least air in
+  // front of them and would lose the most to it.
+  //
+  // Fork: skipped for a surface inside the froxel grid (uvw.z <= 0) like the atmospheric term. The LUT's
+  // first slice is not empty, so such a surface read a slab of haze the grid had already integrated,
+  // more than the sky behind the same air got.
+  if (cb.atmosphereArgs.aerialPerspectiveLocalLightCount != 0 && (primaryMiss || uvw.z > 0.0f))
+  {
+    const vec3 localInScatter = max(sampleAerialPerspectiveLut(
+      AtmosphereAerialPerspectiveLocalLut, AtmosphereAerialPerspectiveSampler,
+      uvw, cb.atmosphereArgs).rgb, vec3(0.0f));
+
+    inScatterOutput += localInScatter * volumeAttenuation * radianceThroughput;
+  }
+}
+
+// ============================================================================
+// Cloud composite (fork — 2026-09-05, world-space cloud migration Stage 4b)
+// ============================================================================
+//
+// This whole section is the relocated other half of evalSkyRadiance's former primary-ray cloud
+// composite (atmosphere_sky.slangh) -- see that function's header comment for the ordering
+// argument (dispatchCloudScreenPass now runs after dispatchPathTracing, so the G-buffer pass that
+// calls evalSkyRadiance can never see THIS frame's cloud march; composite runs after both, so it
+// can). Composited into `radianceOutput` / `alphaBlendOutput` -- both composite-local, already
+// DENOISED-and-combined locals (see compositeResult: remodulatedTotalPrimaryRadiance, the denoised
+// primary signal, and sharedRadiance are folded into radianceOutput well before applyCloudComposite
+// runs) -- never into SharedRadiance. Archaeology commit 30d20a8f5 added its cloud in-scatter to
+// SharedRadiance from inside raygen, which composite.comp.slang adds AFTER the denoised primary
+// radiance; that ordering sparkles on geometry and ghosts under ray reconstruction. Nothing here
+// touches SharedRadianceRG/B.
+
+// Depth-ratio visibility rule (fork — 2026-09-05). Answers "how much of the marched cloud actually
+// sits between the camera and a surface at surfaceKm" using only the depth companion's entry/mean.
+// entryKm < 0 means the march never found any cloud along this ray at all (cloud_render.comp.slang's
+// sentinel) -- 0 visibility, nothing to composite.
+//
+// The opaque surface already clamps the march. This depth estimate orders foreground layers
+// within the remaining cloud span; it does not reconstruct or accumulate screen pixels.
+float cloudDepthVisibility(float entryKm, float meanKm, float surfaceKm, float cloudAlpha)
+{
+  if (entryKm < 0.0f)
+  {
+    return 0.0f;
+  }
+
+  const float depthKm = surfaceKm - entryKm;
+  if (depthKm <= 0.0f)
+  {
+    return 0.0f;  // surface nearer than any cloud on this ray
+  }
+
+  // Recovering the span from the mean needs care: meanKm is a TRANSMITTANCE-WEIGHTED centroid, not
+  // a geometric midpoint. The weights are the per-step opacity increments, so as the cloud thickens
+  // the far half contributes almost nothing and the centroid is dragged toward the near edge --
+  // mu -> 1/sigma rather than S/2. Assuming S = 2*mu (which this function did briefly) therefore
+  // UNDER-estimates the span, and by the largest factor exactly where it hurts: with the eye inside
+  // a dense deck it overestimates sigma ~2.4x at alpha 0.99 and ~3.5x at 0.999, over-fogging every
+  // near surface. For a uniform medium the relation inverts exactly:
+  //
+  //   tau = -ln(1 - alpha)                       total optical depth
+  //   mu  = S * (alpha - tau(1-alpha)) / (tau*alpha)
+  //   =>  S = mu * g(alpha),  g = tau*alpha / (alpha - tau(1-alpha))
+  //
+  // g runs from 2 in the optically thin limit to ~7 at alpha 0.999.
+  const float muKm = max(meanKm - entryKm, 1e-4f);
+
+  // Thin cloud: nothing to shape, and the g denominator below cancels to tau^2/2.
+  if (cloudAlpha < 1e-4f)
+  {
+    return saturate(depthKm / (2.0f * muKm));
+  }
+
+  const float tau = -log(max(1.0f - cloudAlpha, 1e-6f));
+  // Series below tau ~ 0.3 (g -> 2(1 + tau/6), within 0.2% there): the exact denominator is a
+  // difference of two nearly equal numbers in that regime and loses most of its significant bits.
+  const float g = (tau < 0.3f)
+    ? 2.0f * (1.0f + tau * (1.0f / 6.0f))
+    : tau * cloudAlpha / max(cloudAlpha - tau * (1.0f - cloudAlpha), 1e-6f);
+  const float spanKm = muKm * g;
+
+  if (depthKm >= spanKm)
+  {
+    return 1.0f;  // surface past the far edge: all of the cloud is in front of it
+  }
+
+  const float frontAlpha = 1.0f - exp(-tau * depthKm / spanKm);
+  return saturate(frontAlpha / cloudAlpha);
+}
+
+// NV-DXVK start: Keep filtered cloud radiance and opacity from the same taps.
+// Composite current-frame cloud radiance over sky and surfaces.
+void applyCloudComposite(
+  uint2 pixelCoordinate,
+  bool primaryMiss,
+  float viewDistance,
+  float backgroundAlpha,
+  vec3 radianceThroughput,
+  inout vec3 radianceOutput,
+  inout vec3 alphaBlendOutput,
+  bool alphaBlendSurfaceValid,
+  float alphaBlendHitDistance,
+  inout vec3 foregroundRadiance,
+  float foregroundDepthKm,
+  // Reflected rays already received their cloud contribution during path tracing.
+  bool performedPSR)
+{
+  AtmosphereArgs args = cb.atmosphereArgs;
+  if (args.cloudRenderRTEnable == 0u)
+  {
+    return;
+  }
+
+  const float kmPerWorldUnit = 1.0f / max(args.worldUnitsPerKm, 1e-6f);
+  const vec2 depthKm = CompositeCloudDepth.Load(int3(pixelCoordinate, 0)).xy;
+  const float entryKm = depthKm.x;
+  const float meanKm = depthKm.y;
+  const vec4 cloudSample = CompositeCloudRender.Load(int3(pixelCoordinate, 0));
+  vec4 cloud = vec4(cloudSample.rgb, 1.0f - cloudSample.a);
+  // PSR already carries clouds along the reflected ray.
+  float opaqueVisibility = performedPSR ? 0.0f : 1.0f;
+
+  // ---- Aerial perspective on the cloud (fork -- 2026-09-08) ----
+  //
+  // The clouds never reached the real aerial-perspective volume. applyAerialPerspective skips its
+  // ATMOSPHERIC half on primaryMiss -- which is every sky pixel, i.e. exactly where the clouds are
+  // -- and it runs BEFORE this function, so even on a geometry hit the cloud composited afterwards
+  // was untouched by it. (That function's local-light half does now run on sky pixels, but it
+  // carries only scene lights and so has nothing to say about the air in front of a cloud; this
+  // block remains the only route by which the atmospheric column reaches one.) The only distance term the cloud had was the march's cloudAerialHazePerKm,
+  // which multiplies each sample's radiance by exp(-k * t) and adds NOTHING back: distant cloud
+  // dims toward BLACK rather than toward the colour of the air in front of it, which is the
+  // opposite of what aerial perspective does. (Its sibling cloudAerialFadePerKm fades cloud ALPHA
+  // instead -- a separate horizon-wall control with a different job. Neither is changed here.)
+  //
+  // What is supplied here is the missing half: the in-scattered air light between the camera and
+  // the cloud, read from the SAME volume the geometry uses, at meanCloudDepthKm -- the
+  // transmittance-weighted mean distance the march already writes into the depth companion for
+  // exactly this kind of consumer. Weighted by the cloud's own coverage, because the rest of the
+  // pixel is sky and the sky already carries its whole column.
+  //
+  // The extinction half is deliberately NOT taken from the volume: exp(-cloudAerialHazePerKm * t)
+  // already plays that role in the march, and applying both would dim distant cloud twice and
+  // rescale a tuned config underneath itself. Substituting one for the other is a look change and
+  // a retune, not a bug fix.
+  //
+  // Bounded by construction, which is what makes it safe to leave on: this volume integrates a
+  // strict sub-segment of the sky's own column with a tamer forward lobe
+  // (aerialPerspectiveMieAnisotropyMax), so the light it can add is always less than the sky
+  // radiance the cloud sits against. It cannot build a horizon wall brighter than the sky behind it.
+  //
+  // Placed after the history write on purpose: this is a per-frame, view-distance term with no
+  // business inside a temporal signal -- the same argument that keeps the occlusion gate out of it.
+  // Placed before both composites so the opaque and alpha-blend paths see the same hazed cloud.
+  const bool cloudAerialApplied = args.aerialPerspectiveLutSize != 0u
+                               && args.cloudAerialInScatterStrength > 0.0f
+                               && meanKm > 0.0f
+                               && cloud.a > 0.0f;
+  if (cloudAerialApplied)
+  {
+    // meanKm is in the CLOUD's kilometres and this volume is addressed in world units, converting
+    // with its own aerialPerspectiveWorldUnitsPerKm. Going through world units is what keeps the
+    // two in agreement when rtx.atmosphere.cloudWorldCompression is not 1: the cloud is wherever it
+    // sits in the world, and that is the column the haze has to be integrated over.
+    const float cloudDistanceWorld = meanKm * args.worldUnitsPerKm;
+    const vec2 cloudScreenUV = cameraPixelCoordinateToScreenUV(cb.camera, ivec2(pixelCoordinate));
+    const vec3 cloudUvw = aerialPerspectiveScreenUvToUvw(cloudScreenUV, cloudDistanceWorld, cb.camera, args);
+    // Same two guards applyAerialPerspective uses: inside the volumetrics grid's own range there is
+    // nothing left for this volume to add, and the near fade holds it off the near field entirely.
+    // Both are essentially always satisfied at cloud distance; they are here so the cloud path
+    // cannot behave differently from the geometry path where they are not.
+    const float cloudNearFade = aerialPerspectiveNearFade(cloudDistanceWorld, args);
+
+    if (cloudUvw.z > 0.0f && cloudNearFade > 0.0f)
+    {
+      const vec4 cloudAerial = sampleAerialPerspectiveLut(
+        AtmosphereAerialPerspectiveLut, AtmosphereAerialPerspectiveSampler, cloudUvw, args);
+
+      cloud.rgb += max(cloudAerial.rgb, vec3(0.0f))
+                         * (cloudNearFade * args.cloudAerialInScatterStrength * cloud.a);
+    }
+  }
+
+  // Fork: cloudAerialHazePerKm dims the marched radiance toward black with distance and leaves the
+  // opacity alone, so without the aerial volume adding the air's light back a far deck turns into a
+  // black band along the horizon. In that case the hazed-away share of the cloud lets the background
+  // through instead, which is what a cloud fading into the distance looks like. The march's own
+  // opacity still drives the depth estimates below.
+  const float marchAlpha = cloud.a;
+  if (!cloudAerialApplied && args.cloudAerialHazePerKm > 0.0f && meanKm > 0.0f)
+  {
+    cloud.a *= exp(-args.cloudAerialHazePerKm * meanKm);
+  }
+
+  // Premultiplied over -- identical operation to the removed evalSkyRadiance code, just relocated.
+  // On a sky pixel opaqueVisibility is 1.0 and this is exactly that operation.
+  //
+  // In-scatter follows the same foreground throughput as the sky it replaces.
+  radianceOutput = radianceOutput * (1.0f - cloud.a * opaqueVisibility)
+                 + cloud.rgb * opaqueVisibility * radianceThroughput;
+
+  if (foregroundDepthKm > 0.0f && entryKm >= 0.0f && !performedPSR) {
+    const float visibility = cloudDepthVisibility(entryKm, meanKm, foregroundDepthKm, marchAlpha);
+    foregroundRadiance = foregroundRadiance * (1.0f - cloud.a * visibility)
+      + cloud.rgb * visibility * saturate(vec3(1.0f) - radianceThroughput);
+  }
+
+  // ---- Alpha-blended (foliage / particle) surfaces ----
+  // Depth-ratio rule (fork — 2026-09-05): the same cloudDepthVisibility gate as the opaque path,
+  // evaluated against the alpha-blend surface's OWN hit distance (AlphaBlendGBuffer's hitT) rather
+  // than the opaque PrimaryLinearViewZ behind it -- a surface at or beyond the cloud's mean depth is
+  // "as deep into the cloud as the marched mass" and gets the full cloud composite; one
+  // entirely in front of the cloud's entry gets none; a surface partway between entry and mean gets a
+  // proportional blend. Foliage sitting on the same ground the opaque composite above just fogged
+  // will read alphaSurfaceKm ~= surfaceKm and so end up fogged the same amount -- the specific "crisp
+  // foliage in a foggy scene" artefact this item exists to avoid.
+  if (alphaBlendSurfaceValid && entryKm >= 0.0f && !performedPSR)
+  {
+    const float alphaSurfaceKm = alphaBlendHitDistance * kmPerWorldUnit;
+    const float alphaVisibility = cloudDepthVisibility(entryKm, meanKm, alphaSurfaceKm, marchAlpha);
+
+    // alphaBlendOutput is PREMULTIPLIED by the surface's own coverage: applyVolumetricLighting scales
+    // it by (1 - backgroundAlpha) before returning it, and finalOutput adds it to radianceOutput *
+    // backgroundAlpha. Any in-scatter added over it must carry the same factor -- exactly as that
+    // function's own fog and volumetric in-scatter terms do. Stage 4b added the cloud in-scatter at
+    // full weight (fixed here, fork — 2026-09-05, ghosting follow-up): on a mostly transparent alpha
+    // surface (backgroundAlpha -> 1) the pixel then received the cloud twice, once through
+    // radianceOutput and once here -- a bright cloud fringe on every foliage edge inside the deck.
+    // The transmittance needs no such factor; it multiplies a value that already carries it.
+    const float alphaTransmittance = 1.0f - cloud.a * alphaVisibility;
+    const vec3  alphaInScatter     = cloud.rgb * alphaVisibility * (1.0f - backgroundAlpha);
+    alphaBlendOutput = alphaBlendOutput * alphaTransmittance + alphaInScatter;
+  }
+}
+
+// NV-DXVK start: Apply the full fog extent over the sky.
 float applyFog(
   float viewDistance,
+  bool primaryMiss,
   float radianceScale,
   inout vec3 radianceOutput)
 {
@@ -618,9 +965,17 @@ float applyFog(
     return 1.0f; // Volumetric fog is applied in volume integration
   }
 
+  // Games can fog level geometry separately from their authored sky.
+  if (primaryMiss && !cb.fogApplyToSky)
+  {
+    return 1.0f;
+  }
+
   // Todo: Using view distance is a bit of a hack here, the primary emissive contribution will not be fully weighted correctly
   // as emissive hits will be over-attenuated.
-  vec4 fogColor = calculateFog(viewDistance);
+  // Ray-miss depth is a denoiser sentinel, not a physical fog distance.
+  const float fogDistance = primaryMiss ? cb.maxFogDistance : viewDistance;
+  vec4 fogColor = calculateFog(fogDistance);
 
   if (cb.sparseRenderingArgs.mode != SparseRenderingMode::Off)
   {
@@ -632,6 +987,7 @@ float applyFog(
 
   return 1.0f - fogColor.a;
 }
+// NV-DXVK end
 
 vec4 compositeResult(
   uint2 pixelCoordinate,
@@ -682,11 +1038,16 @@ vec4 compositeResult(
 
   vec3 volumetricPreintegratedRadiance;
   vec3 volumeAttenuation;
+  vec3 volumeGridAttenuation;
   vec3 controlMaskVolumeAttenuation;
   vec3 alphaBlendOutput;
   float backgroundAlpha;
   vec3 radianceOutput;
   vec3 sharedFinalOutput;
+  bool alphaBlendSurfaceValid;
+  float alphaBlendHitDistance;
+  vec3 alphaVolumeAttenuation;
+  vec3 alphaVolumetricInScatter;
 
   // Determine radiance scales for sparse rendering. Scaling only applies at active pixels;
   // at inactive pixels the contributions that would be scaled (alpha blend, fog, sky) come from
@@ -730,22 +1091,85 @@ vec4 compositeResult(
   applyVolumetricLighting(
     pixelCoordinate, randomState, primaryRayDirections, pixelIsActive, primaryMiss, viewDistance,
     radianceScale, volumetricRadianceScale, remodulatedTotalSecondaryRadiance, sharedRadiance,
-    volumetricPreintegratedRadiance, volumeAttenuation, controlMaskVolumeAttenuation,
-    alphaBlendOutput, backgroundAlpha, radianceOutput);
+    volumetricPreintegratedRadiance, volumeAttenuation, volumeGridAttenuation, controlMaskVolumeAttenuation,
+    alphaBlendOutput, backgroundAlpha, radianceOutput,
+    alphaBlendSurfaceValid, alphaBlendHitDistance, alphaVolumeAttenuation, alphaVolumetricInScatter);
 
   // Calculate final combined radiance output
   // Note: The primary hit accumulated radiance value is not affected by the throughput (rather takes attenuation into account
   // while accumulating already), so it can be added in here without issue.
   radianceOutput += remodulatedTotalPrimaryRadiance * volumeAttenuation;
 
-  // Note: Shared radiance should always be pre-attenuated so no need to factor that in here - it contains multiple layers of signal so each contribution must be attenuated inline.
-  radianceOutput += sharedRadiance;
+  // Shared radiance also contains transparent foreground emission, which must not
+  // receive the background's atmospheric extinction.
+  const vec4 foreground = AtmosphereForeground[pixelCoordinate];
+  const bool separateForeground = foreground.w > 0.0f && !geometryFlags.performedAnyPSR();
+  vec3 foregroundRadiance = separateForeground ? min(max(foreground.rgb, vec3(0.0f)), max(sharedRadiance, vec3(0.0f))) : vec3(0.0f);
+  radianceOutput += sharedRadiance - foregroundRadiance;
+  if (separateForeground) {
+    const float foregroundDistance = foreground.w * cb.atmosphereArgs.worldUnitsPerKm;
+    const vec3 foregroundVolumeAttenuation = calcVolumetricAttenuation(cb.volumeArgs, none, false,
+      foregroundDistance, cameraGetWorldPosition(cb.camera), primaryRayDirections.worldDirection);
+    vec3 foregroundAerialInScatter = vec3(0.0f);
+    applyAerialPerspective(pixelCoordinate, false, foregroundDistance, foregroundVolumeAttenuation,
+      saturate(vec3(1.0f) - primaryAttenuation), foregroundRadiance, foregroundAerialInScatter);
+    foregroundRadiance += foregroundAerialInScatter;
+  }
+
+  // Applied before the sky so it only affects geometry; the sky already carries its full column.
+  // Background radiance already carries foreground transparency from the geometry resolver.
+  // Fork: on PSR pixels PrimaryAttenuation is the reflection / transmission throughput, not a foreground
+  // transparency. The whole surface sits behind the same air, so its in-scatter is not scaled by it.
+  // Fork: the air behind the froxel grid is seen through the grid's transmittance for every pixel, a miss
+  // included. Scaling it by the full miss attenuation (the grid plus a homogeneous tail) gave the sky a
+  // fraction of the haze a wall behind the same air got. The in-scatter is held back until the clouds
+  // are composited, otherwise a cloud behind the haze scaled it by its opacity.
+  vec3 aerialInScatter = vec3(0.0f);
+  applyAerialPerspective(pixelCoordinate, primaryMiss, viewDistance, volumeGridAttenuation,
+    geometryFlags.performedAnyPSR() ? vec3(1.0f) : primaryAttenuation, radianceOutput, aerialInScatter);
+  if (alphaBlendSurfaceValid) {
+    vec3 alphaAerialInScatter = vec3(0.0f);
+    applyAerialPerspective(pixelCoordinate, false, alphaBlendHitDistance, alphaVolumeAttenuation,
+      vec3(1.0f - backgroundAlpha), alphaBlendOutput, alphaAerialInScatter);
+    alphaBlendOutput += alphaAerialInScatter;
+  }
+
+  // Cloud composite (fork — 2026-09-05, world-space cloud migration Stage 4b). Placed immediately
+  // after aerial perspective and before the dome-light sky contribution / fog: the composite is the
+  // same premultiplied-over evalSkyRadiance used to do, just relocated to where this frame's cloud RT
+  // actually exists (see applyCloudComposite's own header comment). radianceOutput at this point is
+  // exactly what evalSkyRadiance's primary branch used to see as `radiance` right before its own
+  // (now-removed) composite: for a sky pixel that is remodulatedTotalPrimaryRadiance (clearColor,
+  // zero contribution) + sharedRadiance (the cloudless sky/atmosphere/star/moon radiance
+  // geometry_resolver.slangh wrote); for a geometry hit it is the denoised primary radiance with
+  // aerial perspective already folded in. The froxel in-scatter is added below, after the clouds.
+  // backgroundAlpha (fork — 2026-09-05, ghosting follow-up): the alpha-blend coverage the
+  // in-scatter must be weighted by -- see applyCloudComposite's alpha-blend composite block. The
+  // particleLayerOutput argument 794ffd716 added (DLSS-RR transparency-layer routing) was removed
+  // 2026-09-06 with that routing; see the note above the opaque composite in applyCloudComposite.
+  applyCloudComposite(
+    pixelCoordinate, primaryMiss, viewDistance, backgroundAlpha, primaryAttenuation,
+    radianceOutput, alphaBlendOutput, alphaBlendSurfaceValid, alphaBlendHitDistance,
+    foregroundRadiance, separateForeground ? foreground.w : 0.0f,
+    geometryFlags.performedAnyPSR());
+  radianceOutput += foregroundRadiance;
+
+  // Fork: the froxel volume is the air between the camera and whatever the pixel shows, so its in-scatter goes in
+  // front of the sky, the cloud deck and the aerial perspective. Added into radianceOutput before the cloud
+  // composite it was scaled by (1 - cloud opacity): an overcast night deck wiped the fog off every sky pixel while
+  // the geometry next to it kept it. The aerial perspective in-scatter sits behind the grid but in
+  // front of the clouds, so it joins here as well.
+  radianceOutput += aerialInScatter;
+  radianceOutput += volumetricPreintegratedRadiance * volumetricRadianceScale;
+  alphaBlendOutput += alphaVolumetricInScatter;
 
   // Add sky radiance
   applySkyContribution(pixelCoordinate, primaryRayDirections, primaryMiss, radianceScale, volumeAttenuation, radianceOutput);
 
   // Apply fog
-  const float fogTransmittance = applyFog(viewDistance, radianceScale, radianceOutput);
+  // NV-DXVK start: Classify sky independently of the reconstructed miss depth.
+  const float fogTransmittance = applyFog(viewDistance, primaryMiss, radianceScale, radianceOutput);
+  // NV-DXVK end
   controlMaskTransmittance = calcBt709Luminance(saturate(controlMaskVolumeAttenuation));
   controlMaskTransmittance *= fogTransmittance * backgroundAlpha;
 

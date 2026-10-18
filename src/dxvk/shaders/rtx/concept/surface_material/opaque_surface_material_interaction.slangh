@@ -22,6 +22,7 @@
 #pragma once
 
 #include "opaque_surface_material_blending.slangh"
+#include "rtx/external/simplex_noise.slangh"
 
 // Opaque Surface Material Interaction Constants
 
@@ -39,6 +40,23 @@ static const float roughnessThreshold = float(0.001f);
 #define OPAQUE_MATERIAL_USE_BOUNDED_VNDF_SAMPLING 1
 
 // Opaque Surface Material Interaction Helper Functions
+
+// NV-DXVK start: Replaced materials retain the standard Fresnel response on every shading path.
+float opaqueSurfaceMaterialInteractionGetSpecularLevel(OpaqueSurfaceMaterialInteraction material)
+{
+  return (material.flags & OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_USE_LEGACY_DEFAULTS) != 0 ?
+    cb.opaqueMaterialArgs.legacySpecularLevel : 1.0f;
+}
+
+float opaqueSurfaceMaterialInteractionGetFresnelGrazing(OpaqueSurfaceMaterialInteraction material)
+{
+  return (material.flags & OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_USE_LEGACY_DEFAULTS) != 0 ?
+    cb.opaqueMaterialArgs.legacyFresnelGrazing : 1.0f;
+}
+// NV-DXVK end
+
+// Fork: per draw wetness of the GTA IV mod (D3D_OPAQUE_MODIFIER_ROUGHNESS_SCALAR)
+#include "rtx/concept/surface_material/rtx_fork_wetness.slangh"
 
 #ifdef OPAQUE_MATERIAL_USE_POM
 // Parallax Occlusion Mapping Helper Functions
@@ -533,7 +551,10 @@ void overrideMaterialInteractionForEye(
     opaqueSurfaceMaterialInteraction.anisotropicRoughness
   );
   opaqueSurfaceMaterialInteraction.albedo           = albedoToAdjustedAlbedo(eyeAlbedo, eyeMetallic, eyeOpacity);
-  opaqueSurfaceMaterialInteraction.baseReflectivity = calcBaseReflectivity(eyeAlbedo, eyeMetallic, eyeOpacity);
+  // NV-DXVK start: Material-scoped Fresnel controls.
+  opaqueSurfaceMaterialInteraction.baseReflectivity = calcBaseReflectivity(eyeAlbedo, eyeMetallic, eyeOpacity,
+    opaqueSurfaceMaterialInteractionGetSpecularLevel(opaqueSurfaceMaterialInteraction));
+  // NV-DXVK end
   opaqueSurfaceMaterialInteraction.opacity          = eyeOpacity;
 
   opaqueSurfaceMaterialInteraction.emissiveRadiance =
@@ -547,11 +568,15 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   OpaqueSurfaceMaterial opaqueSurfaceMaterial,
   Surface surface,
   inout SurfaceInteraction surfaceInteraction,
-  MinimalRayInteraction minimalRayInteraction)
+  MinimalRayInteraction minimalRayInteraction,
+  bool d3dWetnessDetail = FORK_WETNESS_DEFAULT_DETAIL)
 {
   OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteraction;
   // Note: need initialize the flags explicitely to get rid of garbage data.
-  opaqueSurfaceMaterialInteraction.flags = 0;
+  // NV-DXVK start: The existing interaction flag mask preserves this bit through G-buffer serialization.
+  opaqueSurfaceMaterialInteraction.flags = (opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_USE_LEGACY_DEFAULTS) != 0 ?
+    OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_USE_LEGACY_DEFAULTS : 0;
+  // NV-DXVK end
 
   // Create a tangent to world space matrix for future calculations
 
@@ -564,6 +589,26 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   const float materialLodBias = isHairCardMaterial ? cb.hairCardMipBias : 0.0f;
 
   opaqueSurfaceMaterialInteraction.flags |= thinFilmEnabled ? OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_USE_THIN_FILM_LAYER : 0;
+
+  const bool d3dModRoughnessScalar = opaqueSurfaceMaterial.d3dModifierFlags & D3D_OPAQUE_MODIFIER_ROUGHNESS_SCALAR;
+  const bool d3dModEnableVertexColor = opaqueSurfaceMaterial.d3dModifierFlags & D3D_OPAQUE_MODIFIER_ENABLE_VERTEX_COLOR;
+  const bool d3dModRemVertexColorKeepAlpha = opaqueSurfaceMaterial.d3dModifierFlags & D3D_OPAQUE_MODIFIER_REM_VERTEX_COLOR_KEEP_ALPHA;
+  const bool d3dModVehicleDecalDirt = opaqueSurfaceMaterial.d3dModifierFlags & D3D_OPAQUE_MODIFIER_VEHICLE_DECAL_DIRT;
+  const bool d3dModGlobalUvModifier = opaqueSurfaceMaterial.d3dModifierFlags & D3D_OPAQUE_MODIFIER_GLOBAL_UV_MODIFIER;
+
+  if (d3dModRemVertexColorKeepAlpha)
+  {
+    surfaceInteraction.vertexColor.rgb = f16vec3(1.0);
+  }
+
+  if (d3dModGlobalUvModifier)
+  {
+    // 2x3 affine UV transform: the first two terms of each row come from the D3D payload and the albedo constant
+    const vec3 coords = vec3(surfaceInteraction.textureCoordinates, 1.0f);
+    const vec3 globUV0 = vec3(asfloat16(opaqueSurfaceMaterial.d3dData0), asfloat16(opaqueSurfaceMaterial.d3dData1), opaqueSurfaceMaterial.albedoOpacityConstant.x);
+    const vec3 globUV1 = vec3(opaqueSurfaceMaterial.albedoOpacityConstant.y, opaqueSurfaceMaterial.albedoOpacityConstant.z, opaqueSurfaceMaterial.albedoOpacityConstant.w);
+    surfaceInteraction.textureCoordinates = vec2(dot(coords, globUV0), dot(coords, globUV1));
+  }
 
 #ifdef OPAQUE_MATERIAL_USE_POM
   if (cb.pomMode != DisplacementMode::Off && opaqueSurfaceMaterial.hasValidDisplacement())
@@ -700,7 +745,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   if (applyTextureOperations) 
 #endif
   {
-    if (surface.isVertexColorBakedLighting) {
+    if (surface.isVertexColorBakedLighting && !d3dModEnableVertexColor) {
       // "Normalize" vertex color to remove lighting contribution in different vertices.
       // We assume the diffuse term contributes most lighting. Therefore, vertex color = diffuseColor * (N*L).
       // By dividing the vertex color by its largest component, the result is irrelavant to N*L, but proportional to the 
@@ -712,34 +757,50 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
       surfaceInteraction.vertexColor.rgb = mix(vec3(1), surfaceInteraction.vertexColor.rgb, float(cb.vertexColorStrength));
     }
 
-    // Fixed function texture stage setting
-    vec3 textureArg1 = vec3(1.0), textureArg2 = vec3(1.0);
-    chooseTextureArgument(textureArg1, surface.textureColorArg1Source, albedo, surfaceInteraction.vertexColor.rgb, tFactor.rgb, vec3(1.0));
-    chooseTextureArgument(textureArg2, surface.textureColorArg2Source, albedo, surfaceInteraction.vertexColor.rgb, tFactor.rgb, vec3(1.0));
-    chooseTextureOperationColor(albedo, surface.textureColorOperation, textureArg1, textureArg2);
-    if (surface.isTextureFactorBlend) {
-      albedo *= tFactor.rgb;
+    if (d3dModVehicleDecalDirt)
+    {
+      // Vehicle dirt decal: the texture is a mask, the texture factor carries the dirt color and level
+      if (albedo.x > 0.0f)
+      {
+        opacity = albedo.r * tFactor.a;
+        albedo = tFactor.rgb;
+      }
+      else
+      {
+        opacity = 0.0f;
+      }
     }
+    else
+    {
+      // Fixed function texture stage setting
+      vec3 textureArg1 = vec3(1.0), textureArg2 = vec3(1.0);
+      chooseTextureArgument(textureArg1, surface.textureColorArg1Source, albedo, surfaceInteraction.vertexColor.rgb, tFactor.rgb, vec3(1.0));
+      chooseTextureArgument(textureArg2, surface.textureColorArg2Source, albedo, surfaceInteraction.vertexColor.rgb, tFactor.rgb, vec3(1.0));
+      chooseTextureOperationColor(albedo, surface.textureColorOperation, textureArg1, textureArg2);
+      if (surface.isTextureFactorBlend) {
+        albedo *= tFactor.rgb;
+      }
 
-    // Fixed function texture stage setting (emissive)
-    chooseTextureArgument(textureArg1, surface.textureColorArg1Source, emissiveColor, surfaceInteraction.vertexColor.rgb, tFactor.rgb, vec3(1.0));
-    chooseTextureArgument(textureArg2, surface.textureColorArg2Source, emissiveColor, surfaceInteraction.vertexColor.rgb, tFactor.rgb, vec3(1.0));
-    chooseTextureOperationColor(emissiveColor, surface.textureColorOperation, textureArg1, textureArg2);
-    if (surface.isTextureFactorBlend) {
-      emissiveColor *= tFactor.rgb;
+      // Fixed function texture stage setting (emissive)
+      chooseTextureArgument(textureArg1, surface.textureColorArg1Source, emissiveColor, surfaceInteraction.vertexColor.rgb, tFactor.rgb, vec3(1.0));
+      chooseTextureArgument(textureArg2, surface.textureColorArg2Source, emissiveColor, surfaceInteraction.vertexColor.rgb, tFactor.rgb, vec3(1.0));
+      chooseTextureOperationColor(emissiveColor, surface.textureColorOperation, textureArg1, textureArg2);
+      if (surface.isTextureFactorBlend) {
+        emissiveColor *= tFactor.rgb;
+      }
+    
+      // Adjust opacity via texture operations.
+      // Fixed function texture stage state for alpha channel
+
+      float textureAlphaArg1, textureAlphaArg2;
+      chooseTextureArgument(textureAlphaArg1, surface.textureAlphaArg1Source, opacity, surfaceInteraction.vertexColor.a, tFactor.a, opacity);
+      chooseTextureArgument(textureAlphaArg2, surface.textureAlphaArg2Source, opacity, surfaceInteraction.vertexColor.a, tFactor.a, float(1.0f));
+      chooseTextureOperationAlpha(opacity, surface.textureAlphaOperation, textureAlphaArg1, textureAlphaArg2);
+    
+      // Ensure we perform these opacity calculations after the texture operations have been applied to abledo and alpha.
+      calcOpaqueSurfaceMaterialOpacity(
+        albedo, opacity, surface, opacity, emissiveBlendOverrideInfluence, cb.wboitEnabled);
     }
-    
-    // Adjust opacity via texture operations.
-    // Fixed function texture stage state for alpha channel
-
-    float textureAlphaArg1, textureAlphaArg2;
-    chooseTextureArgument(textureAlphaArg1, surface.textureAlphaArg1Source, opacity, surfaceInteraction.vertexColor.a, tFactor.a, opacity);
-    chooseTextureArgument(textureAlphaArg2, surface.textureAlphaArg2Source, opacity, surfaceInteraction.vertexColor.a, tFactor.a, float(1.0f));
-    chooseTextureOperationAlpha(opacity, surface.textureAlphaOperation, textureAlphaArg1, textureAlphaArg2);
-    
-    // Ensure we perform these opacity calculations after the texture operations have been applied to abledo and alpha.
-    calcOpaqueSurfaceMaterialOpacity(
-      albedo, opacity, surface, opacity, emissiveBlendOverrideInfluence, cb.wboitEnabled);
   }
 
   if (opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_IGNORE_ALPHA_CHANNEL)
@@ -747,15 +808,24 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     opacity = 1.f;
   }
   
-  // Note: Gamma correct albedo input (be it from a constant or a texture). Currently assuming all textures are not using sRGB formats which
-  // automatically do this conversion.
-  // Todo: Disable this for when a sRGB texture is the source of the albedo.
-  albedo = gammaToLinear(albedo);
-  
-  // Note: Gamma correct emissive color input (be it from a constant or a texture). Currently assuming all textures are not using sRGB formats which
-  // automatically do this conversion.
-  // Todo: Disable this for when a sRGB texture is the source of the emissive color.
-  emissiveColor = gammaToLinear(emissiveColor);
+  // Note: Gamma correct albedo input (be it from a constant or a texture). Textures using a UNORM format do not have their
+  // sRGB->linear conversion done by the sampler, so we do it here in software. When the albedo comes from a texture that uses
+  // an sRGB VkFormat however, the sampler hardware already linearized it on read, so applying gammaToLinear again would double
+  // linearize it (darkening the result); OPAQUE_SURFACE_MATERIAL_FLAG_ALBEDO_TEXTURE_IS_SRGB (set on the CPU) marks that case.
+  // The albedo constant is always gamma-encoded, so this only skips when the texture was actually the source.
+  const bool albedoAlreadyLinear = albedoOpacityLoaded && (opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_ALBEDO_TEXTURE_IS_SRGB);
+  if (!albedoAlreadyLinear)
+  {
+    albedo = gammaToLinear(albedo);
+  }
+
+  // Note: Same handling as albedo above - skip the software gamma correction when the emissive color came from an sRGB-format
+  // texture that the sampler already linearized (OPAQUE_SURFACE_MATERIAL_FLAG_EMISSIVE_TEXTURE_IS_SRGB).
+  const bool emissiveAlreadyLinear = emissiveColorLoaded && (opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_EMISSIVE_TEXTURE_IS_SRGB);
+  if (!emissiveAlreadyLinear)
+  {
+    emissiveColor = gammaToLinear(emissiveColor);
+  }
   
   // Apply material modifiers/overrides
   albedo = saturate(albedo * cb.opaqueMaterialArgs.albedoScale + cb.opaqueMaterialArgs.albedoBias);
@@ -843,6 +913,11 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   const float roughnessScale = cb.opaqueMaterialArgs.roughnessScale * (isHairCardMaterial ? cb.hairCardRoughnessScale : 1.0f);
   roughness = saturate(roughness * roughnessScale + cb.opaqueMaterialArgs.roughnessBias);
 
+  if (d3dModRoughnessScalar)
+  {
+    forkApplyD3DWetness(opaqueSurfaceMaterial, surface, surfaceInteraction, d3dWetnessDetail, roughness, normal, normalDetail, albedo);
+  }
+
   // Load Metallic
 
   float metallic = opaqueSurfaceMaterial.metallicConstant;
@@ -865,7 +940,10 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   // Note: Opacity factored into albedo and base reflectivity to ensure NEE and indirect lighting off of objects with opacity properly
   // account for how much light is being transmitted due to the opacity (similar to how Fresnel on glass works).
   opaqueSurfaceMaterialInteraction.albedo = surface.isMatte ? vec3(0) : albedoToAdjustedAlbedo(albedo, metallic, opacity);
-  opaqueSurfaceMaterialInteraction.baseReflectivity = surface.isMatte ? vec3(0) : calcBaseReflectivity(albedo, metallic, opacity);
+  // NV-DXVK start: Material-scoped Fresnel controls.
+  opaqueSurfaceMaterialInteraction.baseReflectivity = surface.isMatte ? vec3(0) :
+    calcBaseReflectivity(albedo, metallic, opacity, opaqueSurfaceMaterialInteractionGetSpecularLevel(opaqueSurfaceMaterialInteraction));
+  // NV-DXVK end
    
   // Note: Roughness loaded from texture is a perceptual roughness value (for optimal encoding), so this works as intended.
   calcRoughness(roughness, opaqueSurfaceMaterial.anisotropy,
@@ -1028,8 +1106,11 @@ bool opaqueSurfaceMaterialInteractionCalcLobeProbability(
   // Note: Albedo and Base Reflectivity already have opacity baked into them which is why opacity does not need to be specified
   // in the albedo approximations below.
   const vec3 albedo = opaqueSurfaceMaterialInteraction.albedo;
+  // NV-DXVK start: Material-scoped Fresnel controls.
   const vec3 fresnel =
-    evalOpaqueSchlickFresnel(opaqueSurfaceMaterialInteraction.baseReflectivity, normalDotOutputDirection);
+    evalOpaqueSchlickFresnel(opaqueSurfaceMaterialInteraction.baseReflectivity, normalDotOutputDirection,
+    opaqueSurfaceMaterialInteractionGetFresnelGrazing(opaqueSurfaceMaterialInteraction));
+  // NV-DXVK end
 
   // Note: I think these should be using a preintegrated albedo calculation (e.g. the EnvBRDF approximation for specular
   // albedo), but I am not 100% sure if that is the intended "ideal" quantity to be using for a lobe's weight (when only the outgoing
@@ -1308,8 +1389,11 @@ SurfaceMaterialInteractionSample opaqueSurfaceMaterialInteractionCalcSpecularRef
 
   // Calculate the throughput of the sample
 
+  // NV-DXVK start: Material-scoped Fresnel controls.
   const vec3 fresnel = evalOpaqueSchlickFresnel(
-    opaqueSurfaceMaterialInteraction.baseReflectivity, outputDirectionDotMicrofacetNormal);
+    opaqueSurfaceMaterialInteraction.baseReflectivity, outputDirectionDotMicrofacetNormal,
+    opaqueSurfaceMaterialInteractionGetFresnelGrazing(opaqueSurfaceMaterialInteraction));
+  // NV-DXVK end
 
   // Todo: Pass in a material mode similar to the resolve mode to control this sort of material simplification option.
 #ifdef OPAQUE_MATERIAL_USE_THIN_FILM
@@ -1423,8 +1507,11 @@ SurfaceMaterialInteractionSample opaqueSurfaceMaterialInteractionCalcDiffuseTran
   const float /* l.h */ inputDirectionDotMicrofacetNormal = -inputDirection.z;
   const float /* o.h */ outputDirectionDotMicrofacetNormal = outputDirection.z;
 
+  // NV-DXVK start: Material-scoped Fresnel controls.
   const vec3 fresnel = evalOpaqueSchlickFresnel(
-    opaqueSurfaceMaterialInteraction.baseReflectivity, outputDirectionDotMicrofacetNormal);
+    opaqueSurfaceMaterialInteraction.baseReflectivity, outputDirectionDotMicrofacetNormal,
+    opaqueSurfaceMaterialInteractionGetFresnelGrazing(opaqueSurfaceMaterialInteraction));
+  // NV-DXVK end
   const vec3 transmissionFresnel = vec3(1.0f, 1.0f, 1.0f) - fresnel;
 
   SurfaceMaterialInteractionSample materialSample;
@@ -1626,8 +1713,11 @@ SurfaceMaterialInteractionPSRSample opaqueSurfaceMaterialInteractionCalcPSRRefle
 
   // Calculate the attenuation of the sample
 
+  // NV-DXVK start: Material-scoped Fresnel controls.
   const vec3 fresnel = evalOpaqueSchlickFresnel(
-    opaqueSurfaceMaterialInteraction.baseReflectivity, outputDirectionDotMicrofacetNormal);
+    opaqueSurfaceMaterialInteraction.baseReflectivity, outputDirectionDotMicrofacetNormal,
+    opaqueSurfaceMaterialInteractionGetFresnelGrazing(opaqueSurfaceMaterialInteraction));
+  // NV-DXVK end
 
   // Todo: Pass in a material mode similar to the resolve mode to control this sort of material simplification option.
 #ifdef OPAQUE_MATERIAL_USE_THIN_FILM
@@ -1873,7 +1963,11 @@ SurfaceMaterialInteractionSplitWeight opaqueSurfaceMaterialInteractionCalcApprox
   }
 
   // Calculate the weight
-  const vec3 fresnel = evalOpaqueSchlickFresnel(opaqueSurfaceMaterialInteraction.baseReflectivity, outputDirectionDotMicrofacetNormal);
+  // NV-DXVK start: Material-scoped Fresnel controls.
+  const vec3 fresnel = evalOpaqueSchlickFresnel(
+    opaqueSurfaceMaterialInteraction.baseReflectivity, outputDirectionDotMicrofacetNormal,
+    opaqueSurfaceMaterialInteractionGetFresnelGrazing(opaqueSurfaceMaterialInteraction));
+  // NV-DXVK end
   const float normalDistributionFunction = evalGGXNormalDistributionIsotropic(opaqueSurfaceMaterialInteraction.isotropicRoughness, normalDotMicrofacetNormal);
   // Note: Actual shadowing/masking (G) function omitted from visibility calculation for a cheaper approximation.
   const float visibility = safePositiveDivide(float(1), float(4) * normalDotInputDirection * normalDotOutputDirection, materialEpsilon);
@@ -1951,8 +2045,11 @@ SurfaceMaterialInteractionSplitWeight opaqueSurfaceMaterialInteractionCalcProjec
 
   // Calculate the weight
 
+  // NV-DXVK start: Material-scoped Fresnel controls.
   const vec3 fresnel = evalOpaqueSchlickFresnel(
-    opaqueSurfaceMaterialInteraction.baseReflectivity, outputDirectionDotMicrofacetNormal);
+    opaqueSurfaceMaterialInteraction.baseReflectivity, outputDirectionDotMicrofacetNormal,
+    opaqueSurfaceMaterialInteractionGetFresnelGrazing(opaqueSurfaceMaterialInteraction));
+  // NV-DXVK end
 
   // Todo: Pass in a material mode similar to the resolve mode to control this sort of material simplification option.
 #ifdef OPAQUE_MATERIAL_USE_THIN_FILM

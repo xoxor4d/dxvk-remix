@@ -64,6 +64,10 @@ namespace dxvk {
     uint32_t nvidiaLinuxMinDriver;
     // NV-DXVK end
 
+    // NV-DXVK start: command lists submitted or unfinished before DxvkSubmissionQueue::submit blocks
+    uint32_t maxQueuedCommandBuffers;
+    // NV-DXVK end
+
     // NV-DXVK start: configurable memory allocation chunk sizes
     uint32_t deviceLocalMemoryChunkSizeMB;
     uint32_t otherMemoryChunkSizeMB;

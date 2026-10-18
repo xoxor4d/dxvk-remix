@@ -135,6 +135,7 @@ HRESULT Direct3DSurface9_LSS::LockRect(D3DLOCKED_RECT* pLockedRect, CONST RECT* 
 
   // We send LockRect() calls to server in cases wherein backbuffer is used to capture the screenshot
   if (m_isBackBuffer && ClientOptions::getEnableBackbufferCapture() && !(Flags & D3DLOCK_DISCARD)) {
+    DeviceBridge::ResponseTransaction responseTransaction;
     UID currentUID;
     {
       ClientMessage c(Commands::IDirect3DSurface9_LockRect, getId());
@@ -263,6 +264,10 @@ void* Direct3DSurface9_LSS::getBufPtr(const int pitch, const RECT& rect) {
 
 void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
   const auto dataFlag = m_bUseSharedHeap ? Commands::FlagBits::DataInSharedHeap : 0;
+  if (bridge_util::perf::enabled()) {
+    const auto [width, height] = getRectDimensions(lockInfo.rect);
+    bridge_util::perf::noteUpload(bridge_util::calcTotalSizeOfRect(width, height, m_desc.Format));
+  }
   {
     ClientMessage c(Commands::IDirect3DSurface9_UnlockRect, getId(), dataFlag);
     c.send_data(sizeof(RECT), &lockInfo.rect);

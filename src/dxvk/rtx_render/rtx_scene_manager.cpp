@@ -24,6 +24,8 @@
 #include <vector>
 
 #include "rtx_asset_replacer.h"
+#include "rtx_fork_hooks.h"
+#include "rtx_weather.h"
 #include "rtx_scene_manager.h"
 #include "rtx_opacity_micromap_manager.h"
 #include "dxvk_device.h"
@@ -152,6 +154,7 @@ namespace dxvk {
     instanceEvents.onInstanceUpdatedCallback = [this](RtInstance& instance, const DrawCallState& drawCall, const MaterialData* material, bool hasTransformChanged, bool hasVerticesChanged, bool isFirstUpdateThisFrame) { onInstanceUpdated(instance, drawCall, material, hasTransformChanged, hasVerticesChanged, isFirstUpdateThisFrame); };
     instanceEvents.onInstanceDestroyedCallback = [this](RtInstance& instance) { onInstanceDestroyed(instance); };
     m_instanceManager.addEventHandler(instanceEvents);
+    m_weatherBlender = std::make_unique<WeatherBlender>();
     
     if (env::getEnvVar("DXVK_RTX_CAPTURE_ENABLE_ON_FRAME") != "") {
       m_beginUsdExportFrameNum = stoul(env::getEnvVar("DXVK_RTX_CAPTURE_ENABLE_ON_FRAME"));
@@ -206,7 +209,7 @@ namespace dxvk {
   float SceneManager::getTotalMipBias() {
     auto& resourceManager = m_device->getCommon()->getResources();
   
-    const bool temporalUpscaling = RtxOptions::isDLSSOrRayReconstructionEnabled() || RtxOptions::isXeSSEnabled() || RtxOptions::isTAAEnabled();
+    const bool temporalUpscaling = RtxOptions::isDLSSOrRayReconstructionEnabled() || RtxOptions::isXeSSEnabled() || RtxOptions::isFSREnabled() || RtxOptions::isTAAEnabled();
     
     float totalUpscaleMipBias = 0.0f;
     
@@ -221,6 +224,8 @@ namespace dxvk {
           float xessMipBias = xess.calcRecommendedMipBias();
           totalUpscaleMipBias += xessMipBias;
         }
+      } else if (RtxOptions::isFSREnabled()) {
+        totalUpscaleMipBias = fork_hooks::fsrUpscalingMipBias(m_device);
       } else {
         // Restore original behavior for DLSS, TAA, and other upscalers
         totalUpscaleMipBias = log2(resourceManager.getUpscaleRatio()) + RtxOptions::upscalingMipBias();
@@ -233,7 +238,7 @@ namespace dxvk {
   float SceneManager::getCalculatedUpscalingMipBias() {
     auto& resourceManager = m_device->getCommon()->getResources();
     
-    const bool temporalUpscaling = RtxOptions::isXeSSEnabled();
+    const bool temporalUpscaling = RtxOptions::isXeSSEnabled() || RtxOptions::isFSREnabled();
     if (!temporalUpscaling) {
       return 0.0f;
     }
@@ -407,12 +412,15 @@ namespace dxvk {
       ~BufferCacheGuard() { sceneManager.updateBufferCache(pBlas); }
     } bufferCacheGuard { *this, pBlas };
 
+    const bool texcoordsChanged = !isNew &&
+      input.hashes[HashComponents::VertexTexcoord] != inOutGeometry.hashes[HashComponents::VertexTexcoord];
+
     // Determine the optimal object state for this geometry
     if (!isNew) {
       // This is a geometry we've seen before, that requires updating
       //  'inOutGeometry' has valid historical data
       if (input.hashes[HashComponents::Indices] == inOutGeometry.hashes[HashComponents::Indices]) {
-        // Check if the vertex positions have changed, requiring a BVH refit
+        // Position changes require a BVH refit; UV-only changes may reuse the BVH.
         if (input.hashes[HashComponents::VertexPosition] == inOutGeometry.hashes[HashComponents::VertexPosition]
          && input.hashes[HashComponents::VertexShader] == inOutGeometry.hashes[HashComponents::VertexShader]
          && drawCallState.getSkinningState().boneHash == inOutGeometry.lastBoneHash) {
@@ -470,6 +478,33 @@ namespace dxvk {
     const size_t vertexStride = (input.isVertexDataInterleaved() && input.areFormatsGpuFriendly() && !forceNormals)
       ? input.positionBuffer.stride()
       : RtxGeometryUtils::computeOptimalVertexStride(input, forceNormals);
+
+    if (result == ObjectCacheState::kUpdateInstance && texcoordsChanged) {
+      const auto sameLayout = [](const RasterBuffer& source, const RaytraceBuffer& cached) {
+        return source.defined() == cached.defined() && (!source.defined() ||
+          (source.offsetFromSlice() == cached.offsetFromSlice() &&
+           source.stride() == cached.stride() && source.vertexFormat() == cached.vertexFormat()));
+      };
+      // In-place copies must preserve BLAS position addresses and any post-processed vertex data.
+      const bool canRefreshInPlace = optimizeAnimatedTexcoords() &&
+        !drawCallState.usesVertexShader && drawCallState.getSkinningState().numBones == 0 &&
+        input.numBonesPerVertex == 0 && !needsSmoothNormals &&
+        (!m_opacityMicromapManager || !m_opacityMicromapManager->isActive()) &&
+        input.isVertexDataInterleaved() && input.areFormatsGpuFriendly() &&
+        input.vertexCount == output.vertexCount &&
+        output.historyBuffer[0]->info().size == align(vertexStride * input.vertexCount, CACHE_LINE_SIZE) &&
+        sameLayout(input.positionBuffer, output.positionBuffer) &&
+        sameLayout(input.normalBuffer, output.normalBuffer) &&
+        sameLayout(input.texcoordBuffer, output.texcoordBuffer) &&
+        sameLayout(input.color0Buffer, output.color0Buffer);
+
+      if (canRefreshInPlace) {
+        RtxGeometryUtils::cacheVertexDataOnGPU(ctx, input, output);
+        m_instanceManager.notifySceneChanged();
+      } else {
+        result = ObjectCacheState::kUpdateBVH;
+      }
+    }
 
     switch (result) {
       case ObjectCacheState::KBuildBVH: {
@@ -688,6 +723,7 @@ namespace dxvk {
     trackMeshHash(activeReplacementHash);
 
     std::shared_ptr<const ReplacementBucket> pReplacements = m_pReplacer->getReplacementsForMesh(activeReplacementHash);
+    fork_hooks::logD3D9GeometryHash(input, activeReplacementHash, pReplacements != nullptr);
 
     // TODO (REMIX-656): Remove this once we can transition content to new hash
     if ((RtxOptions::geometryHashGenerationRule() & rules::LegacyAssetHash0) == rules::LegacyAssetHash0) {
@@ -881,7 +917,7 @@ namespace dxvk {
     }
 
     // Standard legacy material conversion
-    return input.getMaterialData().as<OpaqueMaterialData>();
+    return MaterialData::fromLegacy(input.getMaterialData());
   }
 
   void SceneManager::createEffectLight(Rc<DxvkContext> ctx, const DrawCallState& input, const RtInstance* instance) {
@@ -1579,7 +1615,7 @@ namespace dxvk {
     }
     if (instance && pParticleSystemDesc) {
       RtxParticleSystemManager& particleSystem = device()->getCommon()->metaParticleSystem();
-      particleSystem.spawnParticles(ctx.ptr(), *pParticleSystemDesc, instance->getVectorIdx(), drawCallState, renderMaterialData);
+      particleSystem.spawnParticles(ctx.ptr(), *pParticleSystemDesc, instance->getVectorIdx(), instance->getId(), drawCallState, renderMaterialData);
 
       if (pParticleSystemDesc->hideEmitter) {
         instance->setHidden(true);
@@ -1686,6 +1722,13 @@ namespace dxvk {
       texturePresenceMask |= opaqueMaterialData.getSubsurfaceSingleScatteringAlbedoTexture().isImageEmpty() ? 0u : (1u << 10);
       texturePresenceMask |= opaqueMaterialData.getSubsurfaceRadiusTexture().isImageEmpty()          ? 0u : (1u << 11);
       preCreationHash = XXH64(&texturePresenceMask, sizeof(texturePresenceMask), preCreationHash);
+
+      // Fold in the sRGB-linearization toggle so flipping rtx.linearizeSrgbTextures at runtime invalidates
+      // cached opaque materials, forcing them to rebuild with the new albedo/emissive sRGB flags. Without this
+      // the preCreationHash cache below would keep serving materials built under the previous setting, so the
+      // change would only reach freshly-encountered materials. Enables a live A/B without reloading.
+      const uint32_t srgbLinearizeToggle = RtxOptions::linearizeSrgbTextures() ? 1u : 0u;
+      preCreationHash = XXH64(&srgbLinearizeToggle, sizeof(srgbLinearizeToggle), preCreationHash);
     }
 
     auto iter = m_preCreationSurfaceMaterialMap.find(preCreationHash);
@@ -1737,6 +1780,10 @@ namespace dxvk {
 
       bool ignoreAlphaChannel = false;
 
+      uint16_t d3dModifierFlags = 0u;
+      uint16_t d3dData0 = 0u;
+      uint16_t d3dData1 = 0u;
+
       constexpr Vector4 kWhiteModeAlbedo = Vector4(0.7f, 0.7f, 0.7f, 1.0f);
 
       const auto& opaqueMaterialData = renderMaterialData.getOpaqueMaterialData();
@@ -1774,6 +1821,57 @@ namespace dxvk {
       displaceOut = opaqueMaterialData.getDisplaceOut();
 
       ignoreAlphaChannel = opaqueMaterialData.getIgnoreAlphaChannel();
+
+      // Per draw call overrides from unused D3D render states (GTA4 compatibility mod)
+      {
+        const LegacyMaterialData& legacyMaterialData = drawCallState.getMaterialData();
+        const CategoryFlags d3dCategories(legacyMaterialData.remixTextureCategoryFlagsFromD3D);
+        const uint32_t d3dModifiers = legacyMaterialData.remixModifierFromD3D;
+        const bool forceVertexColorModulate = drawCallState.testCategoryFlags(InstanceCategories::Beam) || d3dCategories.test(InstanceCategories::Beam);
+
+        // The ignore alpha lookup above is hash based, so the per draw call category has to be checked here.
+        if (d3dCategories.test(InstanceCategories::IgnoreAlphaChannel)) {
+          ignoreAlphaChannel = true;
+        }
+
+        if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR) {
+          emissiveIntensity *= legacyMaterialData.remixTempFloat01FromD3D;
+        }
+
+        if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR) {
+          const uint32_t packedWetness = legacyMaterialData.remixPackedFloat4_RS210FromD3D;
+          d3dData0 = uint16_t(packedWetness & 0xFFFF);
+          d3dData1 = uint16_t((packedWetness >> 16) & 0xFFFF);
+          d3dModifierFlags |= D3D_OPAQUE_MODIFIER_ROUGHNESS_SCALAR;
+        }
+
+        if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_ENABLE_VERTEX_COLOR) {
+          d3dModifierFlags |= D3D_OPAQUE_MODIFIER_ENABLE_VERTEX_COLOR;
+        }
+
+        // Vertex color is set to white but keeps its alpha when requested or when tagged as terrain,
+        // unless the beam category asks for full vertex color modulation.
+        if (((d3dModifiers & REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA) || drawCallState.testCategoryFlags(InstanceCategories::Terrain))
+            && !forceVertexColorModulate) {
+          d3dModifierFlags |= D3D_OPAQUE_MODIFIER_REM_VERTEX_COLOR_KEEP_ALPHA;
+        }
+
+        if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_VEHICLE_DECAL_DIRT) {
+          d3dModifierFlags |= D3D_OPAQUE_MODIFIER_VEHICLE_DECAL_DIRT;
+        }
+
+        // Global UV animation: a 2x3 affine UV transform, the two extra terms go into the D3D payload and the rest
+        // replaces the albedo constant (static colors are not used on animated surfaces).
+        if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_GLOBAL_UV_MODIFIER) {
+          d3dModifierFlags |= D3D_OPAQUE_MODIFIER_GLOBAL_UV_MODIFIER;
+          d3dData0 = glm::packHalf1x16(legacyMaterialData.remixFloatRS211FromD3D);
+          d3dData1 = glm::packHalf1x16(legacyMaterialData.remixFloatRS212FromD3D);
+          albedoOpacityConstant.x = legacyMaterialData.remixFloatRS213FromD3D;
+          albedoOpacityConstant.y = legacyMaterialData.remixFloatRS214FromD3D;
+          albedoOpacityConstant.z = legacyMaterialData.remixFloatRS215FromD3D;
+          albedoOpacityConstant.w = legacyMaterialData.remixFloatRS216FromD3D;
+        }
+      }
 
       subsurfaceMeasurementDistance = opaqueMaterialData.getSubsurfaceMeasurementDistance() * RtxOptions::SubsurfaceScattering::surfaceThicknessScale();
 
@@ -1828,6 +1926,23 @@ namespace dxvk {
         subsurfaceMaterialIndex = m_surfaceMaterialExtensionCache.track(subsurfaceMaterial);
       }
 
+      // Detect whether the albedo/emissive source textures use an sRGB VkFormat. If so, the sampler hardware
+      // linearizes them on read, so the shader must skip its own gammaToLinear() to avoid double linearization.
+      // Gated behind linearizeSrgbTextures() (default on) for A/B; when off the flags stay clear and the shader
+      // always applies the software conversion (legacy behavior). Uses the resolved image-view format, which is
+      // available here whenever the texture is loaded (an unloaded texture reports isImageEmpty(), which also
+      // feeds the material cache key, so the material is rebuilt with the correct flag once the texture resolves).
+      const bool srgbLinearizeEnabled = RtxOptions::linearizeSrgbTextures();
+      auto textureUsesSrgbFormat = [srgbLinearizeEnabled](const TextureRef& tex) -> bool {
+        if (!srgbLinearizeEnabled) {
+          return false;
+        }
+        const DxvkImageView* view = tex.getImageView();
+        return view != nullptr && TextureUtils::isSRGB(view->info().format);
+      };
+      const bool albedoTextureIsSrgb = textureUsesSrgbFormat(opaqueMaterialData.getAlbedoOpacityTexture());
+      const bool emissiveTextureIsSrgb = textureUsesSrgbFormat(opaqueMaterialData.getEmissiveColorTexture());
+
       const RtOpaqueSurfaceMaterial opaqueSurfaceMaterial{
         albedoOpacityTextureIndex, normalTextureIndex,
         tangentTextureIndex, heightTextureIndex, roughnessTextureIndex,
@@ -1844,12 +1959,16 @@ namespace dxvk {
         opaqueMaterialData.getDLSSControlMaskStructuralStrength(),
         subsurfaceMaterialIndex, isUsingRaytracedRenderTarget, isHairCard,
         samplerFeedbackStamp,
-        secondaryTextureIndex
+        secondaryTextureIndex,
+        albedoTextureIsSrgb, emissiveTextureIsSrgb,
+        opaqueMaterialData.getSkyLitParticle(),
+        renderMaterialData.usesLegacyDefaults(),
+        d3dModifierFlags, d3dData0, d3dData1
       };
 
       surfaceMaterial.emplace(opaqueSurfaceMaterial);
     } else if (renderMaterialDataType == MaterialDataType::Translucent) {
-      surfaceMaterial.emplace(createTranslucentSurfaceMaterial(renderMaterialData.getTranslucentMaterialData(), samplerIndex, hasTexcoords));
+      surfaceMaterial.emplace(createTranslucentSurfaceMaterial(&drawCallState, renderMaterialData.getTranslucentMaterialData(), samplerIndex, hasTexcoords));
     } else if (renderMaterialDataType == MaterialDataType::RayPortal) {
       const auto& rayPortalMaterialData = renderMaterialData.getRayPortalMaterialData();
 
@@ -1884,7 +2003,8 @@ namespace dxvk {
   }
 
 
-  RtTranslucentSurfaceMaterial SceneManager::createTranslucentSurfaceMaterial(const TranslucentMaterialData& translucentMaterialData,
+  RtTranslucentSurfaceMaterial SceneManager::createTranslucentSurfaceMaterial(const DrawCallState* drawCallState,
+                                                                              const TranslucentMaterialData& translucentMaterialData,
                                                                               uint32_t samplerIndex,
                                                                               bool hasTexcoords) {
     uint32_t normalTextureIndex = kSurfaceMaterialInvalidTextureIndex;
@@ -1896,6 +2016,47 @@ namespace dxvk {
     trackTexture(translucentMaterialData.getTransmittanceTexture(), transmittanceTextureIndex, hasTexcoords, true, &samplerFeedbackStamp);
     trackTexture(translucentMaterialData.getEmissiveColorTexture(), emissiveColorTextureIndex, hasTexcoords, true, &samplerFeedbackStamp);
 
+    float emissiveIntensity = translucentMaterialData.getEmissiveIntensity() * RtxOptions::emissiveIntensity();
+
+    // Per draw call overrides from unused D3D render states (GTA4 compatibility mod), absent for API medium materials
+    uint16_t d3dModifierFlags = 0u;
+    uint16_t wetnessParams1 = 0u;
+    uint16_t wetnessParams2 = 0u;
+    float freeFloat01 = 0.0f;
+    float freeFloat02 = 0.0f;
+
+    if (drawCallState) {
+      const LegacyMaterialData& legacyMaterialData = drawCallState->getMaterialData();
+      const uint32_t d3dModifiers = legacyMaterialData.remixModifierFromD3D;
+
+      if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR) {
+        emissiveIntensity *= legacyMaterialData.remixTempFloat01FromD3D;
+      }
+
+      if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_ROUGHNESS_SCALAR) {
+        const uint32_t packedWetness = legacyMaterialData.remixPackedFloat4_RS210FromD3D;
+        wetnessParams1 = uint16_t(packedWetness & 0xFFFF);
+        wetnessParams2 = uint16_t((packedWetness >> 16) & 0xFFFF);
+        d3dModifierFlags |= D3D_TRANSLUCENT_MODIFIER_RAINDROPS;
+      }
+
+      if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_TRANSLUCENT_WORLDPOS_AS_TEXUV) {
+        d3dModifierFlags |= D3D_TRANSLUCENT_MODIFIER_WORLDPOS_AS_TEXUV;
+        freeFloat01 = legacyMaterialData.remixFloatRS211FromD3D;
+      }
+
+      if (d3dModifiers & REMIX_MODIFIER_FROM_D3D_TRANSLUCENT_FADE_NORMAL_UNTIL_DIST) {
+        freeFloat02 = legacyMaterialData.remixFloatRS212FromD3D;
+      }
+
+      // Water: the shoreline modifier or the AnimatedWater category
+      const CategoryFlags d3dCategories(legacyMaterialData.remixTextureCategoryFlagsFromD3D);
+      if ((d3dModifiers & REMIX_MODIFIER_FROM_D3D_WATER_SHORELINE) ||
+          drawCallState->testCategoryFlags(InstanceCategories::AnimatedWater) || d3dCategories.test(InstanceCategories::AnimatedWater)) {
+        d3dModifierFlags |= D3D_TRANSLUCENT_MODIFIER_WATER_SHORELINE;
+      }
+    }
+
     return RtTranslucentSurfaceMaterial{
       normalTextureIndex,
       transmittanceTextureIndex,
@@ -1904,13 +2065,14 @@ namespace dxvk {
       translucentMaterialData.getTransmittanceMeasurementDistance(),
       translucentMaterialData.getTransmittanceColor(),
       translucentMaterialData.getEnableEmission(),
-      translucentMaterialData.getEmissiveIntensity() * RtxOptions::emissiveIntensity(),
+      emissiveIntensity,
       translucentMaterialData.getEmissiveColorConstant(),
       translucentMaterialData.getEnableThinWalled(),
       translucentMaterialData.getThinWallThickness(),
       translucentMaterialData.getEnableDiffuseLayer(),
       samplerIndex,
-      samplerFeedbackStamp
+      samplerFeedbackStamp,
+      d3dModifierFlags, wetnessParams1, wetnessParams2, freeFloat01, freeFloat02
     };
   }
 
@@ -1945,7 +2107,7 @@ namespace dxvk {
 
     const auto samplerIndex = trackSampler(getOrCreateExternalSampler());
     const auto surfaceMaterial = RtSurfaceMaterial(
-      createTranslucentSurfaceMaterial(translucentMaterial.getTranslucentMaterialData(), samplerIndex, true));
+      createTranslucentSurfaceMaterial(nullptr, translucentMaterial.getTranslucentMaterialData(), samplerIndex, true));
 
     m_externalStartInMediumMaterialIndex_inCache = m_surfaceMaterialCache.track(surfaceMaterial);
   }
@@ -2262,7 +2424,7 @@ namespace dxvk {
         assert(m_persistentStartInMediumMaterial->getType() == MaterialDataType::Translucent);
         const auto samplerIndex = trackSampler(getOrCreateExternalSampler());
         const auto surfaceMaterial = RtSurfaceMaterial(
-          createTranslucentSurfaceMaterial(m_persistentStartInMediumMaterial->getTranslucentMaterialData(), samplerIndex, true));
+          createTranslucentSurfaceMaterial(nullptr, m_persistentStartInMediumMaterial->getTranslucentMaterialData(), samplerIndex, true));
         persistentStartInMediumMaterialIndexInCache = m_surfaceMaterialCache.track(surfaceMaterial);
       }
 
@@ -2522,10 +2684,44 @@ namespace dxvk {
   void SceneManager::submitExternalDraw(const Rc<DxvkContext>& ctx, std::unique_ptr<ExternalDrawState> pstate) {
     ScopedCpuProfileZone();
 
-    Rc<DxvkSampler> externalSampler = getOrCreateExternalSampler();
-
     auto& state = *pstate;
 
+    if (!state.gpuInstancingTransforms.empty()) {
+      state.drawCall.modifyTransformData().instancesToObject =
+        std::make_shared<const std::vector<Matrix4>>(std::move(state.gpuInstancingTransforms));
+    }
+
+    const XXH64_hash_t meshHash = reinterpret_cast<XXH64_hash_t>(state.mesh);
+
+    // Fetch submeshes once: they drive both the replacement path (needs submeshes[0]
+    // as geometry template) and the default iteration path.
+    const auto submeshesRef = m_pReplacer->accessExternalMesh(state.mesh);
+    if (submeshesRef == nullptr || submeshesRef->empty()) {
+      Logger::err(str::format("[RTX-Mesh] External mesh has no submeshes: 0x", std::hex, meshHash, std::dec));
+      return;
+    }
+    const auto& submeshes = *submeshesRef;
+
+    // Persistence-tracking setup happens before the replacement-lookup early-out
+    // so the same ReplacementInstance can be threaded through both paths:
+    // drawReplacements() requires a non-null instance and uses it to drive
+    // RtInstance reuse across frames for the replacement primitives.
+    const XXH64_hash_t identityHash = state.computeExternalDrawIdentityHash();
+    const XXH64_hash_t spatialMapHash = spatialMapHashForExternalDrawMesh(state.mesh);
+    const Matrix4& xform = state.drawCall.getTransformData().objectToWorld;
+    const XXH64_hash_t matHash = state.drawCall.getMaterialData().getHash();
+    const Vector3 worldPos = xform[3].xyz();
+
+    const ReplacementInstance::LookupKey externalKey { identityHash, spatialMapHash, matHash, kEmptyHash, worldPos, xform };
+    ReplacementInstance* replacementInstance = m_drawCallTracker.findOrCreateReplacementInstance(externalKey);
+    // NV-DXVK start: preserve path for unchanged external draws; option reads below invalidate it like the D3D9 path.
+    // The samplers and view transforms only the dynamic path needs are set up after it.
+    if (fork_hooks::externalDrawTryPreserve(*this, ctx, state, submeshesRef, *replacementInstance)) {
+      return;
+    }
+    RTX_OPTION_INVALIDATION_SCOPE(RtxOptionFlags::InvalidatesDrawcallTranslation);
+
+    Rc<DxvkSampler> externalSampler = getOrCreateExternalSampler();
     {
       state.drawCall.modifyMaterialData().samplers[0] = externalSampler;
       state.drawCall.modifyMaterialData().samplers[1] = externalSampler;
@@ -2537,24 +2733,26 @@ namespace dxvk {
       state.drawCall.modifyTransformData().viewToProjection = rtCamera.getViewToProjectionf();
       state.drawCall.modifyTransformData().objectToView = state.drawCall.getTransformData().worldToView * state.drawCall.getTransformData().objectToWorld;
     }
+    // NV-DXVK end
+    replacementInstance->dirtyFlags.clr(ReplacementInstance::kDynamicFeatureMask);
 
-    if (!state.gpuInstancingTransforms.empty()) {
-      state.drawCall.modifyTransformData().instancesToObject =
-        std::make_shared<const std::vector<Matrix4>>(std::move(state.gpuInstancingTransforms));
+    if (auto pReplacements = fork_hooks::externalDrawMeshReplacement(*m_pReplacer, meshHash, submeshes[0].externalMaterial, state.drawCall.getMaterialData())) {
+      // Copy the DrawCallState so we don't mutate the caller's state. Point geometryData
+      // at submeshes[0] as the replacement geometry template and clear externalMaterial so
+      // the USD replacement material takes precedence.
+      DrawCallState replacementDrawCall = state.drawCall;
+      RasterGeometry& replacementGeometry = replacementDrawCall.modifyGeometryData();
+      replacementGeometry = submeshes[0];
+      replacementGeometry.cullMode = state.doubleSided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
+      replacementGeometry.externalMaterial = nullptr;
+
+      MaterialData renderMaterialData = fork_hooks::externalDrawPrepareReplacementInstance(*m_device, *m_pReplacer, *this, replacementDrawCall, submeshes[0].externalMaterial, submeshes.size(), pReplacements, *replacementInstance);
+      drawReplacements(ctx, &replacementDrawCall, pReplacements, renderMaterialData, replacementInstance);
+      fork_hooks::externalDrawFinishReplacementInstance(*m_device, replacementDrawCall, *replacementInstance);
+      return;
     }
 
-    const auto submeshesRef = m_pReplacer->accessExternalMesh(state.mesh);
-    const auto& submeshes = *submeshesRef;
-
-    const XXH64_hash_t identityHash = state.computeExternalDrawIdentityHash();
-    const XXH64_hash_t spatialMapHash = spatialMapHashForExternalDrawMesh(state.mesh);
-    const Matrix4& xform = state.drawCall.getTransformData().objectToWorld;
-    const XXH64_hash_t matHash = state.drawCall.getMaterialData().getHash();
-    const Vector3 worldPos = xform[3].xyz();
-
-    const ReplacementInstance::LookupKey externalKey { identityHash, spatialMapHash, matHash, kEmptyHash, worldPos, xform };
-    ReplacementInstance* replacementInstance = m_drawCallTracker.findOrCreateReplacementInstance(externalKey);
-    replacementInstance->dirtyFlags.clr(ReplacementInstance::kDynamicFeatureMask);
+    fork_hooks::externalDrawReleaseReplacementInstance(*replacementInstance);
 
     AxisAlignedBoundingBox geometryBBox;
 
@@ -2567,15 +2765,25 @@ namespace dxvk {
         std::shared_ptr<const RasterGeometry>(submeshesRef, &submeshes[i]));
       state.drawCall.overrideCullMode(state.doubleSided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT);
 
+      XXH64_hash_t textureHash = 0;
+
       const MaterialData* material = m_pReplacer->accessExternalMaterial(submeshes[i].externalMaterial);
+      // Keeps a USD replacement material alive for the rest of this iteration when one is found.
+      std::shared_ptr<MaterialData> replacementMaterialKeepAlive;
       if (material != nullptr) {
-        state.drawCall.modifyMaterialData().setHashOverride(material->getHash());
-      } 
+        replacementMaterialKeepAlive = fork_hooks::externalDrawMaterialReplacement(*m_pReplacer, submeshes[i].externalMaterial, material, state.drawCall.getMaterialData());
+
+        state.drawCall.modifyMaterialData().setHashOverride(fork_hooks::externalMaterialKey(submeshes[i].externalMaterial, *material, state.drawCall.getMaterialData()));
+
+        fork_hooks::externalDrawTextureCategories(submeshes[i].externalMaterial, material, state.drawCall, textureHash);
+      }
 
       const RtxParticleSystemDesc* pParticles = nullptr;
       if (state.optionalParticleDesc.has_value()) {
         pParticles = &state.optionalParticleDesc.value();
       }
+
+      fork_hooks::externalDrawObjectPicking(*m_device, state.drawCall, textureHash, *this);
 
       RtInstance* existingInstance = (replacementInstance->prims.size() > i)
           ? replacementInstance->prims[i].getInstance() : nullptr;

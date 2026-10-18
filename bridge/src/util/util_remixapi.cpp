@@ -36,6 +36,7 @@ namespace util {
 MaterialHandle::HandleMapT MaterialHandle::s_handleMap;
 MeshHandle::HandleMapT MeshHandle::s_handleMap;
 LightHandle::HandleMapT LightHandle::s_handleMap;
+TextureHandle::HandleMapT TextureHandle::s_handleMap;
 #endif
 }
 }
@@ -225,6 +226,40 @@ void deserialize(void*& deserializeFrom, remixapi_Path& deserializeTo) {
   }
 }
 
+// const char* (nullable)
+static inline uint32_t strSize(const char* const str) {
+  return str ? (uint32_t) strlen(str) + 1 : 0;
+}
+template<>
+static inline uint32_t sizeOf(const char* const& str) {
+  return sizeOf<bool>() + (str ? sizeOf<uint32_t>() + strSize(str) : 0);
+}
+template<>
+void serialize(const char* const& serializeFrom, void*& pSerialize) {
+  serialize((serializeFrom) ? true : false, pSerialize);
+  if (serializeFrom) {
+    const uint32_t size = strSize(serializeFrom);
+    serialize(size, pSerialize);
+    serialize(serializeFrom, pSerialize, size);
+  }
+}
+template<>
+void deserialize(void*& deserializeFrom, const char*& deserializeTo) {
+  bool bIsValidString = false;
+  deserialize(deserializeFrom, bIsValidString);
+  deserializeTo = nullptr;
+  if (bIsValidString) {
+    uint32_t size = 0;
+    deserialize(deserializeFrom, size);
+    if (size > 0) {
+      auto str = new char[size];
+      deserialize(deserializeFrom, str, size);
+      str[size - 1] = '\0';
+      deserializeTo = str;
+    }
+  }
+}
+
 // remixapi_HardcodedVertex
 template<>
 static inline constexpr uint32_t sizeOf<remixapi_HardcodedVertex>() {
@@ -410,6 +445,26 @@ void MaterialInfoPortal::_deserialize(void*& pDeserialize) {
 void MaterialInfoPortal::_dtor() {
 }
 
+
+// colorTexture crosses the bridge as the client's D3D object id: the client translates
+// its texture proxy before serializing and the server resolves the id afterwards
+uint32_t MaterialInfoGameTextures::_calcSize() const {
+  return fold_helper::calcSize(sType) + sizeOf<uint32_t>();
+}
+void MaterialInfoGameTextures::_serialize(void*& pSerialize) const {
+  fold_helper::serialize(pSerialize, sType);
+  bridge_util::serialize((uint32_t) (uintptr_t) colorTexture, pSerialize);
+}
+void MaterialInfoGameTextures::_deserialize(void*& pDeserialize) {
+  pNext = nullptr;
+  fold_helper::deserialize(pDeserialize, sType);
+  uint32_t textureId = 0;
+  bridge_util::deserialize(pDeserialize, textureId);
+  colorTexture = reinterpret_cast<IDirect3DTexture9*>((uintptr_t) textureId);
+}
+void MaterialInfoGameTextures::_dtor() {
+}
+
 //////////////
 // MeshInfo //
 //////////////
@@ -438,11 +493,12 @@ uint32_t MeshInfo::_calcSize() const {
   return size;
 }
 
-static inline uint32_t blendWeightSizePerVtx(const remixapi_MeshInfoSkinning& skinning) {
-  return skinning.blendWeights_count * skinning.bonesPerVertex * sizeof(float);
+// blendWeights_count / blendIndices_count are the total element counts (bonesPerVertex * vertex count)
+static inline uint32_t blendWeightsSize(const remixapi_MeshInfoSkinning& skinning) {
+  return skinning.blendWeights_count * sizeof(float);
 }
-static inline uint32_t blendIndicesSizePerVtx(const remixapi_MeshInfoSkinning& skinning) {
-  return skinning.blendIndices_count * skinning.bonesPerVertex * sizeof(uint32_t);
+static inline uint32_t blendIndicesSize(const remixapi_MeshInfoSkinning& skinning) {
+  return skinning.blendIndices_count * sizeof(uint32_t);
 }
 template<>
 static inline uint32_t sizeOf(const remixapi_MeshInfoSurfaceTriangles& surface) {
@@ -455,9 +511,9 @@ static inline uint32_t sizeOf(const remixapi_MeshInfoSurfaceTriangles& surface) 
   if(surface.skinning_hasvalue) {
     size += sizeOf(surface.skinning_value.bonesPerVertex);
     size += sizeOf(surface.skinning_value.blendWeights_count);
-    size += surface.vertices_count * blendWeightSizePerVtx(surface.skinning_value);
+    size += blendWeightsSize(surface.skinning_value);
     size += sizeOf(surface.skinning_value.blendIndices_count);
-    size += surface.vertices_count * blendIndicesSizePerVtx(surface.skinning_value);
+    size += blendIndicesSize(surface.skinning_value);
   }
   size += sizeof(uint32_t);
   return size;
@@ -490,12 +546,12 @@ void serialize(const remixapi_MeshInfoSurfaceTriangles& surface, void*& pSeriali
     bridge_util::serialize(skinning.bonesPerVertex, pSerialize);
     // Blend Weights
     bridge_util::serialize(skinning.blendWeights_count, pSerialize);
-    const size_t blendWeightsSize = surface.vertices_count * blendWeightSizePerVtx(skinning);
-    bridge_util::serialize(skinning.blendWeights_values, pSerialize, blendWeightsSize);
+    const size_t weightsSize = blendWeightsSize(skinning);
+    bridge_util::serialize(skinning.blendWeights_values, pSerialize, weightsSize);
     // Blend Indices
     bridge_util::serialize(skinning.blendIndices_count, pSerialize);
-    const size_t blendIndicesSize = surface.vertices_count * blendIndicesSizePerVtx(skinning);
-    bridge_util::serialize(skinning.blendIndices_values, pSerialize, blendIndicesSize);
+    const size_t indicesSize = blendIndicesSize(skinning);
+    bridge_util::serialize(skinning.blendIndices_values, pSerialize, indicesSize);
   }
   bridge_util::serialize(surface.material, pSerialize);
 }
@@ -523,12 +579,12 @@ void deserialize(void*& pDeserialize, remixapi_MeshInfoSurfaceTriangles& surface
     bridge_util::deserialize(pDeserialize, skinning.bonesPerVertex);
     // Blend Weights
     bridge_util::deserialize(pDeserialize, skinning.blendWeights_count);
-    const size_t blendWeightsSize = surface.vertices_count * blendWeightSizePerVtx(skinning);
-    deserialize_const_p(pDeserialize, skinning.blendWeights_values, blendWeightsSize);
+    const size_t weightsSize = blendWeightsSize(skinning);
+    deserialize_const_p(pDeserialize, skinning.blendWeights_values, weightsSize);
     // Blend Indices
     bridge_util::deserialize(pDeserialize, skinning.blendIndices_count);
-    const size_t blendIndicesSize = surface.vertices_count * blendIndicesSizePerVtx(skinning);
-    deserialize_const_p(pDeserialize, skinning.blendIndices_values, blendIndicesSize);
+    const size_t indicesSize = blendIndicesSize(skinning);
+    deserialize_const_p(pDeserialize, skinning.blendIndices_values, indicesSize);
   }
   bridge_util::deserialize(pDeserialize, surface.material);
 }
@@ -615,6 +671,48 @@ void InstanceInfoBlend::_deserialize(void*& pDeserialize) {
   fold_helper::deserialize(pDeserialize, InstanceInfoBlendVars);
 }
 void InstanceInfoBlend::_dtor() {
+}
+
+
+#define MeshInfoReplacementHashVars sType,                                     replacementHash
+uint32_t MeshInfoReplacementHash::_calcSize() const {
+  return fold_helper::calcSize(MeshInfoReplacementHashVars);
+}
+void MeshInfoReplacementHash::_serialize(void*& pSerialize) const {
+  fold_helper::serialize(pSerialize, MeshInfoReplacementHashVars);
+}
+void MeshInfoReplacementHash::_deserialize(void*& pDeserialize) {
+  pNext = nullptr;
+  fold_helper::deserialize(pDeserialize, MeshInfoReplacementHashVars);
+}
+void MeshInfoReplacementHash::_dtor() {
+}
+
+
+#define InstanceInfoD3DOverridesVars sType, \
+                                     categoryFlags, \
+                                     modifierFlags, \
+                                     hashOverride, \
+                                     hashSeed, \
+                                     emissiveScale, \
+                                     packedWetness, \
+                                     multiUse[0], \
+                                     multiUse[1], \
+                                     multiUse[2], \
+                                     multiUse[3], \
+                                     multiUse[4], \
+                                     multiUse[5]
+uint32_t InstanceInfoD3DOverrides::_calcSize() const {
+  return fold_helper::calcSize(InstanceInfoD3DOverridesVars);
+}
+void InstanceInfoD3DOverrides::_serialize(void*& pSerialize) const {
+  fold_helper::serialize(pSerialize, InstanceInfoD3DOverridesVars);
+}
+void InstanceInfoD3DOverrides::_deserialize(void*& pDeserialize) {
+  pNext = nullptr;
+  fold_helper::deserialize(pDeserialize, InstanceInfoD3DOverridesVars);
+}
+void InstanceInfoD3DOverrides::_dtor() {
 }
 
 
@@ -736,10 +834,12 @@ void InstanceInfoGpuInstancing::_dtor() {
 // LightInfo //
 ///////////////
 
-static_assert(sizeof(void*) != 8 || sizeof remixapi_LightInfo == 40, "recheck Bridge member list here");
+static_assert(sizeof(void*) != 8 || sizeof remixapi_LightInfo == 48, "recheck Bridge member list here");
 #define LightInfoVars sType, \
                       hash, \
-                      radiance
+                      radiance, \
+                      isDynamic, \
+                      ignoreViewModel
 uint32_t LightInfo::_calcSize() const {
   return fold_helper::calcSize(LightInfoVars);
 }

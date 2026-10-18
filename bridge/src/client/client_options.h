@@ -82,4 +82,23 @@ namespace ClientOptions {
   inline bool getOptimizedDynamicLock() {
     return bridge_util::Config::getOption<bool>("client.optimizedDynamicLock", false);
   }
+
+  // Non-blocking queries (docs/bridge-rework-study.md, A4): event queries are answered on the client from the
+  // server's processed-Issue counter, other queries through shared result slots. False = every GetData is a
+  // blocking round trip, as before. Read once per query object.
+  inline bool getAsyncQueries() {
+    return bridge_util::Config::getOption<bool>("client.asyncQueries", true);
+  }
+
+  // A3a (docs/bridge-rework-study.md): setters whose value the server already has are not sent (d3d9_sent_state.h).
+  // Read once per device.
+  inline bool getDropRedundantState() {
+    return bridge_util::Config::getOption<bool>("client.dropRedundantState", true);
+  }
+
+  // A3b (docs/bridge-rework-study.md): consecutive state setters travel as one Bridge_StatePacket command
+  // (util_bridgecommand.h StateMessage). False = one setter per packet, the per-command cost of before.
+  inline bool getBatchState() {
+    return bridge_util::Config::getOption<bool>("client.batchState", true);
+  }
 }

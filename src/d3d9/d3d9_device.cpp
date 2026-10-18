@@ -47,6 +47,7 @@
 #include "../dxvk/rtx_render/rtx_context.h"
 #include "../dxvk/rtx_render/rtx_options.h"
 #include "../dxvk/rtx_render/rtx_terrain_baker.h"
+#include "../dxvk/rtx_render/rtx_fork_hooks.h"
 
 #include "d3d9_initializer.h"
 
@@ -164,6 +165,7 @@ namespace dxvk {
   D3D9DeviceEx::~D3D9DeviceEx() {
     Flush();
     SynchronizeCsThread();
+    fork_hooks::shutdownGameTextures(this);
 
     delete m_initializer;
     delete m_converter;
@@ -1542,6 +1544,12 @@ namespace dxvk {
 
     if (unlikely(m_flags.test(D3D9DeviceFlag::InScene)))
       return D3DERR_INVALIDCALL;
+
+    // NV-DXVK start: end-of-frame events requested by window messages run on the device thread
+    if (m_implicitSwapchain.ptr() != nullptr) {
+      m_implicitSwapchain->processPendingRtxEndOfFrame();
+    }
+    // NV-DXVK end
 
     m_flags.set(D3D9DeviceFlag::InScene);
 
@@ -5094,6 +5102,7 @@ namespace dxvk {
 
       // NV-DXVK start: Implement memoization for some expensive CPU operations
       pResource->remixMemoization.invalidateAll();
+      ++pResource->remixContentVersion;
       // NV-DXVK end
     }
     else {
@@ -5129,6 +5138,7 @@ namespace dxvk {
       // NV-DXVK start: Implement memoization for some expensive CPU operations
       if (!readOnly) {
         pResource->remixMemoization.invalidate(offset, size);
+        ++pResource->remixContentVersion;
       }
       // NV-DXVK end
     }

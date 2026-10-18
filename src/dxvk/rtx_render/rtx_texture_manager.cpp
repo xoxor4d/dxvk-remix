@@ -22,6 +22,7 @@
 
 #include "dxvk_device.h"
 #include "rtx_texture_manager.h"
+#include "rtx_fork_hooks.h"
 #include "../../util/thread.h"
 #include "../../util/rc/util_rc_ptr.h"
 #include "dxvk_context.h"
@@ -78,6 +79,13 @@ namespace dxvk {
 
   namespace {
 
+    struct PriorityTexture {
+      ManagedTexture* texture = nullptr;
+      float weight = 0.0f;
+      uint32_t mipCount = 0;
+      size_t byteSize = 0;
+    };
+
     // A staging buffer slice that holds the data of a single mip.
     struct ReadyToCopyMip {
       DxvkBufferSlice srcBuffer;
@@ -105,6 +113,24 @@ namespace dxvk {
     };
 
 
+    size_t calcSizeForMip(
+      const AssetData& asset,
+      const DxvkFormatInfo* formatInfo,
+      const uint32_t level) {
+      const VkExtent3D levelExtent = util::computeMipLevelExtent(asset.info().extent, level);
+
+      // Align image extent to a full block. This is necessary in
+      // case the image size is not a multiple of the block size.
+      VkExtent3D elementCount = util::computeBlockCount(levelExtent, formatInfo->blockSize);
+      elementCount.depth *= asset.info().numLayers;
+
+      // Allocate staging buffer memory for the image data. The
+      // pixels or blocks will be tightly packed within the buffer.
+      return dxvk::align(
+        formatInfo->elementSize * util::flattenImageExtent(elementCount),
+        CACHE_LINE_SIZE);
+    }
+
     // Size in bytes required to upload a range of mips for the given asset.
     size_t calcSizeForAsset(
       const AssetData& asset,
@@ -114,20 +140,41 @@ namespace dxvk {
 
       size_t resultSize = 0;
       for (uint32_t level = mipLevels_begin; level < mipLevels_end; ++level) {
-        const VkExtent3D levelExtent = util::computeMipLevelExtent(asset.info().extent, level);
-
-        // Align image extent to a full block. This is necessary in
-        // case the image size is not a multiple of the block size.
-        VkExtent3D elementCount = util::computeBlockCount(levelExtent, formatInfo->blockSize);
-        elementCount.depth *= asset.info().numLayers;
-
-        // Allocate staging buffer memory for the image data. The
-        // pixels or blocks will be tightly packed within the buffer.
-        resultSize += dxvk::align(
-          formatInfo->elementSize * util::flattenImageExtent(elementCount),
-          CACHE_LINE_SIZE);
+        resultSize += calcSizeForMip(asset, formatInfo, level);
       }
       return resultSize;
+    }
+
+    size_t calcSizeForAssetCached(ManagedTexture& texture, uint32_t begin, uint32_t end) {
+      const AssetData& asset = *texture.m_assetData;
+      const AssetInfo& info = asset.info();
+      if (begin >= end) {
+        return 0;
+      }
+      if (info.mipLevels > MAX_MIPS || end > info.mipLevels) {
+        return calcSizeForAsset(asset, begin, end);
+      }
+
+      auto& cache = texture.m_mipSizeCache;
+      // Byte sizes depend on metadata, so hot reload and pointer reuse need no asset retention.
+      if (cache.format != info.format || cache.extent.width != info.extent.width
+          || cache.extent.height != info.extent.height || cache.extent.depth != info.extent.depth
+          || cache.layers != info.numLayers || cache.mipLevels != info.mipLevels) {
+        cache.format = info.format;
+        cache.extent = info.extent;
+        cache.layers = info.numLayers;
+        cache.mipLevels = info.mipLevels;
+        cache.firstMip = info.mipLevels;
+        cache.suffixSizes[info.mipLevels] = 0;
+      }
+      if (begin < cache.firstMip) {
+        const DxvkFormatInfo* formatInfo = imageFormatInfo(info.format);
+        while (cache.firstMip > begin) {
+          const uint32_t level = --cache.firstMip;
+          cache.suffixSizes[level] = cache.suffixSizes[level + 1] + calcSizeForMip(asset, formatInfo, level);
+        }
+      }
+      return cache.suffixSizes[begin] - cache.suffixSizes[end];
     }
 
 
@@ -847,6 +894,7 @@ namespace dxvk {
     m_sf.m_noisyMipcount = new uint8_t[SAMPLER_FEEDBACK_MAX_TEXTURE_COUNT]{ /* zero-init */ };
     m_sf.m_accumulatedMipcount = new FeedbackAccum[SAMPLER_FEEDBACK_MAX_TEXTURE_COUNT]{ /* zero-init */ };
     m_sf.m_cachedAssetMipcount = new uint8_t[SAMPLER_FEEDBACK_MAX_TEXTURE_COUNT]{ /* zero-init */ };
+    m_sf.m_cachedAssetMipShift = new uint8_t[SAMPLER_FEEDBACK_MAX_TEXTURE_COUNT]{ /* zero-init */ };
     m_sf.m_cachedGpubuf = new uint32_t[SAMPLER_FEEDBACK_MAX_TEXTURE_COUNT]; // NO zero-init
 
     // SAMPLER_FEEDBACK_INVALID must be 0xFFFF (all-0xFF bytes) for memset to fill
@@ -870,6 +918,7 @@ namespace dxvk {
 
     delete m_sf.m_cachedGpubuf;
     delete m_sf.m_cachedAssetMipcount;
+    delete[] m_sf.m_cachedAssetMipShift;
     delete m_sf.m_accumulatedMipcount;
     delete m_sf.m_noisyMipcount;
     delete m_sf.m_related;
@@ -1211,12 +1260,14 @@ namespace dxvk {
         bytesToCopy);
     }
 
-    {
+    // NV-DXVK start: fork option, every N frames
+    if (fork_hooks::textureGarbageCollectionDue(curframe)) {
       const uint32_t* gpuAccessedMips_safeToReadOnHost =
         (const uint32_t*)res.m_samplerFeedbackReadback[prevframe]->mapPtr(0); // approximately...
 
       garbageCollection(gpuAccessedMips_safeToReadOnHost);
     }
+    // NV-DXVK end
   }
 
   bool SamplerFeedback::associate(uint16_t stampWithList, uint16_t stampToAdd) {
@@ -1257,12 +1308,20 @@ namespace dxvk {
       // improves cache efficiency
       if (m_cachedAssetMipcount_length != textureCount) {
         memset(m_cachedAssetMipcount, 0, textureCount * sizeof(m_cachedAssetMipcount[0]));
+        memset(m_cachedAssetMipShift, 0, textureCount * sizeof(m_cachedAssetMipShift[0]));
         m_cachedAssetMipcount_length = uint32_t(textureCount);
         for (uint32_t stamp = 0; stamp < textureCount; stamp++) {
           const Rc<ManagedTexture>& tex = m_idToTexture[stamp];
           assert(stamp == tex->m_samplerFeedbackStamp);
           if (tex.ptr()) {
             m_cachedAssetMipcount[stamp] = uint8_t(std::min(tex->m_assetData->info().mipLevels, uint32_t(MAX_MIPS)));
+            // Feedback reports the accessed mip of a 4096 texture (calcMipLevelAccessedForSamplerFeedback),
+            // so smaller textures need that many fewer levels skipped
+            const VkExtent3D& extent = tex->m_assetData->info().extent;
+            const uint32_t maxDim = std::max({ extent.width, extent.height, 1u });
+            while ((maxDim << m_cachedAssetMipShift[stamp]) < 4096u) {
+              m_cachedAssetMipShift[stamp]++;
+            }
           }
         }
       }
@@ -1273,15 +1332,14 @@ namespace dxvk {
 
     // Reset to zero to find a max value for each texture in 'src_gpubuf'
     memset(m_noisyMipcount, 0, textureCount * sizeof(m_noisyMipcount[0]));
-    for (uint32_t stamp = 0; stamp < textureCount; stamp++) {
-      uint8_t newMipCount;
-      {
-        const uint32_t assetMipCount = m_cachedAssetMipcount[stamp];
+    auto calcMipCount = [this](uint32_t stamp, uint32_t mipAccessedAt4k) {
+      const uint32_t assetMipCount = m_cachedAssetMipcount[stamp];
 
-        const uint32_t mipAccessed = std::min(m_cachedGpubuf[stamp], assetMipCount);
-        newMipCount = uint8_t(assetMipCount - mipAccessed);
-      }
-      m_noisyMipcount[stamp] = std::max(m_noisyMipcount[stamp], newMipCount);
+      const uint32_t mipAccessed = std::min(mipAccessedAt4k - std::min(mipAccessedAt4k, uint32_t(m_cachedAssetMipShift[stamp])), assetMipCount);
+      return uint8_t(assetMipCount - mipAccessed);
+    };
+    for (uint32_t stamp = 0; stamp < textureCount; stamp++) {
+      m_noisyMipcount[stamp] = std::max(m_noisyMipcount[stamp], calcMipCount(stamp, m_cachedGpubuf[stamp]));
     }
 
     // A single stamp can be associated with many other stamps (SAMPLER_FEEDBACK_RELATED_PER_TEX).
@@ -1292,14 +1350,14 @@ namespace dxvk {
       if (listOfRelatedStamps[0] == SAMPLER_FEEDBACK_INVALID) {
         continue;
       }
-      const auto newMipCount = m_noisyMipcount[stamp];
+      const uint32_t mipAccessedAt4k = m_cachedGpubuf[stamp];
 
       for (uint8_t i = 0; i < SAMPLER_FEEDBACK_RELATED_PER_TEX; i++) {
         uint16_t stampOfRelated = listOfRelatedStamps[i];
         if (stampOfRelated == SAMPLER_FEEDBACK_INVALID) {
           break; // end of list
         }
-        m_noisyMipcount[stampOfRelated] = std::max(m_noisyMipcount[stampOfRelated], newMipCount);
+        m_noisyMipcount[stampOfRelated] = std::max(m_noisyMipcount[stampOfRelated], calcMipCount(stampOfRelated, mipAccessedAt4k));
       }
     }
 
@@ -1343,7 +1401,7 @@ namespace dxvk {
     m_wasTextureBudgetPressure = false;
 
     
-    static auto prioritylist = std::vector<ManagedTexture*>{};
+    static auto prioritylist = std::vector<PriorityTexture>{};
     static auto checkonlyframes = std::vector<ManagedTexture*>{};
     {
       prioritylist.clear();
@@ -1353,7 +1411,17 @@ namespace dxvk {
         assert(tex != nullptr);
         if (tex != nullptr && tex->m_canDemote) {
           if (tex->m_refCount > 0 && tex->m_samplerFeedbackStamp != SAMPLER_FEEDBACK_INVALID) {
-            prioritylist.push_back(tex.ptr());
+            // for low memory GPUs we should do our best to not blow through all memory, lower the highest quality mip level
+            // need to account for textures that dont have more than 1 mip level here too.
+            const uint32_t allmipcount = tex->m_assetData->info().mipLevels - ((RtxOptions::lowMemoryGpu() && tex->m_assetData->info().mipLevels > 0) ? 1u : 0u);
+            uint32_t mipc = m_sf.m_accumulatedMipcount[tex->m_samplerFeedbackStamp].mipcount;
+            mipc = std::min(mipc, allmipcount);
+            prioritylist.push_back({
+              tex.ptr(),
+              calcResolutionAndHistoryWeightForTexture(m_sf.m_accumulatedMipcount[tex->m_samplerFeedbackStamp], curframe),
+              mipc,
+              calcSizeForAssetCached(*tex, allmipcount - mipc, allmipcount)
+            });
           } else {
             checkonlyframes.push_back(tex.ptr());
           }
@@ -1374,13 +1442,13 @@ namespace dxvk {
     // For sampler-feedback textures, make a list, so that the low priority textures are at the end.
     // If full list doesn't fit into the budget, demote the low priority ones.
     {
-      auto l_sort = [curframe, this](const ManagedTexture* a, const ManagedTexture* b) {
-        assert(a && b);
-        float weightA = calcResolutionAndHistoryWeightForTexture(m_sf.m_accumulatedMipcount[a->m_samplerFeedbackStamp], curframe);
-        float weightB = calcResolutionAndHistoryWeightForTexture(m_sf.m_accumulatedMipcount[b->m_samplerFeedbackStamp], curframe);
+      auto l_sort = [](const PriorityTexture& a, const PriorityTexture& b) {
+        assert(a.texture && b.texture);
+        const float weightA = a.weight;
+        const float weightB = b.weight;
 
         if (std::abs(weightA - weightB) < 0.00001f) {
-          return (a->m_samplerFeedbackStamp < b->m_samplerFeedbackStamp); // stable fallback, if too similar
+          return (a.texture->m_samplerFeedbackStamp < b.texture->m_samplerFeedbackStamp); // stable fallback, if too similar
         }
         return weightA > weightB;
       };
@@ -1389,21 +1457,13 @@ namespace dxvk {
     {
       const size_t budgetBytes = calcTextureMemoryBudgetBytes(m_device);
       size_t       usedBytes   = 0;
-      for (ManagedTexture* tex : prioritylist) {
+      for (const PriorityTexture& priority : prioritylist) {
+        ManagedTexture* tex = priority.texture;
         assert(tex && tex->m_canDemote && tex->m_samplerFeedbackStamp != SAMPLER_FEEDBACK_INVALID);
-        // for low memory GPUs we should do our best to not blow through all memory, lower the highest quality mip level
-        // need to account for textures that dont have more than 1 mip level here too.
-        const uint32_t allmipcount = tex->m_assetData->info().mipLevels - ((RtxOptions::lowMemoryGpu() && tex->m_assetData->info().mipLevels > 0) ? 1u : 0u);
 
-        uint32_t mipc = m_sf.m_accumulatedMipcount[tex->m_samplerFeedbackStamp].mipcount;
-        mipc = std::min(mipc, allmipcount);
-
-        // TODO: potential bottleneck
-        size_t byteSize = calcSizeForAsset(*tex->m_assetData, allmipcount - mipc, allmipcount);
-
-        if (usedBytes + byteSize <= budgetBytes) {
-          usedBytes += byteSize;
-          tex->requestMips(mipc);
+        if (usedBytes + priority.byteSize <= budgetBytes) {
+          usedBytes += priority.byteSize;
+          tex->requestMips(priority.mipCount);
         } else {
           // doesn't fit => demote
           tex->requestMips(0);

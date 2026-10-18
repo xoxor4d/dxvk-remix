@@ -68,7 +68,8 @@ namespace dxvk {
     enum class Theme {
       Toolkit,
       Legacy,
-      Nvidia
+      Nvidia,
+      Gta4,
     };
 
     ImGUI(DxvkDevice* device);
@@ -107,6 +108,7 @@ namespace dxvk {
       kTab_Enhancements,
       kTab_About,
       kTab_Development,
+      kTab_Wrapper,
       kTab_Count
     };
     template<Tabs tab>
@@ -201,7 +203,7 @@ namespace dxvk {
     bool m_lastRenderVsyncStatus = false;
     std::unique_ptr<RtxGraphGUI> m_graphGUI;
 
-    static constexpr const char* tabNames[] = { "Rendering", "Game Setup", "Enhancements", "About" , "Dev Settings"};
+    static constexpr const char* tabNames[] = { "Rendering", "Game Setup", "Enhancements", "About" , "Dev Settings", "Plugin"};
     Tabs m_curTab = kTab_Count;
     Tabs m_triggerTab = kTab_Count;
     void triggerTab(const Tabs tab) {
@@ -261,6 +263,8 @@ namespace dxvk {
     void setToolkitStyle(ImGuiStyle* dst);
     // Sets Nvidia inspired UI theme
     void setNvidiaStyle(ImGuiStyle* dst);
+    // Sets GTA4 inspired UI theme
+    void setGta4Style(ImGuiStyle* dst);
     // Custom style
     void setupStyle(ImGuiStyle* dst = NULL);
 

@@ -19,6 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
+#include <algorithm>
 #include <assert.h>
 #include <cstring>
 #include <mutex>
@@ -30,6 +31,7 @@
 #include "rtx_scene_manager.h"
 #include "rtx_accel_manager.h"
 #include "rtx_point_instancer_system.h"
+#include "rtx_fork_hooks.h"
 
 #include "../d3d9/d3d9_state.h"
 #include "rtx_matrix_helpers.h"
@@ -72,6 +74,7 @@ namespace dxvk {
     resetUniqueDynamicBlasGroups();
     m_lastProcessedGeneration = UINT64_MAX;
     m_ommBindPending = false;
+    fork_hooks::onAccelStructuresCleared();
   }
 
   void AccelManager::resetUniqueDynamicBlasGroups() {
@@ -491,7 +494,7 @@ namespace dxvk {
         }
         // If new OMMs were built this frame, force a full scene rebuild next frame
         // so tryBindOpacityMicromap runs on all instances and the BLASes pick up the new OMMs.
-        if (opacityMicromapManager && opacityMicromapManager->hasNewlyBuiltOmms()) {
+        if (opacityMicromapManager && fork_hooks::ommRebindDue(opacityMicromapManager->hasNewlyBuiltOmms(), currentFrame)) {
           m_ommBindPending = true;
           instanceManager.notifySceneChanged();
         }
@@ -520,7 +523,11 @@ namespace dxvk {
         anyBucketDirty = true;
         m_ommBindPending = false;
       } else {
-        std::unordered_set<RtInstance*> currentInstanceSet(instances.begin(), instances.end());
+        // NV-DXVK start: a sorted scratch copy instead of a hash set built (one node allocation per instance) every frame
+        static std::vector<RtInstance*> s_liveInstances;
+        s_liveInstances.assign(instances.begin(), instances.end());
+        std::sort(s_liveInstances.begin(), s_liveInstances.end());
+        // NV-DXVK end
         bucketDirty.resize(m_cachedBuckets.size(), false);
 
         for (uint32_t bi = 0; bi < m_cachedBuckets.size(); ++bi) {
@@ -540,7 +547,7 @@ namespace dxvk {
             // bucket-vector cleanup), the pointer is dangling and must not be
             // dereferenced. Mark the bucket dirty so it gets rebuilt without
             // touching the stale entry.
-            if (currentInstanceSet.find(inst) == currentInstanceSet.end()) {
+            if (!std::binary_search(s_liveInstances.begin(), s_liveInstances.end(), inst)) {
               bucketDirty[bi] = true;
               anyBucketDirty = true;
               break;
@@ -728,10 +735,15 @@ namespace dxvk {
                                       blasEntry->getLinkedInstances().size() > 1  ||       // Meshes that are used in instances multiple times should benefit from BLAS reuse
                                       blasEntry->dynamicBlas != nullptr ||                 // If we already have a dynamic BLAS, keep using it.
                                       blasPrims > maxPrimsForMergedBLAS ||                 // Avoid large meshes ending up in the merged BLAS which is built every frame.  # prims is proportional to build cost.
-                                      RtxOptions::minimizeBlasMerging();                   // Option to attempt putting as many objects into dynamic BLAS as possible.
+                                      RtxOptions::minimizeBlasMerging() ||                 // Option to attempt putting as many objects into dynamic BLAS as possible.
+                                      blasEntry->input.usesVertexShader;                   // GTA4: meshes rendered through vertex shaders are animated every frame.
 
+      // NV-DXVK start: a small mesh whose geometry changes every frame would dirty and rebuild its whole merged bucket every frame
+      const bool animatedEveryFrame = fork_hooks::keepAnimatedMeshesOutOfMergedBlas() &&
+                                      (blasEntry->input.getSkinningState().numBones != 0 || blasEntry->input.usesVertexShader);
+      // NV-DXVK end
       const bool forceMergedBlas = (blasEntry->buildGeometries.size() > 1 ||                                       // Currently we use multiple build geometries for particle billboards, which we prefer to merge into large BLAS
-                                    (!RtxOptions::minimizeBlasMerging() && blasPrims < minPrimsInDynamicBLAS) ||   // Avoid creating lots of small dynamic BLAS
+                                    (!RtxOptions::minimizeBlasMerging() && blasPrims < minPrimsInDynamicBLAS && !animatedEveryFrame) ||   // Avoid creating lots of small dynamic BLAS
                                     RtxOptions::forceMergeAllMeshes()) &&                                          // Setting to force all meshes into the merged BLAS
                                       instance->surface.instancesToObject == nullptr;                              // Never merge point instancer geometry
 
@@ -859,11 +871,9 @@ namespace dxvk {
       buildInfo.geometryCount = 1;
       buildInfo.pGeometries = blasEntry->buildGeometries.data();
 
-      // Calculate the build sizes for this bucket
-      VkAccelerationStructureBuildSizesInfoKHR sizeInfo {};
-      sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
-      m_device->vkd()->vkGetAccelerationStructureBuildSizesKHR(m_device->handle(), VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
-                                                               &buildInfo, &blasEntry->buildRanges[0].primitiveCount, &sizeInfo);
+      const auto sizeInfo = blasEntry->buildSizeCache.get(m_device->handle(),
+        m_device->vkd()->vkGetAccelerationStructureBuildSizesKHR,
+        buildInfo, &blasEntry->buildRanges[0].primitiveCount);
 
       // Try to reuse our dynamic BLAS if it exists
       Rc<PooledBlas>& selectedBlas = blasEntry->dynamicBlas;
@@ -901,7 +911,9 @@ namespace dxvk {
         buildInfo.dstAccelerationStructure = selectedBlas->accelStructure->getAccelStructure();
 
         // Allocate a scratch buffer slice
-        const size_t requiredScratchAllocSize = align(sizeInfo.buildScratchSize + m_scratchAlignment, m_scratchAlignment);
+        const VkDeviceSize scratchSize = buildInfo.mode == VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR
+          ? sizeInfo.updateScratchSize : sizeInfo.buildScratchSize;
+        const size_t requiredScratchAllocSize = align(scratchSize + m_scratchAlignment, m_scratchAlignment);
         buildInfo.scratchData.deviceAddress = totalScratchMemory;
         totalScratchMemory += requiredScratchAllocSize;
 
@@ -1036,10 +1048,12 @@ namespace dxvk {
 
     // If new OMMs were built this frame, force a full scene rebuild next frame
     // so tryBindOpacityMicromap runs on all instances and the BLASes pick up the new OMMs.
-    if (opacityMicromapManager && opacityMicromapManager->hasNewlyBuiltOmms()) {
+    // NV-DXVK start: at most every rtx.opacityMicromap.rebindFrameInterval frames (the rebuild re-sorts every bucket)
+    if (opacityMicromapManager && fork_hooks::ommRebindDue(opacityMicromapManager->hasNewlyBuiltOmms(), currentFrame)) {
       m_ommBindPending = true;
       instanceManager.notifySceneChanged();
     }
+    // NV-DXVK end
 
     // Save baseline counts (before billboards are appended in prepareSceneData).
     // The full-skip cache path and prepareSceneData both use these to avoid
@@ -1316,7 +1330,9 @@ namespace dxvk {
         selectedBlas->primitiveCounts = bucket->primitiveCounts;
 
         // Allocate a scratch buffer slice
-        const size_t requiredScratchAllocSize = align(sizeInfo.buildScratchSize + m_scratchAlignment, m_scratchAlignment);
+        const VkDeviceSize scratchSize = buildInfo.mode == VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR
+          ? sizeInfo.updateScratchSize : sizeInfo.buildScratchSize;
+        const size_t requiredScratchAllocSize = align(scratchSize + m_scratchAlignment, m_scratchAlignment);
         buildInfo.scratchData.deviceAddress = totalScratchMemory;
         totalScratchMemory += requiredScratchAllocSize;
 
@@ -1876,6 +1892,7 @@ namespace dxvk {
 
     size_t totalScratchSize = 0;
     internalBuildTlas<Tlas::Opaque>(ctx, totalScratchSize);
+    fork_hooks::onOpaqueTlasBuilt(m_device->getCurrentFrameId());
     internalBuildTlas<Tlas::Unordered>(ctx, totalScratchSize);
     // Only build TLAS for SSS when necessary
     const bool isBuildSssTlas = RtxOptions::SubsurfaceScattering::enableDiffusionProfile() && (m_mergedInstances[Tlas::SSS].size() + m_pointInstancerSlotsPerType[Tlas::SSS]) > 0;
@@ -1902,7 +1919,8 @@ namespace dxvk {
   void AccelManager::internalBuildTlas(Rc<DxvkContext> ctx, size_t& totalScratchSize) {
     static constexpr const char* names[] = { "TLAS_Opaque", "TLAS_NonOpaque", "TLAS_SSS" };
     ScopedGpuProfileZone(ctx, names[type]);
-    const VkBuildAccelerationStructureFlagsKHR flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR | additionalAccelerationStructureFlags();
+    // TLAS always uses BUILD mode, so it does not need the extra storage for updates.
+    const VkBuildAccelerationStructureFlagsKHR flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR | additionalAccelerationStructureFlags();
 
     const auto& vkd = m_device->vkd();
 
@@ -1934,8 +1952,8 @@ namespace dxvk {
     buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
 
     const uint32_t numInstances = uint32_t(m_mergedInstances[type].size() + m_pointInstancerSlotsPerType[type]);
-    VkAccelerationStructureBuildSizesInfoKHR sizeInfo { VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR };
-    vkd->vkGetAccelerationStructureBuildSizesKHR(vkd->device(), VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &numInstances, &sizeInfo);
+    const auto sizeInfo = m_tlasSizeCache[type].get(vkd->device(),
+      vkd->vkGetAccelerationStructureBuildSizesKHR, buildInfo, &numInstances);
 
     // Create TLAS
     Tlas& tlas = m_device->getCommon()->getResources().getTLAS(type);

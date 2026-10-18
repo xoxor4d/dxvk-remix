@@ -1,0 +1,887 @@
+/*
+* Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
+*
+* Permission is hereby granted, free of charge, to any person obtaining a
+* copy of this software and associated documentation files (the "Software"),
+* to deal in the Software without restriction, including without limitation
+* the rights to use, copy, modify, merge, publish, distribute, sublicense,
+* and/or sell copies of the Software, and to permit persons to whom the
+* Software is furnished to do so, subject to the following conditions:
+*
+* The above copyright notice and this permission notice shall be included in
+* all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+* THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+* DEALINGS IN THE SOFTWARE.
+*/
+#pragma once
+
+// Hillaire Physically-Based Atmospheric Scattering — sky-path evaluators.
+// View-direction functions composed into evalSkyRadiance: clouds, moons,
+// night sky (stars + galactic band + shooting stars + airglow), sun disk.
+// Closesthit and integrate paths that don't sample sky radiance keep their
+// existing atmosphere_common.slangh include only — the sky-only functions
+// here then never end up in their compiled SPIR-V.
+//
+// Cloud and atmosphere helpers used by both the sky path and the ground
+// shadow term (intersectSphere, getPlanetCenter, computeCloudHeightFraction,
+// intersectCloudLayer, evalCloudGroundShadow,
+// getTransmittanceToSun, evalAtmosphereRadiance, hash31, fbmNoise2D, etc.)
+// stay in atmosphere_common.slangh and are pulled in via the include below.
+// (cloudPlanetRadius retired — fork, world-space cloud migration Stage 1, 2026-09-05.)
+
+#include "rtx/pass/atmosphere/atmosphere_common.slangh"
+#include "rtx/pass/atmosphere/star_entry.h"
+
+// ============================================================================
+// Night sky — stars, galactic band, shooting stars, airglow
+// ============================================================================
+// Composited inside the Numos sky path; users on the default
+// Skybox Rasterization sky mode see no behavior change.
+
+// 3-component integer-lattice hash (sky-only — the cloud layer doesn't need
+// a 3-vector hash, it uses hash31 for sample-seam jitter).
+vec3 hash33(vec3 p) {
+  // Integer hash — avoids sin() which creates visible patterns on GPU
+  uvec3 q = uvec3(int(p.x * 1597.0f), int(p.y * 2549.0f), int(p.z * 3571.0f));
+  q = (q.x ^ q.y ^ q.z) * uvec3(2654435761u, 2246822519u, 3266489917u);
+  q = (q >> 16u) ^ q;
+  return vec3(float(q.x), float(q.y), float(q.z)) / 4294967296.0f;
+}
+
+// ============================================================================
+// Stars, from the Bright Star Catalogue
+// ============================================================================
+// Replaces a procedural hash field. The hash placed one star per grid cell at
+// a random offset with a random magnitude, which is uniform in a way no sky
+// is: the eye reads clumping and constellations long before it resolves any
+// single star, and a field where every star has the same amount of room
+// around it reads as noise no matter how well each star is drawn. Both the
+// Jensen et al. night sky paper and the reference renderer we compared against
+// reached the same conclusion independently and both use real star data.
+//
+// 9096 real stars to magnitude 6.5 - the naked-eye sky - are binned into
+// cube-face cells on the CPU and read one cell per ray. See
+// docs/NightSkyRedesign.md section 3 and rtx_atmosphere.cpp's
+// buildStarCatalogueBuffers.
+
+// Which cube-face cell a direction falls in. MUST match starCellIndex() in
+// rtx_atmosphere.cpp exactly: a disagreement bins stars into cells no ray
+// reads, and the symptom is stars that blink out at particular headings.
+uint starCellIndex(vec3 dir) {
+  const vec3 a = abs(dir);
+  uint face;
+  float u, v, m;
+  if (a.x >= a.y && a.x >= a.z)      { face = dir.x > 0.0f ? 0u : 1u; m = a.x; u = dir.y / m; v = dir.z / m; }
+  else if (a.y >= a.z)               { face = dir.y > 0.0f ? 2u : 3u; m = a.y; u = dir.x / m; v = dir.z / m; }
+  else                               { face = dir.z > 0.0f ? 4u : 5u; m = a.z; u = dir.x / m; v = dir.y / m; }
+
+  const float n = float(STAR_CELLS_PER_FACE);
+  int i = int((u * 0.5f + 0.5f) * n);
+  int j = int((v * 0.5f + 0.5f) * n);
+  i = clamp(i, 0, int(STAR_CELLS_PER_FACE) - 1);
+  j = clamp(j, 0, int(STAR_CELLS_PER_FACE) - 1);
+  return face * STAR_CELLS_PER_FACE * STAR_CELLS_PER_FACE
+       + uint(j) * STAR_CELLS_PER_FACE + uint(i);
+}
+
+// Irradiance a star of visual magnitude m delivers, in frame units.
+//
+// The photometric zero point: magnitude 0 outside the atmosphere is 2.54e-6
+// lux. Every star's brightness therefore comes from its catalogue magnitude
+// and the frame's own lux scale, with no star-specific gain anywhere - which
+// is what makes a magnitude 2 star exactly 6.3 times fainter than a magnitude
+// 0 one on screen, as it is in the sky.
+float starIrradianceFrame(float magnitude, NightRadiometry rad) {
+  const float kVegaLux = 2.54e-6f;
+  return rad.framePerLux * kVegaLux * pow(10.0f, -0.4f * magnitude) * rad.gain;
+}
+
+// The drawn profile of a star, integrating to 1 over solid angle so that a
+// star deposits exactly its irradiance into the image whatever the resolution,
+// the upscaling ratio or where its centre falls inside a pixel.
+//
+// That normalisation is the whole anti-aliasing story. A profile expressed in
+// pixels rather than in angle changes a star's total energy when the
+// resolution changes; a Gaussian of 0.7 px sampled at pixel centres varies by
+// about 0.01% in total as its centre crosses a pixel boundary, which is what
+// stops the field boiling under slow camera rotation.
+//
+// Support is capped at the same angle the CPU used to bin stars into cells.
+// The two must agree: anything drawn beyond the bin margin would be summed by
+// pixels that fetched the star and not by pixels that did not, and that
+// discontinuity takes the shape of the region searched. An earlier procedural
+// version had exactly this bug and drew every star as a bright square.
+float starProfile(float thetaRad, float sigmaRad) {
+  const float s2 = max(sigmaRad * sigmaRad, 1e-14f);
+  const float core = exp(-0.5f * thetaRad * thetaRad / s2) / (2.0f * kPi * s2);
+
+  // Smooth taper to exactly zero at the bin margin.
+  const float w = saturate(1.0f - thetaRad / STAR_BIN_MARGIN_RAD);
+  return core * w * w;
+}
+
+// Sum the stars covering this direction. `dir` is already in the celestial
+// frame (the caller applies the sidereal rotation), and `extinction` is the
+// atmosphere's transmittance along the view ray, which both dims and reddens
+// low stars and removes the need for any horizon fade.
+vec3 evalCatalogueStars(vec3 dir, AtmosphereArgs args, NightRadiometry rad, vec3 extinction) {
+#ifdef ATMOSPHERE_STAR_CATALOGUE_AVAILABLE
+  if (args.starBrightness <= 0.0f) {
+    return vec3(0.0f);
+  }
+
+  // One Gaussian width for every star, in angle. Bright stars still read as
+  // bigger because more of their profile clears the display threshold, which
+  // is how magnitude turns into size in a real image - no size-by-magnitude
+  // term needed.
+  //
+  // Capped at a third of the bin margin. The CPU binned each star into every
+  // cell within STAR_BIN_MARGIN_RAD of it, so that is the largest radius at
+  // which a ray is guaranteed to find the stars around it; a profile wider than
+  // that is summed by the pixels that fetched a star and not by the ones that
+  // did not, and the discontinuity takes the shape of the search region. That
+  // is exactly the bug that once drew every star as a bright square, and a
+  // config value must not be able to reintroduce it.
+  const float kMaxSigmaRad = STAR_BIN_MARGIN_RAD * (1.0f / 3.0f);
+  const float sigmaRad = clamp(args.starPsfWidthPixels * args.pixelAngleRad, 1e-7f, kMaxSigmaRad);
+  const float cosMargin = cos(STAR_BIN_MARGIN_RAD);
+
+  const uint cell = starCellIndex(dir);
+  const uint begin = AtmosphereStarCellOffsets[cell];
+  const uint end = AtmosphereStarCellOffsets[cell + 1u];
+
+  vec3 total = vec3(0.0f);
+  for (uint k = begin; k < end; ++k) {
+    const StarEntry s = AtmosphereStarEntries[k];
+    const float cosT = dot(dir, s.dir);
+    if (cosT < cosMargin) {
+      continue;
+    }
+
+    // Small-angle chord, which avoids an acos and is exact to well under a
+    // pixel at the quarter-degree scale this ever runs at.
+    const float theta = sqrt(max(2.0f - 2.0f * cosT, 0.0f));
+
+    const uint packed = s.packed;
+    const float magnitude = float((packed >> 24) & 0xFFu) / 25.0f - 2.0f;
+    if (magnitude > args.starMagnitudeLimit) {
+      continue;
+    }
+
+    // Chromaticity with unit luminance, so irradiance carries the brightness
+    // and the colour carries only the hue.
+    const vec3 chroma = vec3(float(packed & 0xFFu),
+                             float((packed >> 8) & 0xFFu),
+                             float((packed >> 16) & 0xFFu)) * (1.0f / 255.0f);
+
+    float scint = 1.0f;
+    if (args.starTwinkleSpeed > 0.0f) {
+      // Scintillation is refraction by air cells and so belongs to the path
+      // through the atmosphere, not to the star: it is strong near the horizon
+      // and nearly absent overhead, where a star is seen through one airmass
+      // instead of five or six.
+      const float airMass = min(0.12f / max(abs(dir.y), 0.02f), 1.0f);
+      const float phase = float(k) * 1.61803f;
+      const float amp = 0.30f * airMass;
+      scint = 1.0f - amp + amp * sin(args.timeSeconds * args.starTwinkleSpeed * 3.0f + phase * 6.283f);
+    }
+
+    total += chroma * (starIrradianceFrame(magnitude, rad) * starProfile(theta, sigmaRad) * scint);
+  }
+
+  return total * extinction * args.starBrightness;
+#else
+  return vec3(0.0f);
+#endif
+}
+
+// Compute night sky contribution split into two layers:
+//   - starsOut: discrete star field + shooting stars (HDR point-source content
+//     that needs steeper extinction through clouds, applied by the caller via
+//     pow(cloud_T, starCloudExtinctionPower)).
+//   - airglowOut: diffuse ambient airglow + zodiacal light (treated like the
+//     atmosphere background; standard alpha-composite with clouds is fine).
+// Caller composites moons separately after this.
+void evalNightSky(vec3 viewDir, AtmosphereArgs args,
+                  out vec3 starsOut, out vec3 airglowOut,
+                  bool includeDiscreteStars) {
+  starsOut   = vec3(0.0f);
+  airglowOut = vec3(0.0f);
+
+  NightRadiometry rad = nightRadiometry(args);
+
+  // No star fade curve. Stars are drawn at their physical irradiance times the
+  // night gain, and whether one is visible is a contest between that and the
+  // sky behind it - which is what decides it in reality, and why the brightest
+  // come out first at dusk and the faintest last. The old smoothstep over the
+  // sun's elevation faded every star together on a schedule of its own, which
+  // is both wrong and one of four such curves the night gain's single
+  // adaptation ramp now replaces.
+  //
+  // Extinction likewise comes from the atmosphere rather than from a horizon
+  // smoothstep: the transmittance model carries Rayleigh, Mie and ozone, so a
+  // low star dims AND reddens by the right amount, and below the horizon it
+  // goes to zero on its own.
+  const vec3 viewExtinction = getAtmosphericTransmittanceForDir(normalize(viewDir), args);
+
+  // Sidereal rotation, applied to the sample direction rather than to the
+  // catalogue: the stars are stored in the celestial frame with +Y on the
+  // pole, so rotating the ray into that frame turns the whole sky as one rigid
+  // body, exactly as it turns overhead. This is more correct than it was for
+  // the hash field - the catalogue is already in equatorial coordinates, so
+  // the rotation is the real one rather than an approximation of one.
+  vec3 celestialDir = normalize(viewDir);
+  {
+    const float kDegToRad = 3.14159265358979323846f / 180.0f;
+    const float poleElev = args.starAxisElevation * kDegToRad;
+    const float poleAzi  = args.starAxisRotation  * kDegToRad;
+    const vec3 axis = vec3(cos(poleElev) * sin(poleAzi),
+                           sin(poleElev),
+                           cos(poleElev) * cos(poleAzi));
+    const float rotRad = args.starRotation * kDegToRad;
+    const float c = cos(rotRad);
+    const float s = sin(rotRad);
+    celestialDir = celestialDir * c + cross(axis, celestialDir) * s
+                 + axis * dot(axis, celestialDir) * (1.0f - c);
+  }
+
+  vec3 stars = includeDiscreteStars
+             ? evalCatalogueStars(celestialDir, args, rad, viewExtinction)
+             : vec3(0.0f);
+
+  // Shooting stars — thin streaks with fading tail.
+  // Same gate as the point stars, for the same reason: a streak is a bright
+  // point source swept across the sky, so a bounce ray catching one is a
+  // firefly that also flickers.
+  if (includeDiscreteStars) {
+    float slotTime = floor(args.timeSeconds / 4.0f);
+    float slotFrac = fract(args.timeSeconds / 4.0f);
+
+    float slotHash = hash31(vec3(slotTime, 0.0f, 42.0f));
+    if (slotHash > 0.92f) {
+      float startTheta = hash31(vec3(slotTime, 1.0f, 42.0f)) * kPi * 0.5f + 0.3f;
+      float startPhi = hash31(vec3(slotTime, 2.0f, 42.0f)) * 2.0f * kPi;
+
+      vec3 streakStart = vec3(
+        sin(startTheta) * cos(startPhi),
+        cos(startTheta),
+        sin(startTheta) * sin(startPhi)
+      );
+
+      float streakAng = hash31(vec3(slotTime, 3.0f, 42.0f)) * kPi;
+      vec3 streakMoveDir = normalize(vec3(cos(streakAng) * 0.3f, -0.4f, sin(streakAng) * 0.3f));
+
+      float streakLen = 0.05f;  // Longer tail
+      vec3 headPos = normalize(streakStart + streakMoveDir * slotFrac * 0.4f);  // Faster travel
+      vec3 tailPos = normalize(streakStart + streakMoveDir * (slotFrac * 0.4f - streakLen));
+
+      vec3 v = normalize(viewDir);
+      vec3 segVec = headPos - tailPos;
+      float segLen = length(segVec);
+      if (segLen > 0.001f) {
+        vec3 segNorm = segVec / segLen;
+        float t = dot(v - tailPos, segNorm);
+        t = clamp(t, 0.0f, segLen);
+        vec3 closest = tailPos + segNorm * t;
+        float dist = length(v - closest);
+
+        // Thinner streak — tighter Gaussian falloff
+        float streakBright = exp(-dist * dist * 18000000.0f);
+
+        // Tail gradient: bright head fading to dim tail
+        float tailFade = t / max(segLen, 0.001f);
+        tailFade = pow(tailFade, 1.5f);
+
+        float timeFade = sin(slotFrac * kPi);
+
+        stars += vec3(1.0f, 0.95f, 0.85f) * streakBright * tailFade * timeFade * 2.0f;
+      }
+    }
+  }
+
+  // Airglow: the upper atmosphere's own emission, and the largest single
+  // component of a genuinely moonless sky - about half of a 22.0 mag/arcsec^2
+  // dark sky, per Roach & Gordon. 1.1e-8 frame units is that measured share;
+  // airglowScale is a multiple of it rather than a free gain.
+  //
+  // Grey rather than the saturated blue this replaces. Airglow's strongest
+  // line is the 557.7 nm green of atomic oxygen, but at these levels the eye
+  // is scotopic and sees no hue at all, and the blue tint was half of why the
+  // night read as a lit blue dome rather than as darkness.
+  //
+  // Brighter toward the horizon by the van Rhijn effect: the emitting layer
+  // sits around 90 km, so a low line of sight passes through much more of it.
+  // Stage 5 of the redesign moves this into the sky-view LUT, where it gets
+  // the real elevation dependence and reaches clouds through the same taps
+  // daylight uses.
+  const float kAirglowDarkSkyFrame = 1.1e-8f;
+  const float airglowHorizonBoost = 1.0f + 0.5f * exp(-viewDir.y * 5.0f);
+  const vec3 airglow = vec3(kAirglowDarkSkyFrame)
+                     * (args.airglowScale * airglowHorizonBoost * rad.gain);
+
+  starsOut   = stars;
+  airglowOut = airglow * viewExtinction;
+}
+
+// ============================================================================
+// Moon shading
+// ============================================================================
+// One unified moon disk evaluator that loops over args.moons[MAX_MOONS] in
+// the caller. Surface shading is dispatched by MoonParams::surfaceStyle:
+//   0 = Rocky    (pale-grey, craters, maria, ray patterns)
+//   1 = Volcanic (warm-red, veins, large impact craters, dusty rose terrain)
+
+// 2D disk-space phase illumination — produces a CURVED (elliptical) terminator
+// like a real sphere shadow, not a straight line. diskX must be oriented so
+// positive X points toward the sun (the caller builds a sun-oriented frame).
+//
+// phase: 0 = new, 0.25 = first quarter, 0.5 = full, 0.75 = third quarter
+// diskX, diskY: position on the disk [-1, 1], X axis toward the sun
+// Returns illumination factor [0, 1].
+// How brightly one point on the moon's disk is lit: Lommel-Seeliger's shape.
+//
+// Two earlier versions were wrong in opposite ways. A binary lit/unlit mask
+// made a crescent a uniformly bright sliver with a hard inner edge, where a
+// real crescent fades into its terminator over most of its width. A Lambert
+// cosine fixed the terminator but limb-darkened the full moon heavily, which
+// the real moon does not do at all.
+//
+// L-S is exactly limb-flat at full - at zero phase the incidence and emission
+// angles are equal everywhere on the disk, so cos_i / (cos_i + cos_e) is 1/2
+// at every point - and it falls linearly into the terminator away from full.
+// Both behaviours come out of one expression with no special cases.
+//
+// The result is a *shape*, normalised to 1 at full. The caller scales it by
+// moonPhaseOverLommelSeeliger so the disk's integral matches the irradiance
+// the moon actually emits.
+//
+// phase runs 0 -> 1 with 0.5 full; 0.25 and 0.75 both light the right half.
+float getPhaseIllumination(float phase, float diskX, float diskY) {
+  const float diskR2 = diskX * diskX + diskY * diskY;
+  if (diskR2 > 1.0f) { return 0.0f; }
+
+  // Sphere normal at this point of the projected disk. +Z is toward the
+  // viewer, and the caller's frame already puts +X toward the sun.
+  const float cosE = sqrt(max(0.0f, 1.0f - diskR2));
+
+  const float alpha = kPi * abs(1.0f - 2.0f * saturate(phase));
+  const float cosI = max(0.0f, diskX * sin(alpha) + cosE * cos(alpha));
+  if (cosI <= 0.0f) { return 0.0f; }
+
+  return 2.0f * cosI / (cosI + cosE + 1e-4f);
+}
+
+// Rocky surface shader — pale-grey procedural surface (craters, maria, ray patterns).
+// Knob mapping:
+//   m.surfaceNoiseScale → multiplies UV scale (feature size)
+//   m.surfaceContrast   → multiplies maria-darken weight, ray amplitude
+//   m.craterDensity     → multiplies large + small crater contribution
+//   m.roughnessAmount   → multiplies micro-roughness amplitude
+void computeRockySurfaceDetail(float diskX, float diskY, MoonParams m,
+                               out float surfaceDetail, out vec3 surfaceColor) {
+  float uvScale = 8.0f * m.surfaceNoiseScale;
+  vec2 moonUV = vec2(diskX, diskY) * uvScale;
+
+  // Maria (dark basaltic plains) — smooth multi-octave noise
+  float maria = fbmNoise2D(moonUV * 0.4f + vec2(3.7f, 1.2f), 4, 10.0f);
+  maria = smoothstep(0.25f, 0.55f, maria);
+
+  // Highland base brightness (maria darken weighted by surfaceContrast)
+  float highland = 1.0f - maria * 0.5f * m.surfaceContrast;
+
+  // Large craters — fixed positions with dark interiors and bright rims
+  float craters = 0.0f;
+  vec2 craterPositions[7];
+  craterPositions[0] = vec2(-0.25f, 0.3f);
+  craterPositions[1] = vec2(0.35f, -0.15f);
+  craterPositions[2] = vec2(-0.1f, -0.35f);
+  craterPositions[3] = vec2(0.2f, 0.25f);
+  craterPositions[4] = vec2(-0.3f, -0.1f);
+  craterPositions[5] = vec2(0.15f, -0.3f);
+  craterPositions[6] = vec2(-0.35f, 0.15f);
+  float craterSizes[7];
+  craterSizes[0] = 0.12f;
+  craterSizes[1] = 0.09f;
+  craterSizes[2] = 0.15f;
+  craterSizes[3] = 0.07f;
+  craterSizes[4] = 0.10f;
+  craterSizes[5] = 0.06f;
+  craterSizes[6] = 0.08f;
+
+  for (int ci = 0; ci < 7; ci++) {
+    float crDist = length(vec2(diskX, diskY) - craterPositions[ci]);
+    float craterRadius = craterSizes[ci];
+
+    float bowl = 1.0f - smoothstep(craterRadius * 0.3f, craterRadius * 0.9f, crDist);
+    float craterShadow = 0.5f;
+    float rim = smoothstep(craterRadius * 0.75f, craterRadius * 0.9f, crDist) *
+                (1.0f - smoothstep(craterRadius * 0.9f, craterRadius * 1.15f, crDist));
+
+    craters += bowl * 0.3f * craterShadow - rim * 0.1f;
+  }
+  craters *= m.craterDensity;
+
+  // Small craters — smooth noise threshold
+  float smallCraterNoise = fbmNoise2D(moonUV * 2.5f + vec2(7.3f, 2.1f), 3, 20.0f);
+  float smallCraters = smoothstep(0.62f, 0.72f, smallCraterNoise) * 0.2f * m.craterDensity;
+
+  // Surface roughness — fine detail
+  float roughness = fbmNoise2D(moonUV * 4.0f + vec2(11.1f, 5.5f), 2, 30.0f) * 0.15f * m.roughnessAmount;
+
+  // Streaks/rays from impacts
+  float rays = fbmNoise2D(moonUV * 1.5f + vec2(2.3f, 8.7f), 2, 40.0f);
+  rays = smoothstep(0.5f, 0.65f, rays) * 0.12f * m.surfaceContrast;
+
+  float detail = highland - craters - smallCraters + roughness + rays;
+  surfaceDetail = clamp(detail, 0.3f, 1.15f);
+
+  // Color: maria are warm grey-brown, highlands cool light grey
+  surfaceColor = mix(
+    vec3(0.78f, 0.76f, 0.72f),  // Maria: warm grey-brown
+    vec3(0.95f, 0.94f, 0.92f),  // Highlands: cool light grey
+    1.0f - maria
+  );
+}
+
+// Volcanic surface shader — warm-red procedural surface (veins, large impact
+// craters, dusty rose terrain). Same knob mapping rules as the rocky helper.
+void computeVolcanicSurfaceDetail(float diskX, float diskY, MoonParams m,
+                                  out float surfaceDetail, out vec3 surfaceColor) {
+  float uvScale = 6.0f * m.surfaceNoiseScale;
+  vec2 surfUV = vec2(diskX, diskY) * uvScale;
+
+  // Large dark volcanic basins
+  float volcanic = fbmNoise2D(surfUV * 0.5f + vec2(5.1f, 3.3f), 4, 50.0f);
+  volcanic = smoothstep(0.2f, 0.55f, volcanic) * 0.45f * m.surfaceContrast;
+
+  // Surface terrain — medium scale
+  float terrain = fbmNoise2D(surfUV * 1.2f + vec2(11.0f, 7.0f), 3, 60.0f) * 0.2f * m.surfaceContrast;
+
+  // Dark veins/canyons
+  float veins = fbmNoise2D(surfUV * 2.0f + vec2(7.0f, 3.0f), 3, 70.0f);
+  veins = smoothstep(0.55f, 0.68f, veins) * 0.25f * m.surfaceContrast;
+
+  // Fine surface texture (micro-roughness)
+  float fineDetail = fbmNoise2D(surfUV * 3.5f + vec2(13.0f, 9.0f), 2, 80.0f) * 0.08f * m.roughnessAmount;
+
+  // Large impact craters — fixed positions
+  float craters = 0.0f;
+  vec2 craterPos[4];
+  craterPos[0] = vec2(-0.2f, -0.25f);
+  craterPos[1] = vec2(0.25f, 0.15f);
+  craterPos[2] = vec2(-0.15f, 0.3f);
+  craterPos[3] = vec2(0.3f, -0.2f);
+  float craterSz[4];
+  craterSz[0] = 0.15f;
+  craterSz[1] = 0.12f;
+  craterSz[2] = 0.10f;
+  craterSz[3] = 0.08f;
+
+  for (int mci = 0; mci < 4; mci++) {
+    float dist = length(vec2(diskX, diskY) - craterPos[mci]);
+    float cr = craterSz[mci];
+    float interior = 1.0f - smoothstep(cr * 0.5f, cr * 0.85f, dist);
+    craters += interior * 0.2f;
+  }
+  craters *= m.craterDensity;
+
+  float detail = 1.0f - volcanic - veins - craters + terrain + fineDetail;
+  surfaceDetail = clamp(detail, 0.35f, 1.1f);
+
+  // Color: dark volcanic basins → deep crimson-purple, lighter terrain → dusty rose
+  surfaceColor = mix(
+    vec3(0.30f, 0.08f, 0.12f),
+    vec3(0.70f, 0.28f, 0.32f),
+    clamp(detail, 0.0f, 1.0f)
+  );
+}
+
+// Render moon disk for moonIdx in args.moons[]. Returns radiance contribution
+// for this pixel and writes diskCoverage in [0,1] indicating disk opacity at
+// this view direction. Caller composites moons over the night sky using
+// `radiance = mix(radiance, moonContrib, coverage)` so opaque parts of the
+// disk replace the background (atmosphere + stars) cleanly.
+vec3 evalMoonDisk(vec3 viewDir, uint moonIdx, AtmosphereArgs args, out float diskCoverage) {
+  diskCoverage = 0.0f;
+  if (moonIdx >= MAX_MOONS) return vec3(0.0f);
+
+  MoonParams m = args.moons[moonIdx];
+  if (m.enabled < 0.5f) return vec3(0.0f);
+
+  vec3 moonDir = normalize(m.direction);
+  if (dot(moonDir, moonDir) < 0.5f) {
+    moonDir = normalize(vec3(0.5f, 0.7f, 0.5f));
+  }
+
+  float cosAngle = dot(viewDir, moonDir);
+  float moonCosRadius = cos(m.angularRadius);
+  if (m.angularRadius < 0.001f) {
+    moonCosRadius = cos(0.5f * kPi / 180.0f);
+  }
+  if (cosAngle < moonCosRadius) return vec3(0.0f);
+
+  // Inside the moon disk — fully opaque, blocks stars and atmosphere behind it
+  diskCoverage = 1.0f;
+
+  float normalizedAngle = acos(clamp(cosAngle, -1.0f, 1.0f)) / m.angularRadius;
+
+  // Soft edge at disk boundary to avoid hard aliased circle
+  float edgeSoftness = smoothstep(1.0f, 0.97f, normalizedAngle);
+  diskCoverage *= edgeSoftness;
+
+
+  // Disk-local frame — diskX horizontal, diskY vertical (world-up basis)
+  vec3 upVec = abs(moonDir.y) < 0.999f ? vec3(0.0f, 1.0f, 0.0f) : vec3(1.0f, 0.0f, 0.0f);
+  vec3 moonRight = normalize(cross(upVec, moonDir));
+  vec3 moonUp    = cross(moonDir, moonRight);
+
+  vec3 toView = normalize(viewDir - moonDir * cosAngle);
+  float diskX = dot(toView, moonRight) * normalizedAngle;
+  float diskY = dot(toView, moonUp)    * normalizedAngle;
+
+  float illumination = getPhaseIllumination(m.phase, diskX, diskY);
+
+  // Surface shading dispatched by style preset
+  float surfaceDetail = 1.0f;
+  vec3 surfaceColor = m.color;
+  switch (m.surfaceStyle) {
+  case 0u:
+    computeRockySurfaceDetail(diskX, diskY, m, surfaceDetail, surfaceColor);
+    break;
+  case 1u:
+    computeVolcanicSurfaceDetail(diskX, diskY, m, surfaceDetail, surfaceColor);
+    break;
+  default:
+    surfaceDetail = 1.0f;
+    surfaceColor = m.color;
+    break;
+  }
+
+  // Phase 2 (2026-05-08): unified physical irradiance scaffold.
+  // Replaces the prior magic-number scaffolding:
+  //   litRadiance = m.color × surfaceColor × m.brightness × limbDark × surfaceDetail × diffuse × moonAirTrans
+  // (effectively m.color² × m.brightness × ...) which made disk visibility depend
+  // on m.color magnitude squared and the m.brightness=4.0 default. The disk
+  // didn't multiply by args.sunIlluminance at all, divorcing disk magnitude from
+  // the rest of the lighting pipeline.
+  //
+  // New: sharedFactor = sunIlluminance × surfaceColor × moonAirTrans × m.brightness / π
+  // Albedo (surfaceColor — perturbed by surface noise per pixel) appears
+  // exactly once, properly multiplied by sun irradiance. The per-pixel
+  // diffuse cosine integrates to phaseGlow × π over the disk, so phase
+  // emerges naturally without an explicit phaseGlow multiplier — and as of
+  // the Lambert terminator above that is now literally true rather than true
+  // of a mask whose area happened to match.
+  //
+  // Magnitude at FNV defaults (m.brightness=1.0, m.color=0.12, central pixel):
+  //   sharedFactor ≈ 20 × 0.12 × 0.97 × 1.0 / π ≈ 0.74 per channel
+  //   litRadiance  ≈ 0.74 (vs prior ~3.0) -- 4× drop. Recoverable via
+  //   m.brightness if user prefers current visual.
+  vec3 sharedFactor = computeMoonSharedFactor(m, args, surfaceColor);
+
+  // Disk exposure. Appearance only, and deliberately separate from the light
+  // the moon casts: a physically sized moon at physical radiance reads as a
+  // small dim dot even when the illumination it throws is exactly right, and
+  // brightening it by raising m.brightness would brighten the ground with it.
+  const float diskExposure = pow(2.0f, args.moonDiskExposureEv);
+
+  // Lit side. The L-S shape times the factor that makes this disk integrate to
+  // the same irradiance moonIrradianceFrame() hands the ground, the sky and
+  // the clouds - so the moon on screen and the moon lighting the scene are one
+  // object. limbDarkening and the old radial `diffuse` ramp are both gone:
+  // L-S already carries the correct limb behaviour (none, at full) and the
+  // correct terminator behaviour, and stacking hand-rolled ramps on top of it
+  // darkened the limb twice.
+  const float phaseNorm = moonPhaseOverLommelSeeliger(m.phase);
+  vec3 litRadiance = sharedFactor * surfaceDetail * illumination * phaseNorm * diskExposure;
+
+  // Dark side: earthshine, which is a real quantity rather than a fill.
+  // Sunlight reflected off the Earth onto the Moon is 0.095 W/m^2 against the
+  // 1905 W/m^2 of sunlight there, a ratio of 5.0e-5, modulated by the Earth's
+  // phase as seen from the Moon - which is the complement of the Moon's, so a
+  // thin crescent moon sits under a nearly full Earth and that is exactly when
+  // earthshine is visible from here. Lit from the Earth's direction, which for
+  // our purposes is the viewer's, so the L-S shape is 1 across the disk.
+  const float kEarthshineRatio = 5.0e-5f;
+  const float alphaMoon = kPi * abs(1.0f - 2.0f * saturate(m.phase));
+  const float earthPhase = moonPhiLommelSeeliger(kPi - alphaMoon);
+  vec3 darkRadiance = sharedFactor * surfaceDetail
+                    * (m.earthshine * kEarthshineRatio * earthPhase * diskExposure);
+
+  // The lit side already carries its own terminator falloff, so this is a sum
+  // rather than a blend: earthshine is present across the whole disk and is
+  // simply invisible against the lit side.
+  return max(litRadiance + darkRadiance, vec3(0.0f));
+}
+
+// ============================================================================
+// Sky entry point
+// ============================================================================
+
+// Main evaluation function - computes atmosphere directly instead of using sky view LUT.
+//
+// Primary clouds are composited after the surface-clamped screen march has run.
+// The PRIMARY-ray branch below is consequently cloudless. `isPrimaryRay` still matters: it keeps a
+// primary ray from falling through to the secondary dome LUT below (that LUT is keyed for
+// indirect/PSR/reflection directions, not the primary view — sampling it for a primary ray would
+// return the wrong cloud), it just no longer gives primary rays a cloud source of their own.
+//
+// Non-primary call sites (PSR, indirect, reflection) pass isPrimaryRay=false and read the secondary
+// dome LUT below exactly as before this stage — that LUT is baked before path tracing runs
+// (cloud_secondary_lut.comp.slang), so it never had the screen-RT ordering problem above and is
+// untouched by this migration.
+vec3 evalSkyRadiance(
+  vec3 viewDir,
+  AtmosphereArgs args,
+  uint2 pixelCoord,
+  uint frameIdx,
+  bool isZUp = false,
+  bool isPrimaryRay = false,
+  // Opt-in: scale the result by args.skyIndirectRadianceScale. Only diffuse
+  // indirect sky-gather call sites pass true (see integrator_indirect). Primary,
+  // PSR, and specular/refraction/cutout misses leave it false so the sky they
+  // show stays at physical brightness and matches the visible sky.
+  bool applySkyIndirectRadianceScale = false
+) {
+  // Perf bisect (fork — 2026-06-11, diagnostic): flat sky miss. Returns a
+  // constant mid-grey immediately so a live session can read the full
+  // per-ray miss-path cost (LUT taps + night sky + moons + cloud composite)
+  // off the frame-time delta. Always 0 in
+  // production.
+  if ((args.debugSkyBisectFlags & 2u) != 0u) {
+    return vec3(0.5f, 0.5f, 0.5f);
+  }
+
+  // Transform view direction to Y-up space if needed
+  vec3 viewDirYUp = worldToAtmosphereYUp(viewDir, isZUp, args.flipUpAxis != 0);
+  viewDirYUp = normalize(viewDirYUp);
+
+  // Sample the pre-baked sky-view LUT instead of marching the atmosphere live.
+  // sky_view_lut.comp.slang bakes evalAtmosphereRadiance from cameraPos =
+  // (0,0,0) with identical args and identical 32-sample step shape — and we
+  // were calling evalAtmosphereRadiance with cameraPos = (0,0,0) here too, so
+  // the LUT result equals the live march to within bilinear filter precision.
+  // The cache gate in RtxAtmosphere covers every arg that feeds the integral;
+  // sun / atmosphere / moon-coupling changes invalidate the LUT same-frame
+  // before raygen samples it.
+  vec3 radiance = sampleSkyViewLutForRay(viewDirYUp, AtmosphereSkyViewLut, AtmosphereSkyViewSampler);
+
+  // Suppress residual atmosphere glow at deep night.
+  // The ray marching and multiscattering approximation produce small non-zero
+  // values even when the sun is well below the horizon. These wash out dim stars
+  // and create view-dependent dark blobs in the star field. Fade the atmosphere
+  // contribution to zero once the sun is more than ~5° below the horizon.
+  {
+    float sunElev = args.sunDirection.y;
+    float atmosphereFade = smoothstep(-0.09f, 0.0f, sunElev);
+    radiance *= atmosphereFade;
+  }
+
+  // Add night-sky contribution split into two layers (fork):
+  //   - airglow joins `radiance` (diffuse; standard alpha-composite with clouds).
+  //   - stars are held aside and composited AFTER the cloud composite below
+  //     using pow(cloud_T, starCloudExtinctionPower) so HDR point-stars die
+  //     through cumulus cores instead of pinpointing through them.
+  vec3 starLayer    = vec3(0.0f);
+  vec3 airglowLayer = vec3(0.0f);
+  // Discrete stars are drawn for every ray that shows the sky to the eye -
+  // primary, PSR, specular and refraction misses - and skipped for the diffuse
+  // indirect gather, which is the one call site that cannot survive a point
+  // source. applySkyIndirectRadianceScale is already true only there, so it is
+  // the signal rather than a new flag.
+  evalNightSky(viewDirYUp, args, starLayer, airglowLayer,
+               /*includeDiscreteStars=*/!applySkyIndirectRadianceScale);
+  radiance += airglowLayer;
+
+  // Moons composite over the night sky and atmosphere — only visible at night,
+  // fade in during twilight. Each moon disk REPLACES the background where
+  // it covers (so dark-side stars don't bleed through). Loop over moons in
+  // array order: later array indices render on top of earlier ones.
+  //
+  // Fork: stars are now composited separately AFTER clouds (see below), so we
+  // also track the combined moon-disk transmittance per pixel (`starThroughMoons`)
+  // and use it to attenuate the separately-composited star layer. Without this,
+  // stars would render on top of the moon disk after the moon-replace mix below
+  // (since stars are not in `radiance` here).
+  float starThroughMoons = 1.0f;
+  float moonFade = smoothstep(0.0f, -0.09f, args.sunDirection.y);
+  if (moonFade > 0.001f) {
+    // Moon glow/halo: soft radial Gaussian falloff around each enabled moon,
+    // additive. Rendered before the opaque disks so each disk cleanly
+    // replaces the glow under it.
+    for (uint gi = 0u; gi < MAX_MOONS; ++gi) {
+      MoonParams m = args.moons[gi];
+      if (m.enabled < 0.5f) continue;
+      vec3 moonDir = normalize(m.direction);
+      float cosAngle = dot(viewDirYUp, moonDir);
+      float angularDist = acos(clamp(cosAngle, -1.0f, 1.0f));
+      // Glow extends to ~2.5x the moon radius with tight Gaussian falloff
+      float glowRadius = m.angularRadius * 2.5f;
+      if (angularDist < glowRadius) {
+        float glowFalloff = angularDist / glowRadius;
+        float glow = exp(-glowFalloff * glowFalloff * 6.0f);  // Tighter Gaussian
+        // Scale by brightness and phase (fuller = brighter glow)
+        // Shared disk-integrated illumination, so the halo tracks the same
+        // curve as the disk it surrounds and as the light the moon casts.
+        float phaseGlow = moonPhaseIllumination(m.phase);
+        phaseGlow = max(phaseGlow, 0.05f);  // minimal glow at new moon
+        // Phase 2 (2026-05-08): halo magnitude scaffold uses sharedFactor
+        // for sun-following-ness consistency. kHaloMagnitude (= 0.0015,
+        // preserved from 27c69c6d's post-phaseGlow-fix tuning) is the
+        // stylistic Gaussian-glow strength -- the halo is a stylized
+        // diffraction effect, not a strict physics term, so no
+        // moonSolidAngleSr factor.
+        //
+        // Magnitude at FNV defaults (full moon, zenith, m.brightness=1.0):
+        //   sharedFactor × 0.0015 × glow ≈ 0.74 × 0.0015 × glow ≈ 1.1e-3 × glow
+        // vs prior:
+        //   m.color × m.brightness × 0.0015 ≈ 0.88 × 4.0 × 0.0015 ≈ 5.3e-3 × glow
+        // Halo drops ~5× at default m.brightness. Recoverable via
+        // m.brightness=4.0 if user prefers current visual.
+        // Phase 3 Task 2 (2026-05-08): exposed as args.moonHaloMagnitude.
+        const float kHaloMagnitude = args.moonHaloMagnitude;
+        // Phase 3 (2026-05-08): args.haloMoonBrightness is the per-path stylistic
+        // multiplier on halo glow (default 5.0 = matches pre-Phase-2 halo magnitude
+        // at m.brightness=1.0 under FNV tonemapper).
+        vec3 sharedFactor = computeMoonSharedFactor(m, args, m.color);
+        vec3 glowColor = sharedFactor * phaseGlow * glow * kHaloMagnitude
+                       * args.haloMoonBrightness * moonFade;
+        radiance += glowColor;
+      }
+    }
+
+    for (uint i = 0u; i < MAX_MOONS; ++i) {
+      float coverage = 0.0f;
+      vec3 moonContrib = evalMoonDisk(viewDirYUp, i, args, coverage);
+      coverage *= moonFade;
+      radiance = mix(radiance, moonContrib, coverage);
+      starThroughMoons *= (1.0f - coverage);
+    }
+  }
+
+  // Clouds render on top of everything (atmosphere + stars + moons). They
+  // occlude whatever is behind them based on their alpha.
+  //
+  // Fork — 2026-09-05, world-space cloud migration Stage 4b: the primary-ray branch that used to
+  // read the prerendered AtmosphereCloudRender screen RT here is GONE — see this function's header
+  // comment for why (ordering; composite.comp.slang owns that read now). Only the secondary dome LUT
+  // branch below survives. Both the removed RT and this surviving LUT store
+  // vec4(premultiplied_rgb, view_transmittance) — alpha is TRANSMITTANCE, whereas the downstream
+  // composite expects OPACITY. We invert the alpha (opacity = 1 - transmittance) so the "no cloud"
+  // zero-fill below and this branch composite uniformly.
+  vec4 cloudLayer;
+  if (args.cloudSecondaryLutEnable != 0u && !isPrimaryRay) {
+    // Secondary-ray cloud LUT (fork — 2026-06-10, perf; full-sphere fork — 2026-09-05,
+    // world-space cloud migration Stage 2). Indirect / PSR / reflection sky-miss rays read the
+    // per-frame 256x256 dome LUT baked by cloud_secondary_lut.comp.slang instead of a full per-ray
+    // cloud march — that hidden march cost (back when these rays ran the now-removed analytical
+    // view-march) rivaled the visible cloud pass. The LUT replaced it. The LUT stores the same
+    // (premultiplied rgb, TRANSMITTANCE) convention as the cloud RT above, so the same alpha
+    // reconciliation applies. Parallax from the ray origin being a surface point rather than the
+    // camera is negligible (scene-scale offsets vs km-scale cloud distances). Deliberate look
+    // change vs legacy: secondary rays now see the same Nubis Cubed clouds the primary rays see,
+    // not the legacy Wrenninge analytical approximation. Below-horizon directions used to clamp to
+    // the horizon row via cloudDomeDirToUv's old y-clamp — a camera above the deck saw its own
+    // reflection as a horizon smear rather than the deck actually below it; cloudDomeDirToUv now
+    // maps the full sphere, so downward directions read real below-horizon LUT content instead.
+    // Azimuth seam wraps via the sampler's REPEAT-U address mode.
+    vec2 domeUv = cloudDomeDirToUv(viewDirYUp);
+    vec4 lut = AtmosphereCloudSecondaryLut.SampleLevel(AtmosphereSkyViewSampler, domeUv, 0.0f);
+    cloudLayer = vec4(lut.rgb, 1.0f - lut.a);
+  } else {
+    // No cloud source for this ray. Reached unconditionally for every PRIMARY ray now (fork —
+    // 2026-09-05, Stage 4b: primary compositing moved to composite.comp.slang, which runs after this
+    // frame's cloud RT is actually written — see the header comment), and for any non-primary ray
+    // when cloudSecondaryLutEnable is off. The legacy analytical evalClouds view-march that used to
+    // back this branch was removed (fork — 2026-06-19) — clouds come exclusively from the
+    // cloud_render compute pass (primary, composited later) and the secondary dome LUT
+    // (indirect/PSR/reflection, composited right here).
+    cloudLayer = vec4(0.0f, 0.0f, 0.0f, 0.0f);
+  }
+
+  // Sky <- clouds bleed (fork — 2026-06-19, sky-reflects-clouds coupling).
+  // The visible sky and the cloud layer are otherwise composited independently,
+  // so a colored deck (orange sunset cumulus, grey overcast) never tints the
+  // clear sky around it — leaving vivid blue gaps between warm clouds. Here the
+  // sky picks up a fraction of the LOCAL cloud radiance as colored inscatter.
+  // Source is the secondary cloud dome LUT: it is low-res (256x256, was 256x128 before Stage 2's
+  // full-sphere mapping) and so inherently smooth, giving a neighborhood-averaged cloud color per view
+  // direction — bright/colored next to a cloud, ~0 in open sky far from any —
+  // exactly the spatial falloff a bleed wants, with no extra blur pass. The
+  // bleed is added to `radiance` BEFORE the cloud composite below, so the
+  // composite's own (1 - cloudAlpha) factor keeps it in the visible-sky
+  // fraction and out of opaque cloud cores. Gated on the secondary LUT being
+  // baked (it is, by default); 0 strength = no coupling (legacy).
+  if (args.cloudSkyBleedStrength > 0.0f && args.cloudSecondaryLutEnable != 0u) {
+    vec2 bleedUv = cloudDomeDirToUv(viewDirYUp);
+    // Sample a COARSE mip of the secondary cloud dome LUT (fork — 2026-06-19):
+    // a wide neighborhood blur in one tap. Sampling mip 0 here showed the LUT's
+    // coarse texels as faceted cloud edges, and gave ~0 in true gaps
+    // (no spread). The blurred mip both removes the facets and spreads cloud
+    // color smoothly into the open sky next to clouds. Mip 4 = 16x16 (~16x blur;
+    // was 16x8 before Stage 2's full-sphere mapping doubled the LUT height —
+    // fork — 2026-09-05, world-space cloud migration Stage 2).
+    // Requires the LUT's mip chain (RtxAtmosphere::dispatchCloudSecondaryLut)
+    // and a sampler with mipmapLodMax > 0 (the shared sky-view sampler sets it).
+    const float kBleedMip = 4.0f;
+    vec4 bleedCloud = AtmosphereCloudSecondaryLut.SampleLevel(AtmosphereSkyViewSampler, bleedUv, kBleedMip);
+    // Fade the bleed out toward the zenith (fork — 2026-06-27, experimental).
+    // cloudDomeDirToUv's azimuth (atan2(x,z)) is singular as the ray approaches
+    // vertical — all azimuths converge to the pole, so adjacent near-zenith
+    // pixels read very different LUT columns. Sampled at a coarse mip this is an
+    // azimuthal pinwheel/funnel that the bleed strength amplifies (the "weird
+    // artifact at the top of the sky" when Sky Cloud Bleed is turned up). The
+    // secondary LUT only has 6 mips (max 8x8, was 8x4 before Stage 2's height
+    // doubling), so it can't be blurred azimuth-flat at the pole; instead fade
+    // the contribution over the top of the dome, where the slab is thinnest
+    // (≈4 km edge-on, the least cloud color
+    // to bleed) and the singularity lives. viewDirYUp.y = sin(elevation): the
+    // band 0.95..0.9995 is ≈72°..88° elevation.
+    const float zenithFade = 1.0f - smoothstep(0.95f, 0.9995f, viewDirYUp.y);
+    // bleedCloud.rgb is premultiplied (now wide-blurred) cloud radiance; the blur
+    // makes it non-zero in gaps near clouds, so the sky picks up their color.
+    radiance += (args.cloudSkyBleedStrength * zenithFade) * bleedCloud.rgb;
+  }
+
+  // Secondary-ray clouds use premultiplied-over; primary cloudLayer is empty here.
+  radiance = radiance * (1.0f - cloudLayer.a) + cloudLayer.rgb;
+
+  // Star composite (fork). Stars were held out of `radiance` above so they
+  // could be attenuated by cloud view-transmittance raised to a tunable power
+  // (mirrors what the moon "integration" relies on visually: cumulus near the
+  // moon gets bright enough that the disk doesn't pinpoint through partial
+  // alpha). Standard alpha-composite (T^1) leaves HDR star pinpoints visible
+  // through cumulus cores because cloud T rarely reaches 0; raising the
+  // extinction to T^k with k>1 kills star contribution far faster while
+  // leaving clear sky (T=1) unchanged.
+  //
+  // Source convention: cloudLayer.a is opacity for both the RT and secondary
+  // dome-LUT paths (the branch up top maps view_transmittance -> opacity).
+  // For a primary ray cloudLayer is always zero here now (fork — 2026-09-05,
+  // Stage 4b), so cloudViewT is 1 and this is a no-op — correct, since the
+  // primary-ray cloud/star interaction now happens in composite.comp.slang
+  // once the real cloud is available there.
+  //
+  // starThroughMoons attenuates stars by the combined moon-disk coverage so
+  // stars don't punch through opaque moon disks (they're no longer composited
+  // into `radiance` before the moon mix, so the disk's REPLACE semantics no
+  // longer hide them — we re-apply the equivalent of that occlusion here).
+  {
+    float cloudViewT = saturate(1.0f - cloudLayer.a);
+    float starExt    = pow(cloudViewT, args.starCloudExtinctionPower);
+    radiance += starLayer * starThroughMoons * starExt;
+  }
+
+  radiance = max(radiance, vec3(0.0f));
+  if (applySkyIndirectRadianceScale) {
+    radiance *= max(args.skyIndirectRadianceScale, 0.0f);
+  }
+
+  return radiance;
+}

@@ -22,10 +22,13 @@
 #pragma once
 
 #include "util_common.h"
+#include "util_commands.h"
+#include "util_perfbridge.h"
 #include "util_scopedlock.h"
 
 #include "d3d9.h"
 #include "base.h"
+#include "d3d9_sent_state.h"
 #include "shadow_map.h"
 
 #include <array>
@@ -292,4 +295,31 @@ protected:
 
   State m_state;
   Direct3DStateBlock9_LSS* m_stateRecording = nullptr;
+
+  // A3a (docs/bridge-rework-study.md): what the server's device state is known to hold (d3d9_sent_state.h).
+  SentState m_sentState;
+  bool m_dropRedundantState = false;  // bridge.conf client.dropRedundantState, read at device creation
+
+  // True when a setter must be sent. While a state block is recorded every setter is sent (the server records it
+  // and its device state does not change). Otherwise check() asks the shadow, which records the value as sent;
+  // a dropped setter is counted in [PerfBridge]. Call with the client bridge mutex held (ResponseTransaction).
+  template<typename Check>
+  bool mustSend(const Commands::D3D9Command command, Check&& check) {
+    if (m_stateRecording != nullptr || !m_dropRedundantState) {
+      return true;
+    }
+    if (check(m_sentState)) {
+      return true;
+    }
+    if (bridge_util::perf::enabled()) {
+      bridge_util::perf::noteDropped((uint16_t) command);
+    }
+    return false;
+  }
+
+public:
+  // The server's device state changed in a way this client cannot follow (StateBlock Apply, Reset).
+  void invalidateSentState() {
+    m_sentState.invalidateAll();
+  }
 };

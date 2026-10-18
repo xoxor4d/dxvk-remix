@@ -98,6 +98,11 @@ namespace dxvk {
     // NV-DXVK start: DLFG integration
     DxvkDeviceQueue present;  // we run DLFG + presents in this queue
     // NV-DXVK end
+
+    // NV-DXVK start: FSR FG integration
+    DxvkDeviceQueue imageAcquire;  // dedicated queue for FSR frame interpolation image acquire
+    DxvkDeviceQueue fsrPresent;    // present queue for FSR FG (from graphics family, supports presentation)
+    // NV-DXVK end
   };
   
   /**
@@ -668,8 +673,10 @@ namespace dxvk {
     
     DxvkDeviceQueueSet          m_queues;
     
-    DxvkRecycler<DxvkCommandList,    16> m_recycledCommandLists;
-    DxvkRecycler<DxvkDescriptorPool, 16> m_recycledDescriptorPools;
+    // NV-DXVK start: keep as many command lists as can be queued (dxvk.maxQueuedCommandBuffers), 16 recreated the rest every frame
+    DxvkRecycler<DxvkCommandList,    64> m_recycledCommandLists;
+    DxvkRecycler<DxvkDescriptorPool, 64> m_recycledDescriptorPools;
+    // NV-DXVK end
     
     DxvkSubmissionQueue m_submissionQueue;
 

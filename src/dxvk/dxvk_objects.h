@@ -33,6 +33,10 @@
 #include "dxvk_pipemanager.h"
 #include "dxvk_renderpass.h"
 #include "dxvk_unbound.h"
+// NV-DXVK start: Numos atmosphere and precipitation subsystems
+#include "rtx_render/rtx_atmosphere.h"
+#include "rtx_render/rtx_precipitation.h"
+// NV-DXVK end
 #include "rtx_render/rtx_global_volumetrics.h"
 #include "rtx_render/rtx_pathtracer_gbuffer.h"
 #include "rtx_render/rtx_pathtracer_integrate_direct.h"
@@ -47,7 +51,6 @@
 #include "rtx_render/rtx_taa.h"
 #include "rtx_render/rtx_auto_exposure.h"
 #include "rtx_render/rtx_tone_mapping.h"
-#include "rtx_render/rtx_local_tone_mapping.h"
 #include "rtx_render/rtx_bloom.h"
 #include "rtx_render/rtx_geometry_utils.h"
 #include "rtx_render/rtx_image_utils.h"
@@ -61,7 +64,7 @@
 #include "rtx_render/rtx_particle_system.h"
 #include "rtx_render/rtx_point_instancer_system.h"
 #include "rtx_render/rtx_gpu_crash.h"
-#include "rtx_render/rtx_dlss_neural_rendering.h"
+#include "rtx_render/rtx_neural_uplift.h"
 
 #include "rtx_render/rtx_denoise_type.h"
 #include "../util/util_lazy.h"
@@ -85,8 +88,12 @@ namespace dxvk {
   class ImGUI;
   class RtxTextureManager;
   class NeuralRadianceCache;
+  class RtxSharc;
   class DxvkXeSS;
   class SparseRendering;
+  class DxvkFSR;
+  class DxvkFSRFrameGen;
+  class DxvkRCAS;
 
   class NGXContext;
 
@@ -140,6 +147,12 @@ namespace dxvk {
       return m_metaPack.get(m_device);
     }
 
+    // NV-DXVK start: Numos atmosphere
+    RtxAtmosphere& metaAtmosphere() {
+      return m_atmosphere.get();
+    }
+    // NV-DXVK end
+
     RtxGlobalVolumetrics& metaGlobalVolumetrics() {
       return m_globalVolumetrics.get();
     }
@@ -174,6 +187,14 @@ namespace dxvk {
 
     NeeCachePass& metaNeeCache() {
       return m_neeCache.get();
+    }
+
+    PrecipitationSystem& metaPrecipitation() {
+      return m_precipitation.get();
+    }
+
+    RtxSharc& metaSharc() {
+      return m_sharc.get();
     }
 
     NeuralRadianceCache& metaNeuralRadianceCache() {
@@ -224,8 +245,8 @@ namespace dxvk {
       return m_dlfg.get();
     }
 
-    DlssNeuralRendering& metaDlssNeuralRendering() {
-      return m_dlssNeuralRendering.get();
+    DxvkNeuralUplift& metaNeuralUplift() {
+      return m_neuralUplift.get();
     }
 
     DxvkNIS& metaNIS() {
@@ -238,6 +259,18 @@ namespace dxvk {
 
     DxvkXeSS& metaXeSS() {
       return m_xess.get();
+    }
+
+    DxvkFSR& metaFSR() {
+      return m_fsr.get();
+    }
+
+    DxvkFSRFrameGen& metaFSRFrameGen() {
+      return m_fsrFrameGen.get();
+    }
+
+    DxvkRCAS& metaRCAS() {
+      return m_rcas.get();
     }
 
     CompositePass& metaComposite() {
@@ -258,10 +291,6 @@ namespace dxvk {
 
     DxvkToneMapping& metaToneMapping() {
       return m_toneMapping.get();
-    }
-
-    DxvkLocalToneMapping& metaLocalToneMapping() {
-      return m_localToneMapping.get();
     }
 
     DxvkBloom& metaBloom() {
@@ -375,6 +404,9 @@ namespace dxvk {
     Rc<GameCapturer>   m_capturer;
 
     // RTX Shaders
+    // NV-DXVK start: Numos atmosphere
+    Active<RtxAtmosphere>                   m_atmosphere;
+    // NV-DXVK end
     Active<RtxGlobalVolumetrics>            m_globalVolumetrics;
     Active<SparseRendering>                 m_sparseRendering;
     Active<DxvkPathtracerGbuffer>           m_pathtracerGbuffer;
@@ -385,6 +417,8 @@ namespace dxvk {
     Active<DemodulatePass>                  m_demodulate;
     Active<NeeCachePass>                    m_neeCache;
     Active<NeuralRadianceCache>             m_neuralRadianceCache;
+    Active<PrecipitationSystem>             m_precipitation;
+    Active<RtxSharc>                        m_sharc;
     Active<DxvkDenoise>                     m_primaryDirectLightDenoiser;
     Active<DxvkDenoise>                     m_primaryIndirectLightDenoiser;
     Active<DxvkDenoise>                     m_primaryCombinedLightDenoiser;
@@ -397,16 +431,18 @@ namespace dxvk {
     Active<DxvkDenoise>                     m_referenceDenoiserSecondLobe2;
     Active<DxvkDLSS>                        m_dlss;
     Active<DxvkRayReconstruction>           m_rayReconstruction;
-    Active<DlssNeuralRendering>             m_dlssNeuralRendering;
+    Active<DxvkNeuralUplift>                m_neuralUplift;
     Active<DxvkNIS>                         m_nis;
     Active<DxvkTemporalAA>                  m_taa;
     Active<DxvkXeSS>                        m_xess;
+    Active<DxvkFSR>                         m_fsr;
+    Active<DxvkFSRFrameGen>                 m_fsrFrameGen;
+    Active<DxvkRCAS>                        m_rcas;
     Active<CompositePass>                   m_composite;
     Active<GpuCrashPass>                    m_gpuCrash;
     Active<DebugView>                       m_debug_view;
     Active<DxvkAutoExposure>                m_autoExposure;
     Active<DxvkToneMapping>                 m_toneMapping;
-    Active<DxvkLocalToneMapping>            m_localToneMapping;
     Active<DxvkBloom>                       m_bloom;
     Active<RtxGeometryUtils>                m_geometryUtils;
     Active<RtxImageUtils>                   m_imageUtils;

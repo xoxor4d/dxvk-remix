@@ -51,6 +51,8 @@
 #include "../client/client_options.h"
 
 #include "../tracy/tracy.hpp"
+#include "util_perfbridge.h"
+#include <algorithm>
 #include <iostream>
 #include <d3d9.h>
 #include <assert.h>
@@ -73,12 +75,16 @@ using namespace remixapi::util;
     } \
   } 
 
+// With async creates (no response) a failure would be invisible to the game, so it is counted and reported instead
+// (util_perfbridge.h, noteAsyncCreateFailure). Used only inside ProcessDeviceCommandQueue (rpcHeader in scope).
 #define SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, uid) { \
     if (GlobalOptions::getSendCreateFunctionServerResponses() || GlobalOptions::getSendAllServerResponses()) { \
       ServerMessage c(Commands::Bridge_Response, uid); \
       c.send_data(hresult); \
+    } else if (FAILED(hresult)) { \
+      bridge_util::perf::noteAsyncCreateFailure((uint16_t) rpcHeader.command, (long) (hresult)); \
     } \
-  } 
+  }
 
 #define PULL(type, name) const auto& name = (type)DeviceBridge::get_data()
 #define PULL_I(name) PULL(INT, name)
@@ -167,6 +173,25 @@ static void deserializeFromQueue(SerializableT& serializableT) {
   assert(size == dslz.size());
   dslz.deserialize();
   serializableT = std::move(dslz);
+}
+
+// Game textures arrive as client D3D object ids, map them to the server-side textures
+static void resolveGameTextures(serialize::MaterialInfoGameTextures& info) {
+  const uint32_t textureId = (uint32_t) (uintptr_t) info.colorTexture;
+  info.colorTexture = nullptr;
+  if (textureId == 0) {
+    return;
+  }
+  const auto it = gpD3DResources.find(textureId);
+  if (it != gpD3DResources.end() && it->second && it->second->GetType() == D3DRTYPE_TEXTURE) {
+    info.colorTexture = (IDirect3DTexture9*) it->second;
+  } else {
+    static bool warned = false;
+    if (!warned) {
+      Logger::warn("[RemixApi] Game texture is not a known 2D texture. Treating as null.");
+      warned = true;
+    }
+  }
 }
 }
 
@@ -300,6 +325,9 @@ void ProcessDeviceCommandQueue() {
 #endif
 
     const Header rpcHeader = DeviceBridge::pop_front();
+    // [PerfBridge]: processing time (decode + the runtime call) and the data-ring words consumed.
+    const int64_t perfStart = bridge_util::perf::enabled() ? bridge_util::perf::now() : 0;
+    const size_t perfDataStart = DeviceBridge::get_data_pos();
 
 #ifdef _DEBUG
     // If data batching is enabled and the data offset on the comamnd is different from
@@ -323,6 +351,10 @@ void ProcessDeviceCommandQueue() {
         Logger::info("Device Processing: " + toString(rpcHeader.command) + " UID: " + std::to_string(currentUID));
       }
 #endif
+      // A3b: the per-command handlers, as a lambda so a Bridge_StatePacket can run them once per record (with the
+      // record's command and the packet's device handle and UID). The handlers read their arguments from the data
+      // ring, where a record carries them exactly as the stand-alone command would.
+      const auto dispatch = [&](const Header& rpcHeader, const uint32_t currentUID) {
       // The mother of all switch statements - every call in the D3D9 interface is mapped here...
       switch (rpcHeader.command) {
       case IDirect3D9Ex_CreateDeviceEx:
@@ -733,6 +765,7 @@ void ProcessDeviceCommandQueue() {
           Logger::trace("Present semaphore released successfully.");
 #endif
         }
+        DeviceBridge::perfOnFrame();
         break;
       }
       case IDirect3DDevice9Ex_GetBackBuffer:
@@ -1783,6 +1816,7 @@ void ProcessDeviceCommandQueue() {
           Logger::trace("Present semaphore released successfully.");
 #endif
         }
+        DeviceBridge::perfOnFrame();
         break;
       }
       case IDirect3DSwapChain9_GetFrontBufferData:
@@ -2394,14 +2428,9 @@ void ProcessDeviceCommandQueue() {
         PULL_U(OffsetToLock);
         PULL_U(SizeToLock);
         PULL_D(Flags);
-        const auto& pVertexBuffer = (IDirect3DVertexBuffer9*) gpD3DResources[pHandle];
+        const auto pVertexBuffer = (IDirect3DVertexBuffer9*) gpD3DResources[pHandle];
 
-        // Now lock the buffer so we can copy the data into it
-        void* pbData = nullptr;
-        auto hresult = pVertexBuffer->Lock(IN OffsetToLock, IN SizeToLock, IN & pbData, IN Flags);
-        assert(S_OK == hresult);
-
-        // Copy the data over
+        // Locate the data first: it must be consumed from the queue even when the upload is skipped
         void* data = nullptr;
         if (Commands::IsDataReserved(rpcHeader.flags)) {
           PULL_D(DataOffset);
@@ -2413,9 +2442,24 @@ void ProcessDeviceCommandQueue() {
           const auto size = DeviceBridge::get_data(&data);
           assert(SizeToLock == size);
         }
-        memcpy(pbData, data, SizeToLock);
-        hresult = pVertexBuffer->Unlock();
-        assert(SUCCEEDED(hresult));
+
+        // A buffer whose (async) create failed has no server object: skip the upload (counted at the create)
+        if (pVertexBuffer == nullptr) {
+          break;
+        }
+
+        // Now lock the buffer and copy the data into it
+        void* pbData = nullptr;
+        auto hresult = pVertexBuffer->Lock(IN OffsetToLock, IN SizeToLock, IN & pbData, IN Flags);
+        assert(S_OK == hresult);
+        if (SUCCEEDED(hresult) && pbData != nullptr) {
+          memcpy(pbData, data, SizeToLock);
+          hresult = pVertexBuffer->Unlock();
+          assert(SUCCEEDED(hresult));
+          if (bridge_util::perf::enabled()) {
+            bridge_util::perf::noteUpload(SizeToLock);
+          }
+        }
 
         break;
       }
@@ -2480,14 +2524,9 @@ void ProcessDeviceCommandQueue() {
         PULL_U(OffsetToLock);
         PULL_U(SizeToLock);
         PULL_D(Flags);
-        const auto& pIndexBuffer = (IDirect3DIndexBuffer9*) gpD3DResources[pHandle];
+        const auto pIndexBuffer = (IDirect3DIndexBuffer9*) gpD3DResources[pHandle];
 
-        // Now lock the buffer so we can copy the data into it
-        void* pbData = nullptr;
-        auto hresult = pIndexBuffer->Lock(IN OffsetToLock, IN SizeToLock, IN & pbData, IN Flags);
-        assert(S_OK == hresult);
-
-        // Copy the data over
+        // Locate the data first: it must be consumed from the queue even when the upload is skipped
         void* data = nullptr;
         if (Commands::IsDataReserved(rpcHeader.flags)) {
           PULL_D(DataOffset);
@@ -2499,9 +2538,24 @@ void ProcessDeviceCommandQueue() {
           const auto size = DeviceBridge::get_data(&data);
           assert(SizeToLock == size);
         }
-        memcpy(pbData, data, SizeToLock);
-        hresult = pIndexBuffer->Unlock();
-        assert(SUCCEEDED(hresult));
+
+        // A buffer whose (async) create failed has no server object: skip the upload (counted at the create)
+        if (pIndexBuffer == nullptr) {
+          break;
+        }
+
+        // Now lock the buffer and copy the data into it
+        void* pbData = nullptr;
+        auto hresult = pIndexBuffer->Lock(IN OffsetToLock, IN SizeToLock, IN & pbData, IN Flags);
+        assert(S_OK == hresult);
+        if (SUCCEEDED(hresult) && pbData != nullptr) {
+          memcpy(pbData, data, SizeToLock);
+          hresult = pIndexBuffer->Unlock();
+          assert(SUCCEEDED(hresult));
+          if (bridge_util::perf::enabled()) {
+            bridge_util::perf::noteUpload(SizeToLock);
+          }
+        }
         break;
       }
       case IDirect3DIndexBuffer9_GetDesc:
@@ -2578,11 +2632,6 @@ void ProcessDeviceCommandQueue() {
         PULL_OBJ(RECT, pRect);
         PULL_D(Flags);
         const auto pSurface = (IDirect3DSurface9*) gpD3DResources[pHandle];
-        // Now lock the rect so we can copy the data into it
-        D3DLOCKED_RECT lockedRect;
-        auto hresult = pSurface->LockRect(OUT & lockedRect, IN pRect, IN Flags);
-        assert(S_OK == hresult);
-        // Copy the data over
         const uint32_t width = pRect->right - pRect->left;
         const uint32_t height = pRect->bottom - pRect->top;
         PULL_D(dFormat);
@@ -2604,11 +2653,26 @@ void ProcessDeviceCommandQueue() {
           const size_t numRows = bridge_util::calcStride(height, format);
           assert(pulledSize == numRows * IncomingPitch);
         }
-        FOR_EACH_RECT_ROW(lockedRect, height, format,
-          memcpy(ptr, (PBYTE) pData + y * IncomingPitch, rowSize);
-        )
-        hresult = pSurface->UnlockRect();
-        assert(SUCCEEDED(hresult));
+
+        // A surface whose (async) create failed has no server object: skip the upload (counted at the create)
+        if (pSurface == nullptr) {
+          break;
+        }
+
+        // Now lock the rect and copy the data into it
+        D3DLOCKED_RECT lockedRect;
+        auto hresult = pSurface->LockRect(OUT & lockedRect, IN pRect, IN Flags);
+        assert(S_OK == hresult);
+        if (SUCCEEDED(hresult)) {
+          FOR_EACH_RECT_ROW(lockedRect, height, format,
+            memcpy(ptr, (PBYTE) pData + y * IncomingPitch, rowSize);
+          )
+          hresult = pSurface->UnlockRect();
+          assert(SUCCEEDED(hresult));
+          if (bridge_util::perf::enabled()) {
+            bridge_util::perf::noteUpload(uint64_t(rowSize) * bridge_util::calcStride(height, format));
+          }
+        }
 
         break;
       }
@@ -2729,8 +2793,14 @@ void ProcessDeviceCommandQueue() {
       {
         GET_HND(pHandle);
         PULL(DWORD, dwIssueFlags);
-        const auto &pQuery = gpD3DQuery[pHandle];
-        const auto hresult = pQuery->Issue(dwIssueFlags);
+        const auto pQuery = gpD3DQuery[pHandle];
+        // A query whose (async) create failed has no server object (counted at the create).
+        const HRESULT hresult = (pQuery != nullptr) ? pQuery->Issue(dwIssueFlags) : D3DERR_INVALIDCALL;
+        // A4: the client answers event queries itself once this Issue has been executed (util_queryresults.h).
+        // Issues are processed in order, so one counter serves every query.
+        if (auto* pQueryBlock = bridge_util::QueryResults::block()) {
+          pQueryBlock->issuedProcessedUid.store((uint32_t) currentUID, std::memory_order_release);
+        }
         SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
         break;
       }
@@ -2739,12 +2809,28 @@ void ProcessDeviceCommandQueue() {
         GET_HND(pHandle);
         PULL(DWORD, dwSize);
         PULL(DWORD, dwGetDataFlags);
-        const auto& pQuery = gpD3DQuery[pHandle];
-        void* pData = NULL;
-        if (dwSize > 0) {
-          pData = new char[dwSize];
+        const auto pQuery = gpD3DQuery[pHandle];
+        std::vector<uint8_t> data(dwSize);
+        void* pData = dwSize > 0 ? data.data() : nullptr;
+        const HRESULT hresult = (pQuery != nullptr) ? pQuery->GetData(pData, dwSize, dwGetDataFlags) : D3DERR_INVALIDCALL;
+
+        if (Commands::IsAsyncResult(rpcHeader.flags)) {
+          // A4: no response. Write the answer to the client's slot, then publish the request's sequence number.
+          PULL_U(slotIndex);
+          PULL_U(requestSeq);
+          auto* pQueryBlock = bridge_util::QueryResults::block();
+          if (pQueryBlock != nullptr && slotIndex < bridge_util::QuerySharedBlock::kMaxSlots) {
+            bridge_util::QueryResultSlot& slot = pQueryBlock->slots[slotIndex];
+            const uint32_t size = std::min<uint32_t>(dwSize, bridge_util::QueryResultSlot::kMaxDataSize);
+            slot.hresult = (int32_t) hresult;
+            slot.size = size;
+            if (hresult == S_OK && size > 0) {
+              memcpy(slot.data, pData, size);
+            }
+            slot.answeredSeq.store(requestSeq, std::memory_order_release);
+          }
+          break;
         }
-        const auto hresult = pQuery->GetData(pData, dwSize, dwGetDataFlags);
 
         ServerMessage c(Commands::Bridge_Response, currentUID);
         c.send_data(hresult);
@@ -2753,10 +2839,6 @@ void ProcessDeviceCommandQueue() {
             memcpy(blobPacketPtr, pData, dwSize);
             c.end_data_blob();
           }
-        }
-      
-        if (dwSize > 0) {
-          delete[]pData;
         }
         break;
       }
@@ -2827,6 +2909,7 @@ void ProcessDeviceCommandQueue() {
           serialize::MaterialInfoOpaqueSubsurface opaqueSubsurface;
           serialize::MaterialInfoTranslucent translucent;
           serialize::MaterialInfoPortal portal;
+          serialize::MaterialInfoGameTextures gameTextures;
         } exts;
         memset(&exts, 0, sizeof(MaterialExtensions));
 
@@ -2874,6 +2957,15 @@ void ProcessDeviceCommandQueue() {
               pInfoProto = &getInfoProto(exts.portal);
               break;
             }
+            case REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_GAME_TEXTURES_EXT:
+            {
+              assert(!exts.gameTextures.pNext);
+              deserializeFromQueue(exts.gameTextures);
+              resolveGameTextures(exts.gameTextures);
+              pInfoProto->pNext = &(exts.gameTextures);
+              pInfoProto = &getInfoProto(exts.gameTextures);
+              break;
+            }
             default:
             {
               Logger::warn("[Api_CreateMaterial] Unknown sType. Skipping.");
@@ -2906,6 +2998,57 @@ void ProcessDeviceCommandQueue() {
         break;
       }
 
+      case RemixApi_CreateTexture:
+      {
+        // Plain words, as the client sends them (cl/remix_api.cpp remixapi_CreateTexture); the 64-bit hash as lo / hi.
+        PULL(remixapi_StructType, sType);
+        PULL_U(hashLo);
+        PULL_U(hashHi);
+        const uint64_t hash = (uint64_t(hashHi) << 32) | uint64_t(hashLo);
+        PULL(uint32_t, width);
+        PULL(uint32_t, height);
+        PULL(uint32_t, depth);
+        PULL(uint32_t, mipLevels);
+        PULL(remixapi_Format, format);
+        PULL(uint32_t, dataSize);
+        void* data = nullptr;
+        PULL_DATA(dataSize, data);
+        const auto bridgeHandle = DeviceBridge::get_data();
+
+        remixapi_TextureInfo info = {};
+        info.sType     = sType;
+        info.hash      = hash;
+        info.width     = width;
+        info.height    = height;
+        info.depth     = depth;
+        info.mipLevels = mipLevels;
+        info.format    = format;
+        info.data      = data;
+        info.dataSize  = dataSize;
+
+        remixapi_TextureHandle remixApiHandle = nullptr;
+        if (info.sType == REMIXAPI_STRUCT_TYPE_TEXTURE_INFO &&
+            remixapi::g_remix.CreateTexture &&
+            remixapi::g_remix.CreateTexture(&info, &remixApiHandle) == REMIXAPI_ERROR_CODE_SUCCESS) {
+          TextureHandle(bridgeHandle, remixApiHandle);
+        } else {
+          Logger::err("[RemixApi_CreateTexture] Remix API call failed!");
+        }
+        break;
+      }
+
+      case RemixApi_DestroyTexture:
+      {
+        TextureHandle handle(DeviceBridge::get_data());
+        if (handle.isValid() && remixapi::g_remix.DestroyTexture) {
+          remixapi::g_remix.DestroyTexture(handle);
+          handle.invalidate();
+        } else {
+          Logger::err("[RemixApi_DestroyTexture] Invalid texture handle!");
+        }
+        break;
+      }
+
       case RemixApi_CreateMesh:
       {
         const auto meshInfoSType = remixapi::pullSType();
@@ -2913,6 +3056,27 @@ void ProcessDeviceCommandQueue() {
         serialize::MeshInfo meshInfo;
         deserializeFromQueue(meshInfo);
         meshInfo.pNext = nullptr;
+
+        serialize::MeshInfoReplacementHash replacementHash;
+        memset(&replacementHash, 0, sizeof(replacementHash));
+        bool bMeshExtExists = remixapi::pullBool();
+        while (bMeshExtExists) {
+          const auto extSType = remixapi::pullSType();
+          switch (extSType) {
+            case REMIXAPI_STRUCT_TYPE_MESH_INFO_REPLACEMENT_HASH_EXT:
+            {
+              deserializeFromQueue(replacementHash);
+              meshInfo.pNext = &replacementHash;
+              break;
+            }
+            default:
+            {
+              Logger::warn("[RemixApi_CreateMesh] Unknown sType. Skipping.");
+              break;
+            }
+          }
+          bMeshExtExists = remixapi::pullBool();
+        }
         
         for(size_t iSurf = 0; iSurf < meshInfo.surfaces_count; ++iSurf) {
           // If we don't const_cast, we'd have to copy the entire
@@ -2955,6 +3119,7 @@ void ProcessDeviceCommandQueue() {
         struct InstanceExtensions {
           serialize::InstanceInfoObjectPicking objectPicking;
           serialize::InstanceInfoBlend blend;
+          serialize::InstanceInfoD3DOverrides d3dOverrides;
           serialize::InstanceInfoTransforms boneXforms;
           serialize::InstanceInfoParticleSystem particleSystem;
         } exts;
@@ -2993,6 +3158,14 @@ void ProcessDeviceCommandQueue() {
               deserializeFromQueue(exts.blend);
               pInfoProto->pNext = &(exts.blend);
               pInfoProto = &getInfoProto(exts.blend);
+              break;
+            }
+            case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_D3D_OVERRIDES_EXT:
+            {
+              assert(!exts.d3dOverrides.pNext);
+              deserializeFromQueue(exts.d3dOverrides);
+              pInfoProto->pNext = &(exts.d3dOverrides);
+              pInfoProto = &getInfoProto(exts.d3dOverrides);
               break;
             }
             case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT:
@@ -3167,6 +3340,41 @@ void ProcessDeviceCommandQueue() {
         break;
       }
 
+      case RemixApi_SetupCamera:
+      {
+        const auto pullBlob = [](void* dst, const size_t dstSize) {
+          void* ptr = nullptr;
+          const uint32_t size = DeviceBridge::getReaderChannel().data->pull(&ptr);
+          memcpy(dst, ptr, std::min<size_t>(size, dstSize));
+        };
+
+        remixapi_CameraInfo info = {};
+        info.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO;
+        pullBlob(&info.type, sizeof(info.type));
+        pullBlob(info.view, sizeof(info.view));
+        pullBlob(info.projection, sizeof(info.projection));
+
+        remixapi_CameraInfoParameterizedEXT params = {};
+        if (remixapi::pullBool()) {
+          params.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT;
+          for (auto* vec : { &params.position, &params.forward, &params.up, &params.right }) {
+            pullBlob(&vec->x, sizeof(float));
+            pullBlob(&vec->y, sizeof(float));
+            pullBlob(&vec->z, sizeof(float));
+          }
+          pullBlob(&params.fovYInDegrees, sizeof(float));
+          pullBlob(&params.aspect, sizeof(float));
+          pullBlob(&params.nearPlane, sizeof(float));
+          pullBlob(&params.farPlane, sizeof(float));
+          info.pNext = &params;
+        }
+
+        if (remixapi::g_remix.SetupCamera(&info) != REMIXAPI_ERROR_CODE_SUCCESS) {
+          Logger::err("[RemixApi_SetupCamera] Remix API call failed!");
+        }
+        break;
+      }
+
       case RemixApi_CreateD3D9:
       {
         Logger::err("[RemixApi_CreateD3D9] Not yet supported. Device used by Remix API defaults to "
@@ -3180,34 +3388,147 @@ void ProcessDeviceCommandQueue() {
                                               "most recently created by client application.");
         break;
       }
-      
+
+      case RemixApi_SetGameValue:
+      {
+        void* key_ptr = nullptr;
+        const uint32_t key_size = DeviceBridge::getReaderChannel().data->pull(&key_ptr);
+        std::string key_str((const char*) key_ptr, key_size);
+
+        void* value_ptr = nullptr;
+        const uint32_t value_size = DeviceBridge::getReaderChannel().data->pull(&value_ptr);
+        std::string value_str((const char*) value_ptr, value_size);
+
+        remixapi_ErrorCode result = REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+        if (remixapi::g_remix.SetGameValue) {
+          result = remixapi::g_remix.SetGameValue(key_str.c_str(), value_str.c_str());
+        } else {
+          Logger::err("[RemixApi_SetGameValue] SetGameValue function pointer is null in g_remix.");
+        }
+
+        ServerMessage c(Commands::Bridge_Response, currentUID);
+        c.send_data(static_cast<uint32_t>(result));
+        break;
+      }
+
+      case RemixApi_GetGameValue:
+      {
+        void* key_ptr = nullptr;
+        const uint32_t key_size = DeviceBridge::getReaderChannel().data->pull(&key_ptr);
+        std::string key_str((const char*) key_ptr, key_size);
+        const uint32_t in_buf_size = DeviceBridge::get_data();
+
+        // Single GetGameValue call with a generous server-side buffer. The
+        // earlier two-call pattern (size probe, then data fetch) had a TOCTOU
+        // window: a concurrent SetGameValue between the two calls could have
+        // grown the value, leaving the second call's allocation undersized and
+        // either leaking uninit memory bytes to the client or desyncing the
+        // bridge queue. GameStateStore values are short strings (preset
+        // names, float strings) so kMaxValueSize easily covers all realistic
+        // values; if a value somehow exceeds it the request is downgraded to
+        // GENERAL_FAILURE and the client can re-poll.
+        constexpr uint32_t kMaxValueSize = 4096;
+        std::vector<char> buf(kMaxValueSize);
+
+        remixapi_ErrorCode result = REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+        uint32_t actual_size = 0;
+
+        if (remixapi::g_remix.GetGameValue) {
+          result = remixapi::g_remix.GetGameValue(key_str.c_str(), buf.data(), kMaxValueSize, &actual_size);
+          // Value larger than our internal buffer -- impl honored the contract
+          // and left buf untouched. We have no bytes to forward; surface as
+          // GENERAL_FAILURE rather than sending uninit memory or desyncing.
+          if (result == REMIXAPI_ERROR_CODE_SUCCESS && actual_size > kMaxValueSize) {
+            Logger::warn(format_string(
+              "[RemixApi_GetGameValue] value size (%u) exceeds bridge buffer (%u); "
+              "downgrading to GENERAL_FAILURE.", actual_size, kMaxValueSize));
+            result = REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+            actual_size = 0;
+          }
+        } else {
+          Logger::err("[RemixApi_GetGameValue] GetGameValue function pointer is null in g_remix.");
+        }
+
+        ServerMessage c(Commands::Bridge_Response, currentUID);
+        c.send_data(static_cast<uint32_t>(result));
+        c.send_data(actual_size);
+        if (result == REMIXAPI_ERROR_CODE_SUCCESS && actual_size > 0 && in_buf_size >= actual_size) {
+          // Caller's buffer is large enough -- forward the value bytes.
+          // buf contains the actual value bytes from the single call above.
+          c.send_data(actual_size, buf.data());
+        }
+        break;
+      }
+
       default:
         break;
+      }
+      };
+
+      if (rpcHeader.command == Bridge_StatePacket) {
+        // Records until the packet's end position: [setter command id][its arguments]
+        while (gbBridgeRunning && DeviceBridge::get_data_pos() != rpcHeader.dataOffset) {
+          PULL_U(recordCommand);
+          const auto command = (Commands::D3D9Command) recordCommand;
+          if (!Commands::IsBatchableState(command)) {
+            // A record the server cannot decode would leave every later read out of step: stop the bridge.
+            Logger::err(format_string("[Bridge] state packet holds a non-state command %u (%s); stopping the bridge.",
+                                      (unsigned) recordCommand, Commands::toString(command).c_str()));
+            gbBridgeRunning = false;
+            break;
+          }
+          if (bridge_util::perf::enabled()) {
+            bridge_util::perf::noteRecord((uint16_t) command);
+          }
+          dispatch(Header { command, 0, rpcHeader.dataOffset, rpcHeader.pHandle }, (uint32_t) currentUID);
+        }
+      } else {
+        dispatch(rpcHeader, (uint32_t) currentUID);
       }
     }
 
     // Ensure the data position between client and server is in sync after processing the command
-    if (!CHECK_DATA_OFFSET)       {
-      Logger::warn("Data not in sync");
+    // A command that read more or fewer data words than the client wrote leaves every later read out of step: the
+    // next variable-size read takes a garbage length (typically ending in a misleading "buffer too small" exit) or
+    // the runtime is fed garbage. Stop the bridge here, naming the command, instead of carrying on.
+    if (!CHECK_DATA_OFFSET) {
+      Logger::err(format_string("[Bridge] data out of step after %s: the server read up to word %u, the client wrote up to "
+                                "word %u. Client and server disagree on this command's arguments; stopping the bridge.",
+                                toString(rpcHeader.command).c_str(), (unsigned) DeviceBridge::get_data_pos(),
+                                (unsigned) rpcHeader.dataOffset));
+      gbBridgeRunning = false;
+      done = true;
+      break;
     }
-    assert(CHECK_DATA_OFFSET);
-    *DeviceBridge::getReaderChannel().serverDataPos = DeviceBridge::get_data_pos();
-    // Check if overwrite condition was met
-    if (*DeviceBridge::getReaderChannel().clientDataExpectedPos != -1) {
-      if (!gOverwriteConditionAlreadyActive) {
-        gOverwriteConditionAlreadyActive = true;
-        Logger::warn("Data Queue overwrite condition triggered");
-      }
-      // Check if server needs to complete a loop and the position was read
-      if (*DeviceBridge::getReaderChannel().serverDataPos > *DeviceBridge::getReaderChannel().clientDataExpectedPos && !(*DeviceBridge::getReaderChannel().serverResetPosRequired)) {
+    // Publish how far the data ring has been consumed and wake a client waiting to reuse that space (syncDataQueue)
+    const int64_t readPos = (int64_t) DeviceBridge::get_data_abs_pos();
+    DeviceBridge::getReaderChannel().serverDataPos->store(readPos, std::memory_order_seq_cst);
+    const int64_t clientWaitsFor = DeviceBridge::getReaderChannel().clientDataExpectedPos->load(std::memory_order_seq_cst);
+    if (clientWaitsFor != -1) {
+      if (readPos < clientWaitsFor) {
+        if (!gOverwriteConditionAlreadyActive) {
+          gOverwriteConditionAlreadyActive = true;
+          Logger::warn(format_string("Data Queue overwrite condition triggered: the client waits for word %lld, the server is at word %lld",
+                                     (long long) clientWaitsFor, (long long) readPos));
+        }
+      } else {
         DeviceBridge::getReaderChannel().dataSemaphore->release(1);
-        *DeviceBridge::getReaderChannel().clientDataExpectedPos = -1;
-        gOverwriteConditionAlreadyActive = false;
-        Logger::info("DataQueue overwrite condition resolved");
+        if (gOverwriteConditionAlreadyActive) {
+          gOverwriteConditionAlreadyActive = false;
+          Logger::info("DataQueue overwrite condition resolved");
+        }
       }
     }
 
     const auto count = DeviceBridge::end_read_data();
+
+    if (perfStart != 0) {
+      const size_t perfDataEnd = DeviceBridge::get_data_pos();
+      const size_t perfDataWords = perfDataEnd >= perfDataStart
+        ? perfDataEnd - perfDataStart
+        : perfDataEnd + DeviceBridge::getReaderChannel().data->get_total_size() - perfDataStart;
+      bridge_util::perf::noteCommand((uint16_t) rpcHeader.command, (uint32_t) perfDataWords, bridge_util::perf::now() - perfStart);
+    }
 
 #ifdef ENABLE_DATA_BATCHING_TRACE
     Logger::trace(format_string("Finished batch data read with %d data items.", count));
@@ -3518,7 +3839,9 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
     SharedHeap::init();
   }
 
-  gpPresent = new NamedSemaphore("Present", GlobalOptions::getPresentSemaphoreMaxFrames(), GlobalOptions::getPresentSemaphoreMaxFrames());
+  // Same counts as the client (d3d9_lss.cpp). Normally the client created the semaphore first and these are ignored.
+  gpPresent = new NamedSemaphore("Present", GlobalOptions::getPresentSemaphoreMaxFrames(),
+                                 std::max<size_t>(GlobalOptions::getPresentSemaphoreMaxFrames(), 1));
 
   // Initialize our shared client command queue as a Reader.
   // (1) Wait for connection for client.
@@ -3576,6 +3899,10 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
   // Pulling default data sent from client to have the data queue in sync
   {
     PULL_U(uid);
+    // The client's response policy (which calls it waits on) wins over this side's config: see
+    // GlobalOptions::applyResponsePolicyFlags.
+    PULL_U(clientResponsePolicy);
+    GlobalOptions::applyResponsePolicyFlags(clientResponsePolicy);
   }
   // (5) Ready to listen for incoming commands
   Logger::info("Handshake completed! Now waiting for incoming commands...");

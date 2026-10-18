@@ -38,6 +38,7 @@
 #include "rtx_texture_manager.h"
 #include "rtx_debug_view.h"
 #include "rtx_xess.h"
+#include "rtx_fork_hooks.h"
 #include "rtx_ray_reconstruction.h"
 #include "../util/util_global_time.h"
 
@@ -402,7 +403,7 @@ namespace dxvk {
 
   void Resources::updateDlssNeuralRenderingResources(Rc<DxvkContext>& ctx) {
     const bool resourcesAreNeeded =
-      device()->getCommon()->metaDlssNeuralRendering().useDlssNeuralRendering();
+      device()->getCommon()->metaNeuralUplift().useNeuralUplift();
 
     if (resourcesAreNeeded == m_dlssNeuralRenderingResourcesAllocated) {
       return;
@@ -767,6 +768,10 @@ namespace dxvk {
       }
     }
     
+    // NV-DXVK start: FSR mip bias (returns 0 unless FSR is the active upscaler)
+    totalMipBias += fork_hooks::fsrUpscalingMipBias(m_device);
+    // NV-DXVK end
+
     return getSampler(filter, mipFilter, addressModeU, addressModeV, addressModeW, borderColor, totalMipBias, useAnisotropy);
   }
 
@@ -889,6 +894,24 @@ namespace dxvk {
     assert(m_skyProbe.isValid());
 
     return m_skyProbe;
+  }
+
+  Resources::Resource Resources::getAtmosphereTransmittanceLut(Rc<DxvkContext> ctx) {
+    // Atmosphere LUTs are managed by RtxAtmosphere class
+    // This method returns the cached resource
+    return m_atmosphereTransmittanceLut;
+  }
+
+  Resources::Resource Resources::getAtmosphereMultiscatteringLut(Rc<DxvkContext> ctx) {
+    // Atmosphere LUTs are managed by RtxAtmosphere class
+    // This method returns the cached resource
+    return m_atmosphereMultiscatteringLut;
+  }
+
+  Resources::Resource Resources::getAtmosphereSkyViewLut(Rc<DxvkContext> ctx) {
+    // Atmosphere LUTs are managed by RtxAtmosphere class
+    // This method returns the cached resource
+    return m_atmosphereSkyViewLut;
   }
 
   Rc<DxvkImageView> Resources::getCompatibleViewForView(const Rc<DxvkImageView>& view, VkFormat format) {
@@ -1090,6 +1113,7 @@ namespace dxvk {
     // random access reads where they would be a problem).
     m_raytracingOutput.m_sharedRadianceRG = createImageResource(ctx, "shared radiance RG", m_downscaledExtent, VK_FORMAT_R16G16_SFLOAT);
     m_raytracingOutput.m_sharedRadianceB = createImageResource(ctx, "shared radiance B", m_downscaledExtent, VK_FORMAT_R16_SFLOAT);
+    m_raytracingOutput.m_atmosphereForeground = createImageResource(ctx, "atmosphere foreground", m_downscaledExtent, VK_FORMAT_R16G16B16A16_SFLOAT);
     m_raytracingOutput.m_sharedMaterialData0 = createImageResource(ctx, "shared material data 0", m_downscaledExtent, VK_FORMAT_R32_UINT);
     m_raytracingOutput.m_sharedMaterialData1 = createImageResource(ctx, "shared material data 1", m_downscaledExtent, VK_FORMAT_R32_UINT);
     // Note: This value is isolated rather than being packed with other data (such as the alpha channel combined with the Shared Radiance RGB) so that

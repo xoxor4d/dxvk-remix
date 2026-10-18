@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <limits>
 
+#include "rtx_fork_hooks.h"
 #include "rtx_light_manager.h"
 #include "rtx_context.h"
 #include "rtx_options.h"
@@ -550,6 +551,8 @@ namespace dxvk {
       }
     }
 
+    m_externalActiveLightsForCapture = m_externalActiveLightList;
+
     // Reset external active light list.
     m_externalActiveDomeLight = nullptr;
     m_externalActiveLightList.clear();
@@ -779,8 +782,9 @@ namespace dxvk {
       m_lightDebugUILock.lock();
     }
     assert(light->getExternallyTrackedLightId() != kInvalidExternallyTrackedLightId && " light passed to updateExternallyTrackedLight is not actually externally tracked.");
-    uint16_t bufferIdx = light->getBufferIdx();
-    uint32_t stableIdentity = light->getStableIdentity();
+
+    const uint16_t bufferIdx = light->getBufferIdx();
+    const uint32_t stableIdentity = light->getStableIdentity();
     *light = newLight;
     light->setBufferIdx(bufferIdx);
     light->setStableIdentity(stableIdentity);
@@ -789,9 +793,7 @@ namespace dxvk {
   void LightManager::addExternalLight(remixapi_LightHandle handle, const RtLight& rtlight) {
     auto found = m_externalLights.find(handle);
     if (found != m_externalLights.end()) {
-      // TODO: warn the user about id collision,
-      //       or just overwriting existing one is fine?
-      uint32_t stableIdentity = found->second.getStableIdentity();
+      const uint32_t stableIdentity = found->second.getStableIdentity();
       found->second = rtlight;
       found->second.setStableIdentity(stableIdentity);
     } else {
@@ -802,6 +804,10 @@ namespace dxvk {
   void LightManager::removeExternalLight(remixapi_LightHandle handle) {
     m_externalLights.erase(handle);
     m_externalDomeLights.erase(handle);
+    m_externalActiveLightList.erase(handle);
+    if (m_externalActiveDomeLight == handle) {
+      m_externalActiveDomeLight = nullptr;
+    }
   }
 
   bool LightManager::getActiveDomeLight(DomeLight& domeLightOut) {
@@ -855,6 +861,18 @@ namespace dxvk {
     } else if (m_externalDomeLights.find(enabledLight) != m_externalDomeLights.end() && m_externalActiveDomeLight == nullptr) {
       m_externalActiveDomeLight = enabledLight;
     }
+  }
+
+  void LightManager::registerPersistentExternalLight(remixapi_LightHandle handle) {
+    fork_hooks::registerPersistentLight(*this, handle);
+  }
+
+  void LightManager::unregisterPersistentExternalLight(remixapi_LightHandle handle) {
+    fork_hooks::unregisterPersistentLight(*this, handle);
+  }
+
+  void LightManager::queueAutoInstancePersistent() {
+    fork_hooks::queueAutoInstancePersistent(*this);
   }
 
   void LightManager::setRaytraceArgs(RaytraceArgs& raytraceArgs, uint32_t rtxdiInitialLightSamples, uint32_t volumeRISInitialLightSamples, uint32_t risLightSamples) const

@@ -22,6 +22,7 @@
 #pragma once
 
 #include "rtx_constants.h"
+#include "rtx_accel_size_cache.h"
 #include "rtx_utils.h"
 #include "rtx_materials.h"
 #include "rtx_hashing.h"
@@ -248,6 +249,8 @@ struct ReplacementInstance {
   // RtSurface state. See LookupKey for the dirty-flag rationale.
   Matrix4 textureTransform;
   TexGenMode texgenMode = TexGenMode::None;
+  // Fork: what externalDrawTryPreserve compares with the last submission of an external draw
+  XXH64_hash_t externalMaterialIdentityHash = kEmptyHash;
 
   // Gates preserve vs dynamic dispatch and (future) split updaters. See DirtyFlag
   // and kLookupDriftMask / kDynamicFeatureMask for clear semantics.
@@ -389,6 +392,7 @@ struct RasterGeometry {
   Future<AxisAlignedBoundingBox> futureBoundingBox;
 
   remixapi_MaterialHandle externalMaterial = nullptr;
+  remixapi_MeshHandle externalMesh = nullptr;
 
   template<uint32_t rule>
   const XXH64_hash_t getHashForRule() const {
@@ -647,6 +651,7 @@ enum class InstanceCategories : uint32_t {
   ParticleEmitter,
   SmoothNormals,
   HairCards,
+  DisableBackfaceCulling,
 
   Count,
 };
@@ -654,6 +659,16 @@ enum class InstanceCategories : uint32_t {
 using CategoryFlags = Flags<InstanceCategories>;
 
 #define DECAL_CATEGORY_FLAGS InstanceCategories::DecalStatic, InstanceCategories::DecalDynamic, InstanceCategories::DecalSingleOffset, InstanceCategories::DecalNoOffset
+
+// Forward decl so DrawCallState can friend the fork hook that needs access
+// to private setCategory. See docs/fork-touchpoints.md.
+struct MaterialData;
+struct DrawCallState;
+namespace fork_hooks {
+  void externalDrawTextureCategories(const MaterialData* material,
+                                     DrawCallState& drawCall,
+                                     XXH64_hash_t& textureHash);
+}
 
 struct DrawCallState {
   DrawCallState() = default;
@@ -704,7 +719,7 @@ struct DrawCallState {
   }
 
   const CategoryFlags getCategoryFlags() const {
-    return categories;
+    return categories | CategoryFlags(materialData.remixTextureCategoryFlagsFromD3D);
   }
 
   CategoryFlags& modifyCategoryFlags() {
@@ -832,6 +847,11 @@ private:
   friend struct D3D9Rtx;
   friend struct RemixAPIPrivateAccessor;
 
+  // Fork touchpoint: the external-draw texture-category hook needs access to
+  // private setCategory. See docs/fork-touchpoints.md.
+  friend void fork_hooks::externalDrawTextureCategories(
+    const MaterialData* material, DrawCallState& drawCall, XXH64_hash_t& textureHash);
+
   bool finalizeGeometryHashes();
   void finalizeGeometryBoundingBox();
   void finalizeSkinningData(const RtCamera* pLastCamera);
@@ -922,6 +942,8 @@ struct BlasEntry {
 
   std::vector<VkAccelerationStructureGeometryKHR> buildGeometries;
   std::vector<VkAccelerationStructureBuildRangeInfoKHR> buildRanges;
+
+  AccelSizeCache buildSizeCache;
 
   BlasEntry() = default;
 
@@ -1060,6 +1082,7 @@ enum class RtxFramePassStage {
   DLSSNR,
   NIS,
   XeSS,
+  FSR,
   TAA,
   DustParticles,
   Bloom,

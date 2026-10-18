@@ -14,6 +14,7 @@
 #include "d3d9_rtx_utils.h"
 #include "d3d9_texture.h"
 #include "../dxvk/rtx_render/rtx_terrain_baker.h"
+#include "../dxvk/rtx_render/rtx_fork_hooks.h"
 
 #include <cassert>
 #include <cstring>
@@ -24,8 +25,9 @@ namespace dxvk {
   // We only look at RT 0 currently.
   const uint32_t kRenderTargetIndex = 0;
 
-  #define CATEGORIES_REQUIRE_DRAW_CALL_STATE  InstanceCategories::Sky, InstanceCategories::Terrain
-  #define CATEGORIES_REQUIRE_GEOMETRY_COPY    InstanceCategories::Terrain, InstanceCategories::WorldUI
+  // NV-DXVK start: GTA4 reuses the Terrain and WorldUI categories for per draw call material overrides
+  #define CATEGORIES_REQUIRE_DRAW_CALL_STATE  InstanceCategories::Sky
+  // NV-DXVK end
 
   D3D9Rtx::D3D9Rtx(D3D9DeviceEx* d3d9Device, bool enableDrawCallConversion)
     : m_rtStagingData(d3d9Device->GetDXVKDevice(), "RtxStagingDataAlloc: D3D9", (VkMemoryPropertyFlagBits) (VK_MEMORY_PROPERTY_HOST_CACHED_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
@@ -287,11 +289,16 @@ namespace dxvk {
           targetBuffer = &geoData.texcoordBuffer;
         break;
       case D3DDECLUSAGE_COLOR:
+        // NV-DXVK start: per draw call vertex color control through unused D3D render states (GTA4)
         if (element.UsageIndex == 0 &&
             !RtxOptions::ignoreAllVertexColorBakedLighting() &&
-            !lookupHash(RtxOptions::ignoreBakedLightingTextures(), m_activeDrawCallState.materialData.colorTextures[0].getImageHash())) {
+            !lookupHash(RtxOptions::ignoreBakedLightingTextures(), m_activeDrawCallState.materialData.colorTextures[0].getImageHash()) &&
+            (!CategoryFlags(m_activeDrawCallState.materialData.remixTextureCategoryFlagsFromD3D).test(InstanceCategories::IgnoreBakedLighting) ||
+             (m_activeDrawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_REM_VERTEX_COLOR_KEEP_ALPHA) ||
+             lookupHash(RtxOptions::terrainTextures(), m_activeDrawCallState.materialData.colorTextures[0].getImageHash()))) {
           targetBuffer = &geoData.color0Buffer;
         }
+        // NV-DXVK end
         break;
       }
 
@@ -581,6 +588,84 @@ namespace dxvk {
     return checkBoundTextureCategory(RtxOptions::uiTextures());
   }
 
+  XXH64_hash_t D3D9Rtx::buildGeometryHashMemoizationKey(const RasterGeometry& geoData,
+                                                        const VertexContext vertexContext[caps::MaxStreams],
+                                                        const IndexContext& indexContext,
+                                                        const uint32_t startIndex,
+                                                        const int vertexIndexOffset,
+                                                        const uint32_t maxIndexValue) const {
+    if (!enableGeometryHashMemoization()) {
+      return 0;
+    }
+
+    // Shader-capture draws are excluded outright. Their vertex positions are produced on the GPU
+    // and their hash folds in vertex shader constants, neither of which passes through the CPU
+    // write-lock that drives remixContentVersion - so a stale entry could not be detected.
+    if (m_parent->UseProgrammableVS()) {
+      return 0;
+    }
+
+    // Inline index data (DrawPrimitiveUP and friends) has no buffer object to version against.
+    const bool isIndexed = indexContext.indexType != VK_INDEX_TYPE_NONE_KHR;
+    if (isIndexed && indexContext.ibo == nullptr) {
+      return 0;
+    }
+
+    XXH64_hash_t key = kEmptyHash;
+
+    // The hash generation rule selects which components are computed at all, so a runtime change to
+    // it must produce a different key.
+    const uint32_t hashRule = RtxOptions::geometryHashGenerationRule().raw();
+    key = XXH3_64bits_withSeed(&hashRule, sizeof(hashRule), key);
+
+    for (uint32_t i = 0; i < caps::MaxStreams; i++) {
+      const VertexContext& stream = vertexContext[i];
+
+      // Every stream participates in the key, including inactive ones: a stream appearing or
+      // disappearing between draws changes which bytes get hashed.
+      struct {
+        const void* vbo;
+        uint64_t contentVersion;
+        uint32_t offset;
+        uint32_t stride;
+        uint32_t canUseBuffer;
+      } streamKey = { stream.pVBO, stream.pVBO ? stream.pVBO->remixContentVersion : 0ull,
+                      stream.offset, stream.stride, stream.canUseBuffer ? 1u : 0u };
+
+      // A stream backed by inline data rather than a buffer object cannot be versioned.
+      if (stream.pVBO == nullptr && stream.stride != 0) {
+        return 0;
+      }
+
+      key = XXH3_64bits_withSeed(&streamKey, sizeof(streamKey), key);
+    }
+
+    struct {
+      const void* ibo;
+      uint64_t iboContentVersion;
+      uint32_t indexType;
+      uint32_t startIndex;
+      uint32_t indexCount;
+      uint32_t vertexCount;
+      uint32_t maxIndexValue;
+      int32_t vertexIndexOffset;
+      uint32_t topology;
+    } drawKey = { indexContext.ibo,
+                  indexContext.ibo ? indexContext.ibo->remixContentVersion : 0ull,
+                  (uint32_t) indexContext.indexType,
+                  startIndex,
+                  geoData.indexCount,
+                  geoData.vertexCount,
+                  maxIndexValue,
+                  vertexIndexOffset,
+                  (uint32_t) geoData.topology };
+
+    key = XXH3_64bits_withSeed(&drawKey, sizeof(drawKey), key);
+
+    // 0 is the sentinel for "not eligible", so never hand it back as a real key.
+    return key == 0 ? 1 : key;
+  }
+
   PrepareDrawFlags D3D9Rtx::internalPrepareDraw(const IndexContext& indexContext, const VertexContext vertexContext[caps::MaxStreams], const DrawContext& drawContext) {
     ScopedCpuProfileZone();
 
@@ -698,12 +783,31 @@ namespace dxvk {
       return prepareFlagsForIgnoredDraws;
     }
 
+    // NV-DXVK start: GTA4 uses the Beam category to force texture * vertex color modulation (vehicle paint, rims)
+    if (m_activeDrawCallState.testCategoryFlags(InstanceCategories::Beam) ||
+        CategoryFlags(m_activeDrawCallState.materialData.remixTextureCategoryFlagsFromD3D).test(InstanceCategories::Beam)) {
+      m_activeDrawCallState.materialData.textureColorOperation = DxvkRtTextureOperation::Modulate;
+      m_activeDrawCallState.materialData.textureColorArg1Source = RtTextureArgSource::Texture;
+      m_activeDrawCallState.materialData.textureColorArg2Source = RtTextureArgSource::VertexColor0;
+      // The texture factor defaults to opaque white, so this is a no-op unless the game sets it.
+      m_activeDrawCallState.materialData.isTextureFactorBlend = true;
+    }
+    // NV-DXVK end
+
     // Max offseted index value within a buffer slice that geoData contains
     const uint32_t maxOffsetedIndex = maxIndex - minIndex;
 
     // Copy all the vertices into a staging buffer.  Assign fields of the geoData structure.
     processVertices(vertexContext, vertexIndexOffset, geoData);
-    geoData.futureGeometryHashes = computeHash(geoData, maxOffsetedIndex);
+
+    // Identify every input this draw call's geometry hash is derived from, so an unchanged draw can
+    // reuse the previous result instead of re-hashing identical bytes. Returns 0 when the draw is
+    // not eligible, which forces the original full re-hash.
+    const XXH64_hash_t geometryHashMemoizationKey =
+      buildGeometryHashMemoizationKey(geoData, vertexContext, indexContext, drawContext.StartIndex,
+                                      vertexIndexOffset, maxOffsetedIndex);
+
+    geoData.futureGeometryHashes = computeHash(geoData, maxOffsetedIndex, geometryHashMemoizationKey);
     geoData.futureBoundingBox = computeAxisAlignedBoundingBox(geoData);
     
     // Process skinning data
@@ -1149,10 +1253,6 @@ namespace dxvk {
         }
       }
 
-      if (!m_forceGeometryCopy && RtxOptions::alwaysCopyDecalGeometries()) {
-        // Only poke decal hashes when option is enabled.
-        m_forceGeometryCopy |= m_activeDrawCallState.testCategoryFlags(CATEGORIES_REQUIRE_GEOMETRY_COPY);
-      }
     }
 
     m_texcoordIndex = d3d9State().textureStages[firstStage][DXVK_TSS_TEXCOORDINDEX];

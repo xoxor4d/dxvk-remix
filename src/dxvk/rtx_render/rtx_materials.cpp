@@ -46,6 +46,18 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
     uint32_t blendAlphaDstFactor;
     uint32_t blendAlphaBlendOp;
     uint32_t blendWriteMask;
+    XXH64_hash_t remixHashFromD3D;
+    uint32_t remixTextureCategoryFlagsFromD3D;
+    uint32_t remixModifierFromD3D;
+    uint32_t remixPackedFloat4_RS210FromD3D;
+    uint32_t remixHashModifierFromD3D;
+    float remixTempFloat01FromD3D;
+    float remixFloatRS211FromD3D;
+    float remixFloatRS212FromD3D;
+    float remixFloatRS213FromD3D;
+    float remixFloatRS214FromD3D;
+    float remixFloatRS215FromD3D;
+    float remixFloatRS216FromD3D;
     uint8_t alphaTestReferenceValue;
     uint8_t textureColorArg1Source;
     uint8_t textureColorArg2Source;
@@ -55,7 +67,7 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
     uint8_t textureAlphaOperation;
     uint8_t isTextureFactorBlend;
     uint8_t isVertexColorBakedLighting;
-    uint8_t padding[7];
+    uint8_t padding[3];
   };
 
   LegacyMaterialIdentityHashData data{};
@@ -73,6 +85,18 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
   data.blendAlphaDstFactor = static_cast<uint32_t>(blendMode.alphaDstFactor);
   data.blendAlphaBlendOp = static_cast<uint32_t>(blendMode.alphaBlendOp);
   data.blendWriteMask = static_cast<uint32_t>(blendMode.writeMask);
+  data.remixHashFromD3D = remixHashFromD3D;
+  data.remixTextureCategoryFlagsFromD3D = remixTextureCategoryFlagsFromD3D;
+  data.remixModifierFromD3D = remixModifierFromD3D;
+  data.remixPackedFloat4_RS210FromD3D = remixPackedFloat4_RS210FromD3D;
+  data.remixHashModifierFromD3D = remixHashModifierFromD3D;
+  data.remixTempFloat01FromD3D = remixTempFloat01FromD3D;
+  data.remixFloatRS211FromD3D = remixFloatRS211FromD3D;
+  data.remixFloatRS212FromD3D = remixFloatRS212FromD3D;
+  data.remixFloatRS213FromD3D = remixFloatRS213FromD3D;
+  data.remixFloatRS214FromD3D = remixFloatRS214FromD3D;
+  data.remixFloatRS215FromD3D = remixFloatRS215FromD3D;
+  data.remixFloatRS216FromD3D = remixFloatRS216FromD3D;
   data.alphaTestReferenceValue = alphaTestReferenceValue;
   data.textureColorArg1Source = static_cast<uint8_t>(textureColorArg1Source);
   data.textureColorArg2Source = static_cast<uint8_t>(textureColorArg2Source);
@@ -98,6 +122,18 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
       &LegacyMaterialIdentityHashData::blendAlphaDstFactor,
       &LegacyMaterialIdentityHashData::blendAlphaBlendOp,
       &LegacyMaterialIdentityHashData::blendWriteMask,
+      &LegacyMaterialIdentityHashData::remixHashFromD3D,
+      &LegacyMaterialIdentityHashData::remixTextureCategoryFlagsFromD3D,
+      &LegacyMaterialIdentityHashData::remixModifierFromD3D,
+      &LegacyMaterialIdentityHashData::remixPackedFloat4_RS210FromD3D,
+      &LegacyMaterialIdentityHashData::remixHashModifierFromD3D,
+      &LegacyMaterialIdentityHashData::remixTempFloat01FromD3D,
+      &LegacyMaterialIdentityHashData::remixFloatRS211FromD3D,
+      &LegacyMaterialIdentityHashData::remixFloatRS212FromD3D,
+      &LegacyMaterialIdentityHashData::remixFloatRS213FromD3D,
+      &LegacyMaterialIdentityHashData::remixFloatRS214FromD3D,
+      &LegacyMaterialIdentityHashData::remixFloatRS215FromD3D,
+      &LegacyMaterialIdentityHashData::remixFloatRS216FromD3D,
       &LegacyMaterialIdentityHashData::alphaTestReferenceValue,
       &LegacyMaterialIdentityHashData::textureColorArg1Source,
       &LegacyMaterialIdentityHashData::textureColorArg2Source,
@@ -192,5 +228,11 @@ template<> RayPortalMaterialData LegacyMaterialData::as() const {
   return portalMat;
 }
 
+
+MaterialData MaterialData::fromLegacy(const LegacyMaterialData& legacyMaterial) {
+  MaterialData material(legacyMaterial.as<OpaqueMaterialData>());
+  material.m_usesLegacyDefaults = true;
+  return material;
+}
 
 } // namespace dxvk

@@ -184,6 +184,8 @@ HRESULT Direct3DSwapChain9_LSS::Present(CONST RECT* pSourceRect, CONST RECT* pDe
     return ERROR_SEM_TIMEOUT;
   }
 
+  DeviceBridge::perfOnFrame();
+
   FrameMark;
 
   return D3D_OK;
@@ -194,6 +196,8 @@ HRESULT Direct3DSwapChain9_LSS::GetFrontBufferData(IDirect3DSurface9* pDestSurfa
 
   const auto pLssDestinationSurface = bridge_cast<Direct3DSurface9_LSS*>(pDestSurface);
   const auto pIDestinationSurface = pLssDestinationSurface->D3D<IDirect3DSurface9>();
+
+  DeviceBridge::ResponseTransaction responseTransaction;
 
   UID currentUID = 0;
   {
@@ -235,6 +239,8 @@ HRESULT Direct3DSwapChain9_LSS::GetBackBuffer(UINT iBackBuffer, D3DBACKBUFFER_TY
   setChild(iBackBuffer, pLssSurface);
     
   (*ppBackBuffer) = pLssSurface;
+
+  DeviceBridge::ResponseTransaction responseTransaction;
 
   UID currentUID = 0;
   // Add handles for backbuffer

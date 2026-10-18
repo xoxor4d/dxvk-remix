@@ -37,9 +37,13 @@ namespace Commands {
     Bridge_Any,
     Bridge_Response,
     Bridge_DebugMessage,
+    // A3b: a run of state setter records, see IsBatchableState() and util_bridgecommand.h StateMessage.
+    Bridge_StatePacket,
 
     RemixApi_CreateMaterial,
     RemixApi_DestroyMaterial,
+    RemixApi_CreateTexture,
+    RemixApi_DestroyTexture,
     RemixApi_CreateMesh,
     RemixApi_DestroyMesh,
     RemixApi_DrawInstance,
@@ -49,6 +53,9 @@ namespace Commands {
     RemixApi_SetConfigVariable,
     RemixApi_CreateD3D9,
     RemixApi_RegisterDevice,
+    RemixApi_SetGameValue,
+    RemixApi_GetGameValue,
+    RemixApi_SetupCamera,
 
     Bridge_SharedHeap_AddSeg,
     Bridge_SharedHeap_Alloc,
@@ -475,9 +482,12 @@ namespace Commands {
     case Bridge_Any: return "Any";
     case Bridge_Response: return "Response";
     case Bridge_DebugMessage: return "DebugMessage";
+    case Bridge_StatePacket: return "StatePacket";
 
     case RemixApi_CreateMaterial: return "RemixApi_CreateMaterial";
     case RemixApi_DestroyMaterial: return "RemixApi_DestroyMaterial";
+    case RemixApi_CreateTexture: return "RemixApi_CreateTexture";
+    case RemixApi_DestroyTexture: return "RemixApi_DestroyTexture";
     case RemixApi_CreateMesh: return "RemixApi_CreateMesh";
     case RemixApi_DestroyMesh: return "RemixApi_DestroyMesh";
     case RemixApi_DrawInstance: return "RemixApi_DrawInstance";
@@ -487,6 +497,9 @@ namespace Commands {
     case RemixApi_SetConfigVariable: return "RemixApi_SetConfigVariable";
     case RemixApi_CreateD3D9: return "RemixApi_CreateD3D9";
     case RemixApi_RegisterDevice: return "RemixApi_RegisterDevice";
+    case RemixApi_SetGameValue: return "RemixApi_SetGameValue";
+    case RemixApi_GetGameValue: return "RemixApi_GetGameValue";
+    case RemixApi_SetupCamera: return "RemixApi_SetupCamera";
 
     case Bridge_SharedHeap_AddSeg: return "SharedHeap_AddSeg";
     case Bridge_SharedHeap_Alloc: return "SharedHeap_Alloc";
@@ -872,7 +885,13 @@ namespace Commands {
                                     // and only allocation id(s) is transferred on the queue
     DataIsReserved   = 0b00000010,  // Data was already reserved in data queue and only its
                                     // offset is transferred
+    AsyncResult      = 0b00000100,  // IDirect3DQuery9_GetData: no response; the server writes the
+                                    // result to a shared slot (util_queryresults.h)
   };
+
+  inline bool IsAsyncResult(Flags flags) {
+    return (flags & FlagBits::AsyncResult) != 0;
+  }
 
   inline bool IsDataInSharedHeap(Flags flags) {
     return (flags & FlagBits::DataInSharedHeap) != 0;
@@ -880,6 +899,41 @@ namespace Commands {
 
   inline bool IsDataReserved(Flags flags) {
     return (flags & FlagBits::DataIsReserved) != 0;
+  }
+
+  // A3b: device state setters that may travel as records of a Bridge_StatePacket. They take no flags, answer
+  // nothing unless sendAllServerResponses is set (then packets hold one record each) and only change device state.
+  // The server rejects any other command inside a packet.
+  inline bool IsBatchableState(D3D9Command command) {
+    switch (command) {
+    case IDirect3DDevice9Ex_SetTransform:
+    case IDirect3DDevice9Ex_SetViewport:
+    case IDirect3DDevice9Ex_SetMaterial:
+    case IDirect3DDevice9Ex_SetLight:
+    case IDirect3DDevice9Ex_LightEnable:
+    case IDirect3DDevice9Ex_SetClipPlane:
+    case IDirect3DDevice9Ex_SetRenderState:
+    case IDirect3DDevice9Ex_SetTexture:
+    case IDirect3DDevice9Ex_SetTextureStageState:
+    case IDirect3DDevice9Ex_SetSamplerState:
+    case IDirect3DDevice9Ex_SetScissorRect:
+    case IDirect3DDevice9Ex_SetVertexDeclaration:
+    case IDirect3DDevice9Ex_SetFVF:
+    case IDirect3DDevice9Ex_SetVertexShader:
+    case IDirect3DDevice9Ex_SetVertexShaderConstantF:
+    case IDirect3DDevice9Ex_SetVertexShaderConstantI:
+    case IDirect3DDevice9Ex_SetVertexShaderConstantB:
+    case IDirect3DDevice9Ex_SetStreamSource:
+    case IDirect3DDevice9Ex_SetStreamSourceFreq:
+    case IDirect3DDevice9Ex_SetIndices:
+    case IDirect3DDevice9Ex_SetPixelShader:
+    case IDirect3DDevice9Ex_SetPixelShaderConstantF:
+    case IDirect3DDevice9Ex_SetPixelShaderConstantI:
+    case IDirect3DDevice9Ex_SetPixelShaderConstantB:
+      return true;
+    default:
+      return false;
+    }
   }
 }
 
