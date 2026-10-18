@@ -187,10 +187,9 @@ namespace dxvk {
                     args.environment = "RTX_NEURAL_UPLIFT_MODEL",
                     args.flags = RtxOptionFlags::UserSetting);
 
-    RTX_OPTION_ARGS("rtx.neuralUplift", bool, useAutoMask, false,
-                    "Uses the snippet's automatic character mask (DLSSNR.UseAutoMask) instead of the per-material\n"
-                    "control mask. The control mask is the better source where the materials carry the data, which\n"
-                    "is why this is off by default; the automatic mask is the fallback for content that does not.\n"
+    RTX_OPTION_ARGS("rtx.neuralUplift", bool, useAutoMask, true,
+                    "Combines the snippet's automatic character mask (DLSSNR.UseAutoMask) with the per-material\n"
+                    "control mask (DLSSNR.MaskBlendMode Min). Off applies the control mask alone.\n"
                     "skinStructureStrength is only applied through the automatic mask.",
                     args.environment = "RTX_NEURAL_UPLIFT_USE_AUTO_MASK",
                     args.flags = RtxOptionFlags::UserSetting);
@@ -204,8 +203,9 @@ namespace dxvk {
                     args.minValue = 0.0f, args.maxValue = 1.0f,
                     args.flags = RtxOptionFlags::UserSetting);
 
-    RTX_OPTION_ARGS("rtx.neuralUplift", int, preset, 0,
-                    "Network selection hint (DLSSNR.Hint.Render.Preset), 0-7. 0 leaves the choice to the SDK;\n"
+    RTX_OPTION_ARGS("rtx.neuralUplift", int, preset, 2,
+                    "Network selection hint (DLSSNR.Hint.Render.Preset), 0-7. The default 2 is Preset B, the\n"
+                    "lightweight network upstream pins. 0 leaves the choice to the SDK;\n"
                     "1-7 pin one of the lettered presets A-G. How many of those exist depends on the build of the\n"
                     "feature that is installed: asking for one it does not ship is not an error, it logs a fallback\n"
                     "and uses the shipping default. Distinct from rtx.neuralUplift.model, which picks a look within\n"
@@ -243,8 +243,13 @@ namespace dxvk {
                     "max, LDR max-channel min, LDR max-channel max).");
 
     RTX_OPTION_ARGS("rtx.neuralUplift", bool, enableVolumetricControlMask, true,
-                    "Modulates the DLSS-NR control mask with fog, volumetric and alpha-blended transmittance.\n"
-                    "Unavailable while Auto Mask is enabled, which replaces the control mask entirely.",
+                    "Modulates the DLSS-NR control mask with fog, volumetric and alpha-blended transmittance.",
+                    args.flags = RtxOptionFlags::UserSetting);
+
+    RTX_OPTION_ARGS("rtx.neuralUplift", bool, showVramUsage, false,
+                    "Shows the SDK-reported DLSS-NR VRAM allocation in the settings. Queried once when the driver\n"
+                    "NGX backend creates the feature, so enable it before enabling the feature; the snippet backend\n"
+                    "does not report it. Excludes the Remix-managed input and output textures.",
                     args.flags = RtxOptionFlags::UserSetting);
 
     RTX_OPTION_ARGS("rtx.neuralUplift", bool, bypassCallerCheck, true,

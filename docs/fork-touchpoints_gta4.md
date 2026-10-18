@@ -532,3 +532,17 @@ the ceiling. With the margin at zero the ray ended at eye height and only the ro
 the margin appeared to cause it. The upward shelter probe keeps the flag, it only asks whether cover exists.
 
 - **`src/dxvk/shaders/rtx/pass/particles/particle_system_spawn.comp.slang`** - fork-owned change. *Landing trace query without the accept-first-hit flag.*
+
+## Workstream - Neural Uplift follows the DLSS NR / DLFG Lite update (fork - 2026-10-18)
+
+Upstream `09808cc70` (DLSS 3D-Guided Neural Generation update, DLFG Lite) and `ec3146421` (minimum driver
+616.92) are cherry-picked with `-x`. Upstream's NR frontend (`rtx_dlss_neural_rendering.*`) does not exist on
+this branch; the fork's frontend is `rtx_neural_uplift.*` (commit `da44c6b5e`), so its behaviour changes are
+carried over here. The SDK packages move to `rtx-remix-ngx_sdk_dlnr` 2 and `rtx-remix-ngx_sdk_dlfg` 5 (both on
+the `rtx-remix-external` packman remote); `nvngx_dlssnr.dll` and `nvngx_dlssg.dll` are installed from them,
+and the game's `.trex` copy of `nvngx_dlssnr.dll` must be the new one.
+
+- **`src/dxvk/rtx_render/rtx_ngx_wrapper.cpp` / `.h`** - cherry-pick resolution plus fork change. *NR `initialize` keeps the fork's `preset` argument next to upstream's `queryVramAllocation` (defaulted); the snippet backend always binds the control mask, writes `DLSSNR.MaskBlendMode` (Min with Auto Mask, None otherwise) and wraps its create / evaluate / release calls in `NGX_CALL`.*
+- **`src/dxvk/rtx_render/rtx_context.cpp`** - cherry-pick resolution. *`enableDlssNrControlMask` no longer gated on Auto Mask, reading `metaNeuralUplift()`.*
+- **`src/dxvk/rtx_render/rtx_neural_uplift.cpp` / `.h`** - fork-owned files. *`useAutoMask` defaults to true and combines with the control mask; `preset` defaults to 2 (Preset B); `showVramUsage` option and readout; Volumetric Improvement no longer disabled under Auto Mask.*
+- **`RtxOptions.md`** - frozen, kept as is (the upstream hunk was dropped).

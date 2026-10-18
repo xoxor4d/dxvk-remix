@@ -89,8 +89,6 @@ namespace dxvk
 {
   namespace {
 #ifdef _M_X64
-    constexpr float kDlssNrGlobalToneStrength = 1.0f;
-
     NVSDK_NGX_Result queryDlssNeuralRenderingVramAllocation(
         NVSDK_NGX_Parameter* pParameters,
         unsigned long long* pVramAllocationBytes) {
@@ -1658,7 +1656,7 @@ namespace dxvk
     if (m_pfnReleaseFeature) {
       for (NVSDK_NGX_Handle* feature : m_features) {
         if (feature) {
-          m_pfnReleaseFeature(feature);
+          NGX_CALL(m_pfnReleaseFeature(feature));
         }
       }
     }
@@ -1720,12 +1718,12 @@ namespace dxvk
     m_features.reserve(passCount);
     for (uint32_t i = 0; i < passCount; ++i) {
       NVSDK_NGX_Handle* feature = nullptr;
-      const NVSDK_NGX_Result result = m_pfnCreateFeature1(
+      const NVSDK_NGX_Result result = NGX_CALL(m_pfnCreateFeature1(
         m_device->handle(),
         vkCommandBuffer,
         NVSDK_NGX_Feature_DLSSNR,
         m_parameters,
-        &feature);
+        &feature));
 
       if (NVSDK_NGX_FAILED(result)) {
         Logger::warn(str::format("[DLSS-NR] Failed to create the Neural Uplift feature for pass ", i,
@@ -1838,12 +1836,11 @@ namespace dxvk
       m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Depth, static_cast<void*>(nullptr));
     }
 
-    // The per-material control mask, written by the G-buffer and composite passes. It replaces
-    // the snippet's own automatic mask, so exactly one of the two is ever in play - the same
-    // rule NGXNeuralRenderingContext follows.
+    // The per-material control mask, written by the G-buffer and composite passes. Always bound
+    // when present; with Auto Mask on the snippet blends it with its own character mask
+    // (MaskBlendMode Min) - the same rule NGXNeuralRenderingContext follows.
     NVSDK_NGX_Resource_VK controlMaskResource = {};
-    const bool useControlMask = !settings.useAutoMask
-      && buffers.pControlMask != nullptr
+    const bool useControlMask = buffers.pControlMask != nullptr
       && buffers.pControlMask->image != nullptr;
 
     if (useControlMask) {
@@ -1857,7 +1854,7 @@ namespace dxvk
       m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_ControlMaskSubrectHeight, static_cast<int>(extent.height));
     } else {
       // Cleared rather than left behind: the parameter block is reused across evaluations, so a
-      // mask bound on a previous frame would otherwise still be live after Auto Mask is turned on.
+      // mask bound on a previous frame would otherwise still be live once the mask is gone.
       m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_ControlMask, static_cast<void*>(nullptr));
     }
 
@@ -1867,12 +1864,13 @@ namespace dxvk
     m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_DepthInverted, 0);
     m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Reset, settings.resetAccumulation ? 1 : 0);
     m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_UseAutoMask, settings.useAutoMask ? 1 : 0);
+    m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_MaskBlendMode, static_cast<int>(
+      settings.useAutoMask ? NVSDK_NGX_DLSSNR_Mask_Blend_Mode_Min : NVSDK_NGX_DLSSNR_Mask_Blend_Mode_None));
     // Style is the one control read back as unsigned.
     m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Style, settings.model);
     m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Intensity, settings.intensity);
     m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_LocalToneStrength, settings.toneStrength);
     m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_LocalStructureStrength, settings.structuralStrength);
-    m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_GlobalToneStrength, kDlssNrGlobalToneStrength);
     m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_SkinStructureStrength, settings.skinStructureStrength);
 
     // "The colour input already has the UI composited into it". Answered explicitly rather than
@@ -1885,7 +1883,7 @@ namespace dxvk
     m_parameters->Set(NVSDK_NGX_Parameter_Jitter_Offset_X, settings.jitterOffset[0]);
     m_parameters->Set(NVSDK_NGX_Parameter_Jitter_Offset_Y, settings.jitterOffset[1]);
 
-    const NVSDK_NGX_Result result = m_pfnEvaluateFeature(vkCommandBuffer, m_features[passIndex], m_parameters, nullptr);
+    const NVSDK_NGX_Result result = NGX_CALL(m_pfnEvaluateFeature(vkCommandBuffer, m_features[passIndex], m_parameters, nullptr));
 
     if (NVSDK_NGX_FAILED(result)) {
       ONCE(Logger::err(str::format("[DLSS-NR] EvaluateFeature failed: ", resultToString(result))));

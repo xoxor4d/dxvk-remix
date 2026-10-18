@@ -203,7 +203,7 @@ namespace dxvk {
           break;
         }
 
-        context->initialize(ctx, m_displaySize, clampedPreset);
+        context->initialize(ctx, m_displaySize, clampedPreset, showVramUsage());
         if (!context->isNeuralRenderingInitialized()) {
           ok = false;
           break;
@@ -345,9 +345,10 @@ namespace dxvk {
       depth = nullptr;
     }
 
-    // The per-material control mask and the snippet's automatic mask are mutually exclusive.
+    // The per-material control mask is always handed over; with Auto Mask on the feature blends it
+    // with its own character mask instead of replacing it.
     const Resources::Resource* controlMask =
-      (!useAutoMask() && rtOutput.m_controlMask.image != nullptr) ? &rtOutput.m_controlMask : nullptr;
+      rtOutput.m_controlMask.image != nullptr ? &rtOutput.m_controlMask : nullptr;
 
     m_lastHadDepth = depth != nullptr;
     m_lastHadMotionVectors = motionVectors != nullptr;
@@ -594,6 +595,21 @@ namespace dxvk {
     ImGui::Text("DLSS-NR: %s - backend %s, preset %d, inits %u",
                 m_statusReason, backendName, preset(), m_initCount);
 
+    if (showVramUsage()) {
+      if (m_activeBackend == Backend::DriverNgx && !m_driverContexts.empty() && m_driverContexts[0]->hasVramAllocation()) {
+        constexpr double kBytesPerMiB = 1024.0 * 1024.0;
+        const double vramAllocationMiB = static_cast<double>(m_driverContexts[0]->getVramAllocationBytes()) / kBytesPerMiB;
+        ImGui::Text("DLSS-NR SDK VRAM Allocation: %.2f MiB", vramAllocationMiB);
+      } else {
+        ImGui::TextDisabled("DLSS-NR SDK VRAM Allocation: Not Available");
+      }
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("SDK-reported aggregate allocation, queried when the driver NGX backend creates the\n"
+                          "feature. Excludes Remix-managed input/output textures; the snippet backend does not\n"
+                          "report it.");
+      }
+    }
+
     if (!isSupported()) {
       // Reported, never used to hide the controls: the driver-core capability query is exactly
       // what fails on the machines the snippet backend exists to serve.
@@ -667,9 +683,8 @@ namespace dxvk {
 
     RemixGui::Checkbox("Enable Auto Mask", &useAutoMaskObject());
     if (ImGui::IsItemHovered()) {
-      ImGui::SetTooltip("DLSSNR.UseAutoMask. Uses the feature's own per-pixel character mask instead of the\n"
-                        "per-material DLSS control mask. The control mask is the better source where the\n"
-                        "materials carry the data; this is the fallback for content that does not.");
+      ImGui::SetTooltip("DLSSNR.UseAutoMask. Combines the feature's own per-pixel character mask with the\n"
+                        "per-material DLSS control mask. Off applies the control mask alone.");
     }
 
     const bool autoMaskEnabled = useAutoMask();
@@ -681,7 +696,7 @@ namespace dxvk {
     }
     ImGui::EndDisabled();
 
-    if (!m_lastHadControlMask && !autoMaskEnabled && m_evaluatedLastFrame) {
+    if (!m_lastHadControlMask && m_evaluatedLastFrame) {
       ImGui::TextWrapped("Control mask unavailable this frame - the effect is being applied uniformly.");
     }
 
@@ -698,9 +713,7 @@ namespace dxvk {
       // Thresholds: (exposed HDR max-channel min/max, LDR max-channel min/max)
       RemixGui::DragFloat4("Highlight Recovery Thresholds", &highlightRecoveryThresholdsObject(), 0.01f, 0.0f, 32.0f, "%.3f", sliderFlags);
 
-      ImGui::BeginDisabled(autoMaskEnabled);
       RemixGui::Checkbox("Volumetric Improvement", &enableVolumetricControlMaskObject());
-      ImGui::EndDisabled();
 
       RemixGui::DragInt("Pass Count", &passCountObject(), 1.0f, 1, kNeuralUpliftMaxPassCount, "%d", sliderFlags);
       if (ImGui::IsItemHovered()) {
