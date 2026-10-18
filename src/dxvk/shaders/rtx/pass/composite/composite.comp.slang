@@ -872,10 +872,11 @@ void applyCloudComposite(
   // Placed after the history write on purpose: this is a per-frame, view-distance term with no
   // business inside a temporal signal -- the same argument that keeps the occlusion gate out of it.
   // Placed before both composites so the opaque and alpha-blend paths see the same hazed cloud.
-  if (args.aerialPerspectiveLutSize != 0u &&
-      args.cloudAerialInScatterStrength > 0.0f &&
-      meanKm > 0.0f &&
-      cloud.a > 0.0f)
+  const bool cloudAerialApplied = args.aerialPerspectiveLutSize != 0u
+                               && args.cloudAerialInScatterStrength > 0.0f
+                               && meanKm > 0.0f
+                               && cloud.a > 0.0f;
+  if (cloudAerialApplied)
   {
     // meanKm is in the CLOUD's kilometres and this volume is addressed in world units, converting
     // with its own aerialPerspectiveWorldUnitsPerKm. Going through world units is what keeps the
@@ -900,6 +901,17 @@ void applyCloudComposite(
     }
   }
 
+  // Fork: cloudAerialHazePerKm dims the marched radiance toward black with distance and leaves the
+  // opacity alone, so without the aerial volume adding the air's light back a far deck turns into a
+  // black band along the horizon. In that case the hazed-away share of the cloud lets the background
+  // through instead, which is what a cloud fading into the distance looks like. The march's own
+  // opacity still drives the depth estimates below.
+  const float marchAlpha = cloud.a;
+  if (!cloudAerialApplied && args.cloudAerialHazePerKm > 0.0f && meanKm > 0.0f)
+  {
+    cloud.a *= exp(-args.cloudAerialHazePerKm * meanKm);
+  }
+
   // Premultiplied over -- identical operation to the removed evalSkyRadiance code, just relocated.
   // On a sky pixel opaqueVisibility is 1.0 and this is exactly that operation.
   //
@@ -908,7 +920,7 @@ void applyCloudComposite(
                  + cloud.rgb * opaqueVisibility * radianceThroughput;
 
   if (foregroundDepthKm > 0.0f && entryKm >= 0.0f && !performedPSR) {
-    const float visibility = cloudDepthVisibility(entryKm, meanKm, foregroundDepthKm, cloud.a);
+    const float visibility = cloudDepthVisibility(entryKm, meanKm, foregroundDepthKm, marchAlpha);
     foregroundRadiance = foregroundRadiance * (1.0f - cloud.a * visibility)
       + cloud.rgb * visibility * saturate(vec3(1.0f) - radianceThroughput);
   }
@@ -925,7 +937,7 @@ void applyCloudComposite(
   if (alphaBlendSurfaceValid && entryKm >= 0.0f && !performedPSR)
   {
     const float alphaSurfaceKm = alphaBlendHitDistance * kmPerWorldUnit;
-    const float alphaVisibility = cloudDepthVisibility(entryKm, meanKm, alphaSurfaceKm, cloud.a);
+    const float alphaVisibility = cloudDepthVisibility(entryKm, meanKm, alphaSurfaceKm, marchAlpha);
 
     // alphaBlendOutput is PREMULTIPLIED by the surface's own coverage: applyVolumetricLighting scales
     // it by (1 - backgroundAlpha) before returning it, and finalOutput adds it to radianceOutput *

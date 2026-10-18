@@ -487,3 +487,37 @@ still the 0..1 range of the retired starDensity threshold while the option is a 
 option is now clamped to 6.5, where the catalogue ends.
 
 - **`src/dxvk/rtx_render/rtx_atmosphere.h` / `.cpp` / `rtx_atmosphere_ui.cpp`** - fork-owned files. *New option passed as `volumetricRadianceScale` to `RtSphereLight::tryCreate` in `syncDistantLights`; "Scene Flash In Fog" slider; `starMagnitudeLimit` clamped 0..6.5 with the slider to match.*
+
+## Workstream - Distant cloud haze fades to the background, not to black (fork - 2026-10-18)
+
+The weather preset's Distance Haze (`cloudAerialHazePerKm`) multiplies each cloud sample's radiance by
+exp(-k t) in the march and leaves the opacity alone. With the aerial perspective volume off nothing adds the
+air's light back, so a high value turned the far deck into a black, noisy band along the horizon. The
+composite now lets the hazed-away share of the cloud through to the background in that case; with the
+aerial volume on, its in-scatter block still fills it as before.
+
+- **`src/dxvk/shaders/rtx/pass/composite/composite.comp.slang`** - inline. *`applyCloudComposite`: `cloud.a *= exp(-cloudAerialHazePerKm * meanKm)` when the cloud aerial in-scatter block did not run; the depth estimates keep the march's opacity (`marchAlpha`).*
+
+## Workstream - Precipitation sky light compiled back in (fork - 2026-10-18)
+
+`RESOLVE_SKY_LIT_PARTICLES` gates the sky-ambient term the opacity lighting approximation adds for
+precipitation drops (`rtx.weather.precipitation.skyLight`, or the preset's Sky Light while a preset is
+active). docs/fork-touchpoints.md records that geometry_resolver.slangh defines it right before including
+resolve.slangh; the define was missing on this branch, so the drops were lit by the froxel grid only and the
+Sky Light setting did nothing.
+
+- **`src/dxvk/shaders/rtx/algorithm/geometry_resolver.slangh`** - fork-touchpoint inline tweak. *`#define RESOLVE_SKY_LIT_PARTICLES 1` before the resolve.slangh include, as documented.*
+
+## Workstream - Atmosphere foreground actually bound (fork - 2026-10-18)
+
+`AtmosphereForeground` (transparent contributors recorded by the geometry resolver with their distance, so
+the cloud composite and the aerial perspective keep them in front) was declared in the shaders and bound
+with `bindResourceView` since the Numos squash, but never listed in the `GbufferRayGenShader` and
+`CompositeShader` resource slot lists. DXVK builds the pipeline layout from those lists, so every write was
+lost and the composite read zero: rain drops in front of the sky stayed in the background and were scaled
+by the cloud deck's opacity (bright in front of a railing, dim or gone against the deck at the horizon).
+Same fix as Kim2091's cb86d96aa on the other branches, without the secondary hit distance slot that branch
+added for a later change.
+
+- **`src/dxvk/rtx_render/rtx_pathtracer_gbuffer.cpp`** - fork-touchpoint inline tweak. *`RW_TEXTURE2D(GBUFFER_BINDING_ATMOSPHERE_FOREGROUND_OUTPUT)` in the ray-gen parameter list.*
+- **`src/dxvk/rtx_render/rtx_composite.cpp`** - fork-touchpoint inline tweak. *`TEXTURE2D(COMPOSITE_ATMOSPHERE_FOREGROUND_INPUT)` in the composite parameter list.*

@@ -126,6 +126,9 @@ namespace dxvk {
         TEXTURE3D(COMPOSITE_ATMOSPHERE_AERIAL_PERSPECTIVE_INPUT)
         SAMPLER(COMPOSITE_ATMOSPHERE_AERIAL_PERSPECTIVE_SAMPLER)
         TEXTURE3D(COMPOSITE_ATMOSPHERE_AERIAL_PERSPECTIVE_LOCAL_INPUT)
+        // Fork: read by the composite (atmosphere foreground); without this slot the shader read an
+        // undefined descriptor and the foreground depth was always zero.
+        TEXTURE2D(COMPOSITE_ATMOSPHERE_FOREGROUND_INPUT)
 
         // Cloud composite (fork — 2026-09-05, world-space cloud migration Stage 4b). See
         // applyCloudComposite in composite.comp.slang / the doc comment on these slots in
