@@ -557,3 +557,13 @@ binds `BINDING_ATMOSPHERE_SKY_VIEW_SAMPLER` at all.
 
 - **`src/dxvk/rtx_render/rtx_context.cpp`** - fork-touchpoint inline tweak. *Weather snapshot passed to `applyWeatherOverride` only when `skyMode` is Numos.*
 - **`src/dxvk/imgui/dxvk_imgui.cpp`** - fork-touchpoint inline tweak. *Same gate on the snapshot handed to the RTX Volumetrics (Global) settings panel.*
+
+## Workstream - Aerial perspective hands off at the effective froxel range (fork - 2026-10-19)
+
+The aerial perspective volume starts where the froxel grid ends, but it read the authored
+`rtx.volumetrics.froxelMaxDistanceMeters` while the grid uses the blended weather preset value whenever the
+presets differ. With GTA IV's presets (1200-1500 m, smoggy 20 m) against an authored 1500 m the two systems
+overlapped (sun in-scatter and extinction counted twice) or left a band with no haze at all. The handoff now
+reads the range from the same weather snapshot the volumetrics get.
+
+- **`src/dxvk/rtx_render/rtx_atmosphere.cpp`** - fork-owned file. *`getAtmosphereArgs`: `aerialPerspectiveStartDistance` uses `wx->froxelMaxDistanceMeters` when a weather snapshot is active.*

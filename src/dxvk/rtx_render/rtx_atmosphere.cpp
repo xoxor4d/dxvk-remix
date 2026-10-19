@@ -1474,9 +1474,12 @@ AtmosphereArgs RtxAtmosphere::getAtmosphereArgs() const {
     // because that distribution is exponential, and the handoff is 0 whenever volumetrics are off.
     constexpr float kMinNearDistanceMeters = 1.0f;
     // This bound must remain in the global volumetrics' native world units so the two passes hand
-    // off at the same physical point even when aerialPerspectiveScale is independently calibrated.
+    // off at the same physical point even when unitsPerMeter is independently calibrated. The range
+    // is read the way getVolumeArgs reads it: a weather preset that owns it replaces the option.
+    const float froxelMaxDistanceMeters =
+      wx ? wx->froxelMaxDistanceMeters : RtxGlobalVolumetrics::froxelMaxDistanceMeters();
     const float volumetricsHandoffWorldUnits = RtxGlobalVolumetrics::enable()
-      ? RtxGlobalVolumetrics::froxelMaxDistanceMeters() * RtxOptions::getMeterToWorldUnitScale()
+      ? froxelMaxDistanceMeters * RtxOptions::getMeterToWorldUnitScale()
       : 0.0f;
     args.aerialPerspectiveStartDistance = std::max(
       volumetricsHandoffWorldUnits,
