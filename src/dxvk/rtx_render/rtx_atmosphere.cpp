@@ -975,6 +975,21 @@ float RtxAtmosphere::cloudWorldUnitsPerKm() {
   return std::max(1000.0f * resolveUnitsPerMeter() / compression, 1e-3f);
 }
 
+namespace {
+  // The froxel grid scatters the sun up to its range, and the aerial perspective takes over past it.
+  // Without the froxel sun the aerial perspective covers the whole ray, the froxel grid's range
+  // included, where its local lights would count the grid's lights a second time.
+  bool froxelVolumetricsScatterSun() {
+    return RtxGlobalVolumetrics::enable() && RtxAtmosphere::sunVolumetricScale() > 0.0f;
+  }
+
+  bool aerialPerspectiveLocalLightsEnabled() {
+    return RtxAtmosphere::aerialPerspective()
+      && RtxAtmosphere::aerialPerspectiveLocalLights()
+      && (froxelVolumetricsScatterSun() || !RtxGlobalVolumetrics::enable());
+  }
+}
+
 AtmosphereArgs RtxAtmosphere::getAtmosphereArgs() const {
   AtmosphereArgs args = {};
 
@@ -1466,19 +1481,21 @@ AtmosphereArgs RtxAtmosphere::getAtmosphereArgs() const {
     args.flipUpAxis = RtxAtmosphere::flipUpAxis() ? 1u : 0u;
     args.cameraPosition = m_apCameraPosition;
 
-    // Hand off to the global volumetrics froxel grid: everything nearer than its range is already
-    // integrated there, so the atmospheric march starts past it rather than double counting.
+    // Hand off to the global volumetrics froxel grid when it scatters the sun: everything nearer
+    // than its range is already integrated there, so the atmospheric march starts past it rather
+    // than double counting. Otherwise (volumetrics off, or rtx.atmosphere.sunVolumetricScale 0) the
+    // march starts at the camera.
     // This doubles as the near bound of the depth axis: slices span [start, depthRange], so no slice
     // is spent on the segment the grid owns and the stored function carries no kink at the handoff
     // for the composite's interpolation to overshoot on. Floored to a small positive distance
-    // because that distribution is exponential, and the handoff is 0 whenever volumetrics are off.
+    // because that distribution is exponential.
     constexpr float kMinNearDistanceMeters = 1.0f;
     // This bound must remain in the global volumetrics' native world units so the two passes hand
     // off at the same physical point even when unitsPerMeter is independently calibrated. The range
     // is read the way getVolumeArgs reads it: a weather preset that owns it replaces the option.
     const float froxelMaxDistanceMeters =
       wx ? wx->froxelMaxDistanceMeters : RtxGlobalVolumetrics::froxelMaxDistanceMeters();
-    const float volumetricsHandoffWorldUnits = RtxGlobalVolumetrics::enable()
+    const float volumetricsHandoffWorldUnits = froxelVolumetricsScatterSun()
       ? froxelMaxDistanceMeters * RtxOptions::getMeterToWorldUnitScale()
       : 0.0f;
     args.aerialPerspectiveStartDistance = std::max(
@@ -1490,8 +1507,7 @@ AtmosphereArgs RtxAtmosphere::getAtmosphereArgs() const {
     // whenever the gather found nothing in range, and whenever aerial perspective itself is off.
     // buildAerialPerspectiveLights owns m_aerialPerspectiveLightCount and runs before every consumer
     // of these args.
-    const bool localLightsActive = RtxAtmosphere::aerialPerspective()
-      && RtxAtmosphere::aerialPerspectiveLocalLights()
+    const bool localLightsActive = aerialPerspectiveLocalLightsEnabled()
       && m_aerialPerspectiveLightCount > 0u
       && m_aerialPerspectiveLightTilesXY > 0u;
 
@@ -2388,9 +2404,7 @@ void RtxAtmosphere::buildAerialPerspectiveLights(Rc<DxvkContext> ctx) {
 
   const int maxLightCount = RtxAtmosphere::aerialPerspectiveLocalLightMaxCount();
 
-  if (!RtxAtmosphere::aerialPerspective()
-      || !RtxAtmosphere::aerialPerspectiveLocalLights()
-      || maxLightCount <= 0) {
+  if (!aerialPerspectiveLocalLightsEnabled() || maxLightCount <= 0) {
     return;
   }
 
@@ -4516,9 +4530,10 @@ void RtxAtmosphere::syncDistantLights(LightManager& lm, const AtmosphereArgs& ar
     return isZUp ? Vector3(flipped.x, flipped.z, flipped.y) : flipped;
   };
 
-  auto ensureLight = [&](RtLight*& slot, const Vector3& propDir, float halfAngle, const Vector3& radiance, bool cloudShadowed) {
+  auto ensureLight = [&](RtLight*& slot, const Vector3& propDir, float halfAngle, const Vector3& radiance,
+                         bool cloudShadowed, float volumetricRadianceScale) {
     const Vector3 clamped(std::max(radiance.x, 0.0f), std::max(radiance.y, 0.0f), std::max(radiance.z, 0.0f));
-    auto dl = RtDistantLight::tryCreate(propDir, std::max(halfAngle, kMinHalfAngle), clamped);
+    auto dl = RtDistantLight::tryCreate(propDir, std::max(halfAngle, kMinHalfAngle), clamped, volumetricRadianceScale);
     if (!dl) {
       return;
     }
@@ -4550,7 +4565,8 @@ void RtxAtmosphere::syncDistantLights(LightManager& lm, const AtmosphereArgs& ar
     const Vector3 toSun = toWorld(sunDirYUp);
     const Vector3 propDir = (sunDirYUp.y > 0.0f) ? Vector3(-toSun.x, -toSun.y, -toSun.z)
                                                   : Vector3(0.0f, -1.0f, 0.0f);
-    ensureLight(m_sunLight, propDir, sunHalfAngle, radiance, /*cloudShadowed=*/true);
+    ensureLight(m_sunLight, propDir, sunHalfAngle, radiance, /*cloudShadowed=*/true,
+                std::min(std::max(RtxAtmosphere::sunVolumetricScale(), 0.0f), 10.0f));
   }
 
   // ---- Moons: one irradiance, shared with the sky, the clouds and the disk ----
@@ -4604,7 +4620,7 @@ void RtxAtmosphere::syncDistantLights(LightManager& lm, const AtmosphereArgs& ar
     // than opt-in because the cost is the sun's already-paid cloud-shadow
     // lookup, and off is the old behaviour for anyone who tuned against it.
     ensureLight(m_moonLights[i], propDir, moonHalfAngle, radiance,
-                /*cloudShadowed=*/RtxAtmosphere::moonCloudShadowed());
+                /*cloudShadowed=*/RtxAtmosphere::moonCloudShadowed(), 1.0f);
   }
 
   // ---- Lightning scene flash (fork — 2026-07-14, tier 2) ----

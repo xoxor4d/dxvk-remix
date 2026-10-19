@@ -567,3 +567,18 @@ overlapped (sun in-scatter and extinction counted twice) or left a band with no 
 reads the range from the same weather snapshot the volumetrics get.
 
 - **`src/dxvk/rtx_render/rtx_atmosphere.cpp`** - fork-owned file. *`getAtmosphereArgs`: `aerialPerspectiveStartDistance` uses `wx->froxelMaxDistanceMeters` when a weather snapshot is active.*
+
+## Workstream - The sun can leave the froxel volumetrics to the aerial perspective (fork - 2026-10-19)
+
+GTA IV needs a froxel range of 1200-1500 m for its fog, and the aerial perspective volume starts where the
+froxel grid ends, so with global volumetrics on the city never received the haze or its building-shadowed
+sun shafts. `rtx.atmosphere.sunVolumetricScale` (default 1, unchanged behaviour) is the Numos sun's volumetric
+radiance scale. At 0 the froxel grid no longer scatters the sun and the aerial perspective starts at the
+camera, as it does with volumetrics off; the moons keep weight 1. The aerial perspective's own local lights
+are then off while volumetrics are enabled, since the volume now overlaps the grid that already scatters
+them. Daylight froxel fog is then lit by the sky only through `rtx.atmosphere.cloudSkyAmbientStrength`, and
+the weather presets' Fog Sun Visibility Gain scales the local lights (it always scaled the whole froxel
+radiance).
+
+- **`src/dxvk/rtx_render/rtx_atmosphere.h` / `.cpp` / `rtx_atmosphere_ui.cpp`** - fork-owned files. *New option; `syncDistantLights` passes it as the sun's `volumetricRadianceScale`; `froxelVolumetricsScatterSun` decides the `aerialPerspectiveStartDistance` handoff and, through `aerialPerspectiveLocalLightsEnabled`, the local light gather and count; "Sun In Fog" slider under Sun size & shadows and a note on the aerial Local Lights checkbox; `aerialPerspective` / `aerialPerspectiveLocalLights` descriptions mention the new case.*
+- **`src/dxvk/shaders/rtx/pass/composite/composite.comp.slang`** - inline, comment only. *`applyAerialPerspective` header notes the overlapping case.*

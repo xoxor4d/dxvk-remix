@@ -9,6 +9,7 @@
 #include "../../util/util_bit.h"
 
 #include "rtx_atmosphere.h"
+#include "rtx_global_volumetrics.h"
 #include "rtx_imgui.h"
 #include "rtx_options.h"
 #include "rtx_precipitation.h"
@@ -286,6 +287,15 @@ namespace {
         "out - larger = softer penumbra. Kept separate from Sun Size so a "
         "game/API-driven physical sun size can stay untouched while "
         "shadows are art-directed.");
+
+      RemixGui::DragFloat("Sun In Fog", &RtxAtmosphere::sunVolumetricScaleObject(), 0.01f, 0.0f, 10.0f, "%.2f", sliderFlags);
+      RemixGui::SetTooltipToLastWidgetOnHover(
+        "Weight of the sun in the global volumetrics (froxel fog). Surfaces "
+        "are unaffected. 0 = the distance haze scatters the sun from the "
+        "camera outward instead of starting past the froxel range, and the "
+        "fog keeps its local lights; the haze's own Local Lights are then off "
+        "while volumetrics are on. Above 0 the fog scatters the sun up to its "
+        "range and the haze takes over past it.");
       ImGui::TreePop();
     }
 
@@ -1380,6 +1390,9 @@ void RtxAtmosphere::showHazeSettings() {
       RemixGui::SetTooltipToLastWidgetOnHover(
         "Lets lamps, torches, and other scene lights illuminate distant haze. Additional cost depends on the "
         "lights in range.");
+      if (RtxGlobalVolumetrics::enable() && RtxAtmosphere::sunVolumetricScale() <= 0.0f) {
+        ImGui::TextDisabled("Inactive: volumetrics carry the local lights while Sun In Fog is 0.");
+      }
 
       if (RtxAtmosphere::aerialPerspectiveLocalLights()) {
         RemixGui::DragFloat("Local Light Intensity",

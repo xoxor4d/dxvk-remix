@@ -641,10 +641,13 @@ void applySkyContribution(
 // carries no scene lights - see the two blocks below. PSR pixels use their camera-to-mirror
 // distance, so a reflection is correctly attenuated by the air in front of the mirror.
 //
-// The volume covers only the segment past the global volumetrics froxel grid, so its in-scatter is
+// The volume covers the segment past the global volumetrics froxel grid, so its in-scatter is
 // attenuated by that grid's transmittance. Strictly the near in-scatter already in radianceOutput
 // should not then pick up the far transmittance in turn, but the froxel grid spans tens of metres
 // against this volume's kilometres, so its transmittance is near one wherever the far term matters.
+// With rtx.atmosphere.sunVolumetricScale at 0 the volume starts at the camera instead and overlaps
+// the grid; its in-scatter is then attenuated by all of the grid's medium in front of the surface,
+// which overstates the extinction in proportion to the froxel fog's density.
 void applyAerialPerspective(
   uint2 pixelCoordinate,
   bool primaryMiss,

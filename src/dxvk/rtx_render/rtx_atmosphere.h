@@ -294,7 +294,8 @@ public:
                "volume (Hillaire EGSR 2020, Section 5.4). This is what gives distant buildings and terrain their haze "
                "and desaturation - the strongest distance cue an outdoor scene has. Without it, everything past the "
                "global volumetrics froxel range renders at full saturation and contrast. Where global volumetrics are "
-               "enabled the march starts past that grid's range, so the two hand off instead of double counting.");
+               "enabled the march starts past that grid's range, so the two hand off instead of double counting, "
+               "unless rtx.atmosphere.sunVolumetricScale is 0 and the sun is scattered by this volume alone.");
     RTX_OPTION_ARGS("rtx.atmosphere", float, aerialPerspectiveScale, 0.0f,
                "*DEPRECATED* replaced by rtx.atmosphere.unitsPerMeter, which the clouds and the aerial "
                "perspective now share so they cannot disagree about the size of the world. An existing value "
@@ -465,6 +466,8 @@ public:
                "the volume's own froxel grid once per frame and evaluates the survivors analytically along the "
                "march the bake is already doing, which is why it can cover the same ground for a fraction of the "
                "cost - and why turning this on is what lets rtx.volumetrics.enable be turned off.\n"
+               "Inactive while global volumetrics are enabled and rtx.atmosphere.sunVolumetricScale is 0: the volume "
+               "then covers the froxel grid's range as well, where the grid already scatters these lights.\n"
                "Costs one cull dispatch over a coarse cluster grid, plus a handful of analytic light evaluations "
                "per march step in the clusters that actually contain lights. Scenes with no positional lights in "
                "range pay nothing.");
@@ -559,6 +562,17 @@ public:
                "0 = physical (use sunSize / 2, so shadow softness tracks the visible disc). When > 0 it "
                "overrides the sun light's half-angle WITHOUT changing the visible sun disc — larger = "
                "softer penumbra, for artistic soft shadows under a small sun.");
+    RTX_OPTION_ARGS("rtx.atmosphere", float, sunVolumetricScale, 1.0f,
+               "How much the sun feeds the global volumetrics (froxel fog), as a multiplier on its radiance there. "
+               "Surface lighting is unaffected.\n"
+               "At 0 the aerial perspective scatters the sun from the camera outward instead of starting past "
+               "rtx.volumetrics.froxelMaxDistanceMeters, so a long froxel range keeps the fog's local lights "
+               "without hiding the distance haze and its sun shafts. The aerial perspective's own local lights "
+               "are then off while global volumetrics are enabled, since the froxel grid carries them. Daylight "
+               "froxel fog is then lit by the sky only through rtx.atmosphere.cloudSkyAmbientStrength.\n"
+               "Values above 0 keep the split by distance: the froxel grid scatters the sun up to its range and "
+               "the aerial perspective past it.",
+               args.minValue = 0.0f, args.maxValue = 10.0f);
     RTX_OPTION("rtx.atmosphere", float, nightExposureEv, 5.6f,
                "Night exposure, in EV stops, applied at the source of every night illuminant - "
                "moonlight on ground, clouds and air; starlight; airglow. The ratios between them "
