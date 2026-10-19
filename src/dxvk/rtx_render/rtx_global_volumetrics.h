@@ -290,6 +290,8 @@ struct WeatherSnapshot;
     const Resources::Resource& getPreviousVolumeAccumulatedRadianceCoCg() const { return m_volumeAccumulatedRadianceCoCg[!m_swapTextures]; }
     const Resources::Resource& getCurrentVolumeAccumulatedRadianceAge() const { return m_volumeAccumulatedRadianceAge[m_swapTextures]; }
     const Resources::Resource& getPreviousVolumeAccumulatedRadianceAge() const { return m_volumeAccumulatedRadianceAge[!m_swapTextures]; }
+    // Fork: sky light the integrator keeps out of the radiance cache, read by the fog composite only
+    const Resources::Resource& getVolumeSkyRadiance() const { return m_volumeSkyRadiance; }
 
     void showPresetMenu();
     void showImguiUserSettings();
@@ -312,6 +314,7 @@ struct WeatherSnapshot;
     Resources::Resource m_volumeAccumulatedRadianceY[2];
     Resources::Resource m_volumeAccumulatedRadianceCoCg[2];
     Resources::Resource m_volumeAccumulatedRadianceAge[2];
+    Resources::Resource m_volumeSkyRadiance;
     bool m_swapTextures = false;
     bool m_rebuildFroxels = false;
 

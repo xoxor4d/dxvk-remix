@@ -84,6 +84,9 @@ layout(binding = COMPOSITE_VOLUME_FILTERED_RADIANCE_Y_INPUT)
 Sampler3D<float4> VolumeFilteredRadianceY;
 layout(binding = COMPOSITE_VOLUME_FILTERED_RADIANCE_CO_CG_INPUT)
 Sampler3D<float2> VolumeFilteredRadianceCoCg;
+// Fork: the volumetric sky light the integrator keeps out of the radiance cache (fog only)
+layout(binding = COMPOSITE_VOLUME_SKY_RADIANCE_INPUT)
+Sampler3D<float4> VolumeSkyRadiance;
 
 layout(rgba32ui, binding = COMPOSITE_ALPHA_GBUFFER_INPUT)
 Texture2D<uint4> AlphaBlendGBuffer;

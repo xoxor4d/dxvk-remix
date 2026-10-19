@@ -613,3 +613,25 @@ editor opens Volumetric Fog by default and keeps Sky & Moon, and the Heterogeneo
 Volumetric Fog, closed; every open group and section ends with a spacing line.
 
 - **`src/dxvk/rtx_render/rtx_weather.cpp`** - fork-owned file. *`renderDerivedFogControls`, `weatherGroupOpenByDefault` / `weatherSectionOpenByDefault`, `ImGui::Spacing()` before both `TreePop`s in `renderPresetEditor`.*
+
+## Workstream - Volumetric sky light lights the fog, not particles and decals (fork - 2026-10-19)
+
+Remix Plus's sky-ambient term (`rtx.atmosphere.cloudSkyAmbientStrength`, "Sky In Fog") was added per froxel to
+the volumetric radiance cache, which particles, decals, PSR and SAB Path B also read through
+`evalVolumetricNEE` (scaled by Fog Brightness Gain), so they glowed with an unoccluded sky. The integrator now
+writes the term to its own `VolumeSkyRadiance` texture instead, and the fog composite adds it back exactly the
+way it read it from the cache, so the fog keeps its look while every other cache reader loses the sky light.
+
+This workstream changes the RTXDI submodule (Remix Plus's fork, `RemixProjGroup/RTXDI`). The change is commit
+`efd3246` on branch `game/gta4` of the submodule, on top of `9c903bd` (`remix-plus-20260919`). It exists only
+locally until that branch is pushed to a remote this checkout's `.gitmodules` URL can reach; a rebase onto a
+newer Remix Plus has to re-apply it on their submodule commit.
+
+- **`submodules/rtxdi` → `efd3246`** - submodule pointer.
+  - `rtxdi-sdk/include/volumetrics/rtx/algorithm/volume_integrator.slangh`: the sky-ambient block computes `skyRadiance` (unchanged math, firefly filtered) and writes `VolumeSkyRadiance[froxelIndex + froxelVolumeOffset]` (0 when off) instead of `radianceSH.addRadiance(..., zenith)`.
+  - `rtxdi-sdk/include/volumetrics/rtx/algorithm/volume_composite_helpers.slangh`: `integrateVolumetricNEE` takes `volumeSkyRadiance, readSkyRadiance, skyZenith`; per step it adds the texture as a zenith SH through `evaluateHenyeyGreenstein(viewDir, volumetricFogAnisotropy) * fogSunVisibilityGain`. The old signature stays as an overload without the sky light (debug view).
+- **`src/dxvk/shaders/rtx/pass/volumetrics/volume_integrate_binding_indices.h` / `volume_integrate_bindings.slangh`** - fork-touchpoint inline tweak. *`VOLUME_INTEGRATE_BINDING_SKY_RADIANCE_OUTPUT` 48 (new max), `RWTexture3D<float4> VolumeSkyRadiance`.*
+- **`src/dxvk/rtx_render/rtx_global_volumetrics.h` / `.cpp`** - fork-touchpoint inline tweak. *`m_volumeSkyRadiance` (RGBA16F, cache dimensions, single buffered), `getVolumeSkyRadiance()`, created / released with the cache, `RW_TEXTURE3D` in `VolumeIntegrateShader` and bound in `dispatch`.*
+- **`src/dxvk/shaders/rtx/pass/composite/composite_binding_indices.h` / `composite_bindings.slangh`** - fork-touchpoint inline tweak. *`COMPOSITE_VOLUME_SKY_RADIANCE_INPUT` 71, `Sampler3D<float4> VolumeSkyRadiance`.*
+- **`src/dxvk/rtx_render/rtx_composite.cpp`** - fork-touchpoint inline tweak. *`SAMPLER3D` slot in the `CompositeShader` list; bound with the linear sampler next to the cache.*
+- **`src/dxvk/shaders/rtx/algorithm/rtx_fork_volumetric_integration.slangh`** - fork-owned file. *Passes `VolumeSkyRadiance`, `cloudSkyAmbientStrength > 0` and the world zenith to all three `integrateVolumetricNEE` calls.*

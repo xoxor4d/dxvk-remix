@@ -120,6 +120,7 @@ namespace dxvk {
         RW_TEXTURE3D(VOLUME_INTEGRATE_BINDING_ACCUMULATED_RADIANCE_OUTPUT_Y)
         RW_TEXTURE3D(VOLUME_INTEGRATE_BINDING_ACCUMULATED_RADIANCE_OUTPUT_CO_CG)
         RW_TEXTURE3D(VOLUME_INTEGRATE_BINDING_ACCUMULATED_RADIANCE_OUTPUT_AGE)
+        RW_TEXTURE3D(VOLUME_INTEGRATE_BINDING_SKY_RADIANCE_OUTPUT)
       END_PARAMETER()
     };
 
@@ -842,6 +843,7 @@ namespace dxvk {
     ctx->bindResourceView(VOLUME_INTEGRATE_BINDING_ACCUMULATED_RADIANCE_OUTPUT_Y, getCurrentVolumeAccumulatedRadianceY().view, nullptr);
     ctx->bindResourceView(VOLUME_INTEGRATE_BINDING_ACCUMULATED_RADIANCE_OUTPUT_CO_CG, getCurrentVolumeAccumulatedRadianceCoCg().view, nullptr);
     ctx->bindResourceView(VOLUME_INTEGRATE_BINDING_ACCUMULATED_RADIANCE_OUTPUT_AGE, getCurrentVolumeAccumulatedRadianceAge().view, nullptr);
+    ctx->bindResourceView(VOLUME_INTEGRATE_BINDING_SKY_RADIANCE_OUTPUT, getVolumeSkyRadiance().view, nullptr);
 
     auto numRaysExtent = m_froxelVolumeExtent;
     numRaysExtent.width *= numActiveFroxelVolumes;
@@ -980,6 +982,8 @@ namespace dxvk {
     m_volumeAccumulatedRadianceCoCg[1] = Resources::createImageResource(ctx, "volume accumulated radiance (Co, Cg) 1", froxelGridFullDimensions, VK_FORMAT_R16G16_SFLOAT, 1, VK_IMAGE_TYPE_3D, VK_IMAGE_VIEW_TYPE_3D);
     m_volumeAccumulatedRadianceAge[0] = Resources::createImageResource(ctx, "volume accumulated radiance (Age) 0", froxelGridFullDimensions, VK_FORMAT_R8_UNORM, 1, VK_IMAGE_TYPE_3D, VK_IMAGE_VIEW_TYPE_3D);
     m_volumeAccumulatedRadianceAge[1] = Resources::createImageResource(ctx, "volume accumulated radiance (Age) 1", froxelGridFullDimensions, VK_FORMAT_R8_UNORM, 1, VK_IMAGE_TYPE_3D, VK_IMAGE_VIEW_TYPE_3D);
+    // Fork: written whole every frame, so not double buffered
+    m_volumeSkyRadiance = Resources::createImageResource(ctx, "volume sky radiance", froxelGridFullDimensions, VK_FORMAT_R16G16B16A16_SFLOAT, 1, VK_IMAGE_TYPE_3D, VK_IMAGE_VIEW_TYPE_3D);
 
     // Calculate the restir grid resolution
     m_restirFroxelVolumeExtent = util::computeBlockCount(m_froxelVolumeExtent, VkExtent3D { restirGridScale(), restirGridScale(), 1 });
@@ -1001,6 +1005,7 @@ namespace dxvk {
       m_volumeAccumulatedRadianceAge[i].reset();
       m_volumeReservoirs[i].reset();
     }
+    m_volumeSkyRadiance.reset();
   }
 
   bool RtxGlobalVolumetrics::isEnabled() const {

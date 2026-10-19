@@ -11,7 +11,7 @@
 // of steps for every ray, and the rest of the path with a second set, so near and far backgrounds see
 // the same fog in front of them. Only rays that reach past the near segment pay for the second set.
 //
-// Included by composite.comp.slang after its bindings: the froxel samplers it passes on are globals there.
+// Included by composite.comp.slang after its bindings: the froxel samplers it passes on and cb are globals there.
 
 // Length of the near segment as a fraction of the froxel grid depth. 1/8 of a 1500 unit grid puts the
 // first step at about one unit from the camera.
@@ -40,10 +40,16 @@ void forkIntegrateVolumetricNEE(
   const float sliceOffset = (volumeArgs.froxelMaxDistance / float(volumeArgs.froxelDepthSlices)) * volumeArgs.depthOffset;
   const float nearSegment = volumeArgs.froxelMaxDistance * kForkVolumetricNearSegmentFraction;
 
+  // The volumetric sky light (rtx.atmosphere.cloudSkyAmbientStrength) lives outside the radiance cache so
+  // particles and decals reading the cache do not receive it; only the fog adds it.
+  const bool readSkyRadiance = cb.atmosphereArgs.cloudSkyAmbientStrength > 0.0f;
+  const float3 skyZenith = cb.atmosphereArgs.isZUp != 0u ? float3(0.0f, 0.0f, 1.0f) : float3(0.0f, 1.0f, 0.0f);
+
   if (!primaryMiss && hitDistance <= nearSegment + sliceOffset)
   {
     integrateVolumetricNEE(
       randomState, VolumeFilteredRadianceAge, VolumeFilteredRadianceY, VolumeFilteredRadianceCoCg,
+      VolumeSkyRadiance, readSkyRadiance, skyZenith,
       volumeArgs, timeMS, pixelCoordinate, screenUV, false, cameraPosition, hitDistance, viewDir,
       preintegratedRadiance, accumulatedTransmittance);
     gridTransmittance = accumulatedTransmittance;
@@ -53,6 +59,7 @@ void forkIntegrateVolumetricNEE(
   // [0, nearSegment]
   integrateVolumetricNEE(
     randomState, VolumeFilteredRadianceAge, VolumeFilteredRadianceY, VolumeFilteredRadianceCoCg,
+    VolumeSkyRadiance, readSkyRadiance, skyZenith,
     volumeArgs, timeMS, pixelCoordinate, screenUV, false, cameraPosition, nearSegment + sliceOffset, viewDir,
     preintegratedRadiance, accumulatedTransmittance);
 
@@ -65,6 +72,7 @@ void forkIntegrateVolumetricNEE(
   const float3 segmentStart = cameraPosition + viewDir * nearSegment;
   integrateVolumetricNEE(
     randomState, VolumeFilteredRadianceAge, VolumeFilteredRadianceY, VolumeFilteredRadianceCoCg,
+    VolumeSkyRadiance, readSkyRadiance, skyZenith,
     volumeArgs, timeMS, pixelCoordinate, screenUV, false, segmentStart, farLength, viewDir,
     preintegratedRadiance, accumulatedTransmittance);
   gridTransmittance = accumulatedTransmittance;

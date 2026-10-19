@@ -74,6 +74,7 @@
 #define COMPOSITE_ATMOSPHERE_CLOUD_DEPTH_INPUT                      64
 #define COMPOSITE_ATMOSPHERE_AERIAL_PERSPECTIVE_LOCAL_INPUT         69
 #define COMPOSITE_ATMOSPHERE_FOREGROUND_INPUT                      70
+#define COMPOSITE_VOLUME_SKY_RADIANCE_INPUT                        71
 
 // Inputs/Outputs
 
