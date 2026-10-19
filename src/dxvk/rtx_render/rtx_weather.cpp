@@ -629,8 +629,12 @@ namespace dxvk { namespace {
 
     bool rendered = false;
     if (matchesFilter("Fog Density", filter)) {
+      RemixGui::RtxOptionUxWrapper wrapper(distObj);
       float density = fogDistanceToDensity(distObj->get());
       if (ImGui::SliderFloat("Fog Density", &density, 0.0f, 1.0f, "%.2f")) {
+        // Without this the write lands under a stronger option layer that still holds the old value,
+        // so the slider snaps back until an option widget on the same field clears that layer.
+        RemixGui::CheckRtxOptionPopups(distObj);
         distObj->setDeferred(fogDensityToDistance(density));
       }
       RemixGui::SetTooltipToLastWidgetOnHover(
@@ -646,6 +650,15 @@ namespace dxvk { namespace {
       rendered = true;
     }
     return rendered;
+  }
+
+  bool weatherGroupOpenByDefault(const char* group) {
+    return std::strcmp(group, "Sky & Moon") != 0;
+  }
+
+  bool weatherSectionOpenByDefault(const char* group, const char* section) {
+    return std::strcmp(group, "Volumetric Fog") != 0
+      || (std::strcmp(section, "Heterogeneous") != 0 && std::strcmp(section, "Fog Remap") != 0);
   }
 
   void renderPresetEditor(int presetIdx, const char* filter, ImGuiSliderFlags fl) {
@@ -665,7 +678,7 @@ namespace dxvk { namespace {
       }
 
       const bool volumetricGroup = std::strcmp(group, "Volumetric Fog") == 0;
-      ImGui::SetNextItemOpen(filtering || !volumetricGroup, filtering ? ImGuiCond_Always : ImGuiCond_Once);
+      ImGui::SetNextItemOpen(filtering || weatherGroupOpenByDefault(group), filtering ? ImGuiCond_Always : ImGuiCond_Once);
       if (!ImGui::TreeNode(group)) {
         continue;
       }
@@ -694,7 +707,8 @@ namespace dxvk { namespace {
           continue;
         }
 
-        ImGui::SetNextItemOpen(true, filtering ? ImGuiCond_Always : ImGuiCond_Once);
+        ImGui::SetNextItemOpen(filtering || weatherSectionOpenByDefault(group, section),
+                               filtering ? ImGuiCond_Always : ImGuiCond_Once);
         if (!ImGui::TreeNode(section)) {
           continue;
         }
@@ -717,9 +731,11 @@ namespace dxvk { namespace {
           if (tip && tip[0]) { RemixGui::SetTooltipToLastWidgetOnHover(tip); }
           ImGui::PopID();
         }
+        ImGui::Spacing();
         ImGui::TreePop();
       }
       ImGui::EndDisabled();
+      ImGui::Spacing();
       ImGui::TreePop();
     }
   }

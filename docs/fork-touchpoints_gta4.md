@@ -602,3 +602,14 @@ The atmosphere tab shows them read-only while weather owns them.
 - **`src/dxvk/rtx_render/rtx_weather.h`** - fork-owned file. *Two `WEATHER_PRESET_FIELD_LIST` entries and the matching line in all 12 `WEATHER_PRESET_VALUES_*` blocks; field counts in the comments updated.*
 - **`src/dxvk/rtx_render/rtx_weather.cpp`** - fork-owned file. *Tooltips, `snapshotRenderer`, `WVARIES` / `FALLBACK_IF_INVARIANT` for both.*
 - **`src/dxvk/rtx_render/rtx_atmosphere.cpp` / `rtx_atmosphere_ui.cpp`** - fork-owned files. *`getAtmosphereArgs` reads both from the weather snapshot; `renderSunUI` takes their weather overrides and draws them through `dragFloatWithWeatherOverride`.*
+
+## Workstream - Weather preset editor: Fog Density writes through, tree layout (fork - 2026-10-19)
+
+The derived Fog Density slider wrote `transmittanceMeasurementDistanceMeters` with a bare `setDeferred`. While a
+stronger option layer still held the field the write was masked and the slider snapped back; it only worked
+after the Transmittance Measurement Distance widget (which runs `CheckRtxOptionPopups`) had cleared that
+layer. The slider now runs the same check and `RtxOptionUxWrapper` as the other custom weather widgets. The
+editor opens Volumetric Fog by default and keeps Sky & Moon, and the Heterogeneous and Fog Remap sections of
+Volumetric Fog, closed; every open group and section ends with a spacing line.
+
+- **`src/dxvk/rtx_render/rtx_weather.cpp`** - fork-owned file. *`renderDerivedFogControls`, `weatherGroupOpenByDefault` / `weatherSectionOpenByDefault`, `ImGui::Spacing()` before both `TreePop`s in `renderPresetEditor`.*
