@@ -86,8 +86,8 @@ namespace dxvk {
   X(float, depthOffset,              0.5f,  WK_Scalar, "Volumetric Fog", "Medium",        "Depth Offset",        0.0f, 1.0f,  0.01f, "%.2f") \
   X(float, noiseFieldOctaves,        2.0f,  WK_Scalar, "Volumetric Fog", "Heterogeneous", "Noise Field Number of Octaves", 1.0f, 8.0f,  1.0f,  "%.0f") \
   X(float,   volumetricAnisotropy,               0.0f,                            WK_Scalar,     "Volumetric Fog", "Medium",           "Anisotropy",                -1.0f,    1.0f,    0.01f,   "%.2f") \
-  X(float,   cloudSkyAmbientStrength,            0.0f,                            WK_Scalar,     "Volumetric Fog", "Medium",           "Sky In Fog",                 0.0f,    3.0f,    0.01f,   "%.2f") \
-  X(float,   cloudSkyAmbientCloudOcclusionStrength, 1.0f,                         WK_Scalar,     "Volumetric Fog", "Medium",           "Sky In Fog Cloud Occlusion", 0.0f,    1.0f,    0.01f,   "%.2f") \
+  X(float,   cloudSkyAmbientStrength,            0.0f,                            WK_Scalar,     "Volumetric Fog", "Medium",           "Sky In Fog",                 0.0f,    3.0f,    0.001f,  "%.3f") \
+  X(float,   cloudSkyAmbientCloudOcclusionStrength, 1.0f,                         WK_Scalar,     "Volumetric Fog", "Medium",           "Sky In Fog Cloud Occlusion", 0.0f,    1.0f,    0.001f,  "%.3f") \
   /* Precipitation (11) — rain / snow / blowing sand particles.                  */ \
   /* PrecipitationSystem consumes these from the effective WeatherSnapshot;      */ \
   /* rtx.weather.precipitation.* remains the dormant/base fallback. Intensity 0  */ \

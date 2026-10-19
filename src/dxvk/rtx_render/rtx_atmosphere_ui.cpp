@@ -300,7 +300,7 @@ namespace {
 
       dragFloatWithWeatherOverride(
         "Sky In Fog", &RtxAtmosphere::cloudSkyAmbientStrengthObject(), skyInFogOverride,
-        0.01f, 0.0f, 3.0f, "%.2f", sliderFlags);
+        0.001f, 0.0f, 3.0f, "%.3f", sliderFlags);
       RemixGui::SetTooltipToLastWidgetOnHover(
         "Sky light in the global volumetrics (froxel fog): the sky seen from "
         "six fixed upper-hemisphere directions, dimmed by the clouds. 0 = off, "
@@ -311,7 +311,7 @@ namespace {
       ImGui::BeginDisabled(skyInFog <= 0.0f);
       dragFloatWithWeatherOverride(
         "Sky In Fog Cloud Occlusion", &RtxAtmosphere::cloudSkyAmbientCloudOcclusionStrengthObject(),
-        skyInFogCloudOcclusionOverride, 0.01f, 0.0f, 1.0f, "%.2f", sliderFlags);
+        skyInFogCloudOcclusionOverride, 0.001f, 0.0f, 1.0f, "%.3f", sliderFlags);
       RemixGui::SetTooltipToLastWidgetOnHover(
         "How much the cloud cover dims Sky In Fog. 1 = physical, overcast fog "
         "is darker than clear-sky fog; 0 ignores the clouds.");
