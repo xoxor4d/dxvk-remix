@@ -582,3 +582,11 @@ radiance).
 
 - **`src/dxvk/rtx_render/rtx_atmosphere.h` / `.cpp` / `rtx_atmosphere_ui.cpp`** - fork-owned files. *New option; `syncDistantLights` passes it as the sun's `volumetricRadianceScale`; `froxelVolumetricsScatterSun` decides the `aerialPerspectiveStartDistance` handoff and, through `aerialPerspectiveLocalLightsEnabled`, the local light gather and count; "Sun In Fog" slider under Sun size & shadows and a note on the aerial Local Lights checkbox; `aerialPerspective` / `aerialPerspectiveLocalLights` descriptions mention the new case.*
 - **`src/dxvk/shaders/rtx/pass/composite/composite.comp.slang`** - inline, comment only. *`applyAerialPerspective` header notes the overlapping case.*
+
+## Workstream - Sky light in the fog exposed in the UI (fork - 2026-10-19)
+
+`rtx.atmosphere.cloudSkyAmbientStrength` and `cloudSkyAmbientCloudOcclusionStrength` (the sky-view LUT term the
+froxel integrator adds per froxel) had no widget. With `sunVolumetricScale` at 0 they are what lights daytime
+froxel fog, so they sit next to "Sun In Fog".
+
+- **`src/dxvk/rtx_render/rtx_atmosphere_ui.cpp`** - fork-owned file. *"Sky In Fog" and "Sky In Fog Cloud Occlusion" sliders under Sun size & shadows; the second is disabled while the first is 0.*
