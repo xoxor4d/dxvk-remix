@@ -39,9 +39,14 @@
 #define VOLUME_INTEGRATE_BINDING_VOLUME_RESERVOIRS_OUTPUT             47
 // Fork: sky light kept out of the radiance cache (volume_integrator.slangh)
 #define VOLUME_INTEGRATE_BINDING_SKY_RADIANCE_OUTPUT                  48
+// Fork: the Numos sun's share of the radiance cache, accumulated alongside it
+#define VOLUME_INTEGRATE_BINDING_PREV_SUN_RADIANCE_INPUT_Y            49
+#define VOLUME_INTEGRATE_BINDING_PREV_SUN_RADIANCE_INPUT_CO_CG        50
+#define VOLUME_INTEGRATE_BINDING_SUN_RADIANCE_OUTPUT_Y                51
+#define VOLUME_INTEGRATE_BINDING_SUN_RADIANCE_OUTPUT_CO_CG            52
 
 #define VOLUME_INTEGRATE_MIN_BINDING                           VOLUME_INTEGRATE_BINDING_PREV_ACCUMULATED_RADIANCE_INPUT_Y
-#define VOLUME_INTEGRATE_MAX_BINDING                           VOLUME_INTEGRATE_BINDING_SKY_RADIANCE_OUTPUT
+#define VOLUME_INTEGRATE_MAX_BINDING                           VOLUME_INTEGRATE_BINDING_SUN_RADIANCE_OUTPUT_CO_CG
 
 #if VOLUME_INTEGRATE_MIN_BINDING <= COMMON_MAX_BINDING
 #error "Increase the base index of Volume Integrate bindings to avoid overlap with common bindings!"

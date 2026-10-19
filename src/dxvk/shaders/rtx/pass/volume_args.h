@@ -107,9 +107,11 @@ struct VolumeArgs {
   // Was a hardcoded 0.0 ("kConsumerMultiplier") that left alpha-blended
   // particles unlit.
   float volumetricConsumerGain;
+  // Weight of the Numos sun's share of the radiance cache in the fog (fork, GTA IV:
+  // rtx.atmosphere.sunVolumetricScale). The cache keeps the full sun for its other readers.
+  float fogSunScale;
   // Pad the merged (upstream + fork) tail back to a 16-byte boundary so the
   // shared C++/shader CB layout keeps sizeof(VolumeArgs) % 16 == 0.
-  uint pad1;
   uint pad2;
   uint pad3;
 };

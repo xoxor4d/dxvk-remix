@@ -412,7 +412,8 @@ struct RtDistantLight {
 
   void applyTransform(const Matrix4& lightToWorld);
 
-  void writeGPUData(unsigned char* data, std::size_t& offset, bool ignoreViewModel = false, bool atmosphereCloudShadowed = false) const;
+  void writeGPUData(unsigned char* data, std::size_t& offset, bool ignoreViewModel = false, bool atmosphereCloudShadowed = false,
+                    bool atmosphereSun = false) const;
 
   bool operator==(const RtDistantLight& rhs) const = delete;
 
@@ -658,6 +659,9 @@ struct RtLight {
   // the per-pixel atmosphere cloud-on-terrain transmittance (used for the
   // injected sun distant light). Encoded as distant-light GPU flags bit 2.
   bool atmosphereCloudShadowed = false;
+  // fork: the Numos sun. The volumetric integrator accumulates its share of the radiance cache on
+  // its own so the fog can scale it apart from every other reader. Distant-light GPU flags bit 3.
+  bool atmosphereSun = false;
 
 private:
   // Type-specific Light Information

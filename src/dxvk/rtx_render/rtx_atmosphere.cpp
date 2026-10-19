@@ -4532,15 +4532,16 @@ void RtxAtmosphere::syncDistantLights(LightManager& lm, const AtmosphereArgs& ar
   };
 
   auto ensureLight = [&](RtLight*& slot, const Vector3& propDir, float halfAngle, const Vector3& radiance,
-                         bool cloudShadowed, float volumetricRadianceScale) {
+                         bool cloudShadowed, bool isSun) {
     const Vector3 clamped(std::max(radiance.x, 0.0f), std::max(radiance.y, 0.0f), std::max(radiance.z, 0.0f));
-    auto dl = RtDistantLight::tryCreate(propDir, std::max(halfAngle, kMinHalfAngle), clamped, volumetricRadianceScale);
+    auto dl = RtDistantLight::tryCreate(propDir, std::max(halfAngle, kMinHalfAngle), clamped);
     if (!dl) {
       return;
     }
     RtLight rtl(*dl);
     rtl.isDynamic = true;
     rtl.atmosphereCloudShadowed = cloudShadowed;
+    rtl.atmosphereSun = isSun;
     if (slot == nullptr) {
       slot = lm.createExternallyTrackedLight(rtl);
     } else {
@@ -4566,8 +4567,7 @@ void RtxAtmosphere::syncDistantLights(LightManager& lm, const AtmosphereArgs& ar
     const Vector3 toSun = toWorld(sunDirYUp);
     const Vector3 propDir = (sunDirYUp.y > 0.0f) ? Vector3(-toSun.x, -toSun.y, -toSun.z)
                                                   : Vector3(0.0f, -1.0f, 0.0f);
-    ensureLight(m_sunLight, propDir, sunHalfAngle, radiance, /*cloudShadowed=*/true,
-                std::min(std::max(RtxAtmosphere::sunVolumetricScale(), 0.0f), 10.0f));
+    ensureLight(m_sunLight, propDir, sunHalfAngle, radiance, /*cloudShadowed=*/true, /*isSun=*/true);
   }
 
   // ---- Moons: one irradiance, shared with the sky, the clouds and the disk ----
@@ -4621,7 +4621,7 @@ void RtxAtmosphere::syncDistantLights(LightManager& lm, const AtmosphereArgs& ar
     // than opt-in because the cost is the sun's already-paid cloud-shadow
     // lookup, and off is the old behaviour for anyone who tuned against it.
     ensureLight(m_moonLights[i], propDir, moonHalfAngle, radiance,
-                /*cloudShadowed=*/RtxAtmosphere::moonCloudShadowed(), 1.0f);
+                /*cloudShadowed=*/RtxAtmosphere::moonCloudShadowed(), /*isSun=*/false);
   }
 
   // ---- Lightning scene flash (fork — 2026-07-14, tier 2) ----

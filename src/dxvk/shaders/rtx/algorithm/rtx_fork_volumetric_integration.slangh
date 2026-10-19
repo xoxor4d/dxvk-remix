@@ -49,7 +49,7 @@ void forkIntegrateVolumetricNEE(
   {
     integrateVolumetricNEE(
       randomState, VolumeFilteredRadianceAge, VolumeFilteredRadianceY, VolumeFilteredRadianceCoCg,
-      VolumeSkyRadiance, readSkyRadiance, skyZenith,
+      VolumeSkyRadiance, readSkyRadiance, skyZenith, VolumeSunRadianceY, VolumeSunRadianceCoCg, volumeArgs.fogSunScale,
       volumeArgs, timeMS, pixelCoordinate, screenUV, false, cameraPosition, hitDistance, viewDir,
       preintegratedRadiance, accumulatedTransmittance);
     gridTransmittance = accumulatedTransmittance;
@@ -59,7 +59,7 @@ void forkIntegrateVolumetricNEE(
   // [0, nearSegment]
   integrateVolumetricNEE(
     randomState, VolumeFilteredRadianceAge, VolumeFilteredRadianceY, VolumeFilteredRadianceCoCg,
-    VolumeSkyRadiance, readSkyRadiance, skyZenith,
+    VolumeSkyRadiance, readSkyRadiance, skyZenith, VolumeSunRadianceY, VolumeSunRadianceCoCg, volumeArgs.fogSunScale,
     volumeArgs, timeMS, pixelCoordinate, screenUV, false, cameraPosition, nearSegment + sliceOffset, viewDir,
     preintegratedRadiance, accumulatedTransmittance);
 
@@ -72,7 +72,7 @@ void forkIntegrateVolumetricNEE(
   const float3 segmentStart = cameraPosition + viewDir * nearSegment;
   integrateVolumetricNEE(
     randomState, VolumeFilteredRadianceAge, VolumeFilteredRadianceY, VolumeFilteredRadianceCoCg,
-    VolumeSkyRadiance, readSkyRadiance, skyZenith,
+    VolumeSkyRadiance, readSkyRadiance, skyZenith, VolumeSunRadianceY, VolumeSunRadianceCoCg, volumeArgs.fogSunScale,
     volumeArgs, timeMS, pixelCoordinate, screenUV, false, segmentStart, farLength, viewDir,
     preintegratedRadiance, accumulatedTransmittance);
   gridTransmittance = accumulatedTransmittance;

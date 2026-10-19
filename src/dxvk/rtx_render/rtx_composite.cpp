@@ -118,6 +118,8 @@ namespace dxvk {
         SAMPLER3D(COMPOSITE_VOLUME_FILTERED_RADIANCE_Y_INPUT)
         SAMPLER3D(COMPOSITE_VOLUME_FILTERED_RADIANCE_CO_CG_INPUT)
         SAMPLER3D(COMPOSITE_VOLUME_SKY_RADIANCE_INPUT)
+        SAMPLER3D(COMPOSITE_VOLUME_SUN_RADIANCE_Y_INPUT)
+        SAMPLER3D(COMPOSITE_VOLUME_SUN_RADIANCE_CO_CG_INPUT)
         TEXTURE2D(COMPOSITE_ALPHA_GBUFFER_INPUT)
         TEXTURE2D(COMPOSITE_ACTIVE_PIXEL_MASK_INPUT)
         TEXTURE2D(COMPOSITE_ACTIVE_LOCAL_PIXEL_COORDS_INPUT)
@@ -376,6 +378,10 @@ namespace dxvk {
     ctx->bindResourceSampler(COMPOSITE_VOLUME_FILTERED_RADIANCE_CO_CG_INPUT, linearSampler);
     ctx->bindResourceView(COMPOSITE_VOLUME_SKY_RADIANCE_INPUT, globalVolumetrics.getVolumeSkyRadiance().view, nullptr);
     ctx->bindResourceSampler(COMPOSITE_VOLUME_SKY_RADIANCE_INPUT, linearSampler);
+    ctx->bindResourceView(COMPOSITE_VOLUME_SUN_RADIANCE_Y_INPUT, globalVolumetrics.getCurrentVolumeSunRadianceY().view, nullptr);
+    ctx->bindResourceSampler(COMPOSITE_VOLUME_SUN_RADIANCE_Y_INPUT, linearSampler);
+    ctx->bindResourceView(COMPOSITE_VOLUME_SUN_RADIANCE_CO_CG_INPUT, globalVolumetrics.getCurrentVolumeSunRadianceCoCg().view, nullptr);
+    ctx->bindResourceSampler(COMPOSITE_VOLUME_SUN_RADIANCE_CO_CG_INPUT, linearSampler);
 
     // Inputs/Outputs
 

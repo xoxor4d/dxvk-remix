@@ -20,6 +20,7 @@
 * DEALINGS IN THE SOFTWARE.
 */
 #include "rtx_global_volumetrics.h"
+#include "rtx_atmosphere.h"
 #include "rtx_weather.h"
 #include "dxvk_device.h"
 #include "rtx_render/rtx_shader_manager.h"
@@ -121,6 +122,10 @@ namespace dxvk {
         RW_TEXTURE3D(VOLUME_INTEGRATE_BINDING_ACCUMULATED_RADIANCE_OUTPUT_CO_CG)
         RW_TEXTURE3D(VOLUME_INTEGRATE_BINDING_ACCUMULATED_RADIANCE_OUTPUT_AGE)
         RW_TEXTURE3D(VOLUME_INTEGRATE_BINDING_SKY_RADIANCE_OUTPUT)
+        SAMPLER3D(VOLUME_INTEGRATE_BINDING_PREV_SUN_RADIANCE_INPUT_Y)
+        SAMPLER3D(VOLUME_INTEGRATE_BINDING_PREV_SUN_RADIANCE_INPUT_CO_CG)
+        RW_TEXTURE3D(VOLUME_INTEGRATE_BINDING_SUN_RADIANCE_OUTPUT_Y)
+        RW_TEXTURE3D(VOLUME_INTEGRATE_BINDING_SUN_RADIANCE_OUTPUT_CO_CG)
       END_PARAMETER()
     };
 
@@ -761,6 +766,7 @@ namespace dxvk {
     volumeArgs.volumetricFogAnisotropy = wx ? wx->volumetricAnisotropy : anisotropy();
     volumeArgs.fogSunVisibilityGain = RtxOptions::skyMode() == SkyMode::Numos ? (wx ? wx->fogSunVisibilityGain : fogSunVisibilityGain()) : 1.0f;
     volumeArgs.volumetricConsumerGain = RtxOptions::skyMode() == SkyMode::Numos ? (wx ? wx->volumetricConsumerGain : volumetricConsumerGain()) : 1.0f;
+    volumeArgs.fogSunScale = RtxOptions::skyMode() == SkyMode::Numos ? std::min(std::max(RtxAtmosphere::sunVolumetricScale(), 0.0f), 10.0f) : 1.0f;
 
     volumeArgs.enableNoiseFieldDensity = wx ? wx->enableHeterogeneousFog : enableHeterogeneousFog();
     volumeArgs.noiseFieldSubStepSize = (wx ? wx->noiseFieldSubStepSizeMeters : noiseFieldSubStepSizeMeters()) * RtxOptions::getMeterToWorldUnitScale();
@@ -844,6 +850,12 @@ namespace dxvk {
     ctx->bindResourceView(VOLUME_INTEGRATE_BINDING_ACCUMULATED_RADIANCE_OUTPUT_CO_CG, getCurrentVolumeAccumulatedRadianceCoCg().view, nullptr);
     ctx->bindResourceView(VOLUME_INTEGRATE_BINDING_ACCUMULATED_RADIANCE_OUTPUT_AGE, getCurrentVolumeAccumulatedRadianceAge().view, nullptr);
     ctx->bindResourceView(VOLUME_INTEGRATE_BINDING_SKY_RADIANCE_OUTPUT, getVolumeSkyRadiance().view, nullptr);
+    ctx->bindResourceView(VOLUME_INTEGRATE_BINDING_PREV_SUN_RADIANCE_INPUT_Y, getPreviousVolumeSunRadianceY().view, nullptr);
+    ctx->bindResourceSampler(VOLUME_INTEGRATE_BINDING_PREV_SUN_RADIANCE_INPUT_Y, linearSampler);
+    ctx->bindResourceView(VOLUME_INTEGRATE_BINDING_PREV_SUN_RADIANCE_INPUT_CO_CG, getPreviousVolumeSunRadianceCoCg().view, nullptr);
+    ctx->bindResourceSampler(VOLUME_INTEGRATE_BINDING_PREV_SUN_RADIANCE_INPUT_CO_CG, linearSampler);
+    ctx->bindResourceView(VOLUME_INTEGRATE_BINDING_SUN_RADIANCE_OUTPUT_Y, getCurrentVolumeSunRadianceY().view, nullptr);
+    ctx->bindResourceView(VOLUME_INTEGRATE_BINDING_SUN_RADIANCE_OUTPUT_CO_CG, getCurrentVolumeSunRadianceCoCg().view, nullptr);
 
     auto numRaysExtent = m_froxelVolumeExtent;
     numRaysExtent.width *= numActiveFroxelVolumes;
@@ -984,6 +996,10 @@ namespace dxvk {
     m_volumeAccumulatedRadianceAge[1] = Resources::createImageResource(ctx, "volume accumulated radiance (Age) 1", froxelGridFullDimensions, VK_FORMAT_R8_UNORM, 1, VK_IMAGE_TYPE_3D, VK_IMAGE_VIEW_TYPE_3D);
     // Fork: written whole every frame, so not double buffered
     m_volumeSkyRadiance = Resources::createImageResource(ctx, "volume sky radiance", froxelGridFullDimensions, VK_FORMAT_R16G16B16A16_SFLOAT, 1, VK_IMAGE_TYPE_3D, VK_IMAGE_VIEW_TYPE_3D);
+    m_volumeSunRadianceY[0] = Resources::createImageResource(ctx, "volume sun radiance SH(Y) 0", froxelGridFullDimensions, VK_FORMAT_R16G16B16A16_SFLOAT, 1, VK_IMAGE_TYPE_3D, VK_IMAGE_VIEW_TYPE_3D);
+    m_volumeSunRadianceY[1] = Resources::createImageResource(ctx, "volume sun radiance SH(Y) 1", froxelGridFullDimensions, VK_FORMAT_R16G16B16A16_SFLOAT, 1, VK_IMAGE_TYPE_3D, VK_IMAGE_VIEW_TYPE_3D);
+    m_volumeSunRadianceCoCg[0] = Resources::createImageResource(ctx, "volume sun radiance (Co, Cg) 0", froxelGridFullDimensions, VK_FORMAT_R16G16_SFLOAT, 1, VK_IMAGE_TYPE_3D, VK_IMAGE_VIEW_TYPE_3D);
+    m_volumeSunRadianceCoCg[1] = Resources::createImageResource(ctx, "volume sun radiance (Co, Cg) 1", froxelGridFullDimensions, VK_FORMAT_R16G16_SFLOAT, 1, VK_IMAGE_TYPE_3D, VK_IMAGE_VIEW_TYPE_3D);
 
     // Calculate the restir grid resolution
     m_restirFroxelVolumeExtent = util::computeBlockCount(m_froxelVolumeExtent, VkExtent3D { restirGridScale(), restirGridScale(), 1 });
@@ -1004,6 +1020,8 @@ namespace dxvk {
       m_volumeAccumulatedRadianceCoCg[i].reset();
       m_volumeAccumulatedRadianceAge[i].reset();
       m_volumeReservoirs[i].reset();
+      m_volumeSunRadianceY[i].reset();
+      m_volumeSunRadianceCoCg[i].reset();
     }
     m_volumeSkyRadiance.reset();
   }

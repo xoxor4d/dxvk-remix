@@ -87,6 +87,11 @@ Sampler3D<float2> VolumeFilteredRadianceCoCg;
 // Fork: the volumetric sky light the integrator keeps out of the radiance cache (fog only)
 layout(binding = COMPOSITE_VOLUME_SKY_RADIANCE_INPUT)
 Sampler3D<float4> VolumeSkyRadiance;
+// Fork: the Numos sun's share of the radiance cache, rescaled for the fog alone
+layout(binding = COMPOSITE_VOLUME_SUN_RADIANCE_Y_INPUT)
+Sampler3D<float4> VolumeSunRadianceY;
+layout(binding = COMPOSITE_VOLUME_SUN_RADIANCE_CO_CG_INPUT)
+Sampler3D<float2> VolumeSunRadianceCoCg;
 
 layout(rgba32ui, binding = COMPOSITE_ALPHA_GBUFFER_INPUT)
 Texture2D<uint4> AlphaBlendGBuffer;

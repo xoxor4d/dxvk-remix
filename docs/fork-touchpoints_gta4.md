@@ -635,3 +635,24 @@ newer Remix Plus has to re-apply it on their submodule commit.
 - **`src/dxvk/shaders/rtx/pass/composite/composite_binding_indices.h` / `composite_bindings.slangh`** - fork-touchpoint inline tweak. *`COMPOSITE_VOLUME_SKY_RADIANCE_INPUT` 71, `Sampler3D<float4> VolumeSkyRadiance`.*
 - **`src/dxvk/rtx_render/rtx_composite.cpp`** - fork-touchpoint inline tweak. *`SAMPLER3D` slot in the `CompositeShader` list; bound with the linear sampler next to the cache.*
 - **`src/dxvk/shaders/rtx/algorithm/rtx_fork_volumetric_integration.slangh`** - fork-owned file. *Passes `VolumeSkyRadiance`, `cloudSkyAmbientStrength > 0` and the world zenith to all three `integrateVolumetricNEE` calls.*
+
+## Workstream - The fog's sun weight no longer dims particles and decals (fork - 2026-10-19)
+
+`rtx.atmosphere.sunVolumetricScale` was the Numos sun light's `volumetricRadianceScale`, which the volume
+integrator applies while filling the radiance cache. Particles and decals get all their light from that cache
+(opacity lighting approximation), so Sun In Fog 0 left them without the only daylight source that carries
+per-froxel shadows: black at Fog Brightness Gain 0, flat lamp light above it. The sun now stays at full weight
+in the cache and is flagged; the integrator accumulates the sun's share into a second SH cache with the same
+history, and the fog composite rescales that share by `fogSunScale` (`VolumeArgs`, from the same option). The
+option keeps its name, meaning and the aerial perspective handoff gate.
+
+- **`submodules/rtxdi` → `7768d63`** - submodule pointer (branch `game/gta4`, on top of `efd3246`).
+  - `volume_integrator.slangh`: `isAtmosphereSunLight`; `sunRadianceSH` / `oldSunRadianceSH` fed next to the main SH in both NEE paths, mixed with `historyAgeWeight`, stored to `SunRadianceY` / `SunRadianceCoCg`.
+  - `volume_composite_helpers.slangh`: `integrateVolumetricNEE` takes `volumeSunRadianceY, volumeSunRadianceCoCg, fogSunScale` and adds `(fogSunScale - 1) * sunSh` to the sampled SH; the debug-view overload passes the cache and 1.
+- **`src/dxvk/shaders/rtx/concept/light/light.h` / `polymorphic_light.slangh`, `src/dxvk/rtx_render/rtx_lights.h` / `.cpp`** - fork-touchpoint inline tweak. *`atmosphereSun` flag, distant-light GPU flags bit 3, next to `atmosphereCloudShadowed`.*
+- **`src/dxvk/rtx_render/rtx_atmosphere.cpp` / `.h` / `rtx_atmosphere_ui.cpp`** - fork-owned files. *`syncDistantLights` flags the sun instead of passing the scale; option description and tooltip.*
+- **`src/dxvk/shaders/rtx/pass/volume_args.h`** - fork-touchpoint inline tweak. *`float fogSunScale` in the former `pad1`.*
+- **`src/dxvk/rtx_render/rtx_global_volumetrics.h` / `.cpp`** - fork-touchpoint inline tweak. *`fogSunScale` fill (Numos only), `m_volumeSunRadianceY/CoCg[2]` swapped with the cache, slots 49-52 in `VolumeIntegrateShader` and `dispatch`; includes `rtx_atmosphere.h`.*
+- **`src/dxvk/shaders/rtx/pass/volumetrics/volume_integrate_binding_indices.h` / `volume_integrate_bindings.slangh`** - fork-touchpoint inline tweak. *`PrevSunRadianceY/CoCg`, `SunRadianceY/CoCg`, new max binding 52.*
+- **`src/dxvk/shaders/rtx/pass/composite/composite_binding_indices.h` / `composite_bindings.slangh`, `src/dxvk/rtx_render/rtx_composite.cpp`** - fork-touchpoint inline tweak. *`VolumeSunRadianceY/CoCg` on slots 72-73.*
+- **`src/dxvk/shaders/rtx/algorithm/rtx_fork_volumetric_integration.slangh`** - fork-owned file. *Passes the sun share and `volumeArgs.fogSunScale`.*

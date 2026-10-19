@@ -292,6 +292,11 @@ struct WeatherSnapshot;
     const Resources::Resource& getPreviousVolumeAccumulatedRadianceAge() const { return m_volumeAccumulatedRadianceAge[!m_swapTextures]; }
     // Fork: sky light the integrator keeps out of the radiance cache, read by the fog composite only
     const Resources::Resource& getVolumeSkyRadiance() const { return m_volumeSkyRadiance; }
+    // Fork: the Numos sun's share of the radiance cache, swapped with it
+    const Resources::Resource& getCurrentVolumeSunRadianceY() const { return m_volumeSunRadianceY[m_swapTextures]; }
+    const Resources::Resource& getPreviousVolumeSunRadianceY() const { return m_volumeSunRadianceY[!m_swapTextures]; }
+    const Resources::Resource& getCurrentVolumeSunRadianceCoCg() const { return m_volumeSunRadianceCoCg[m_swapTextures]; }
+    const Resources::Resource& getPreviousVolumeSunRadianceCoCg() const { return m_volumeSunRadianceCoCg[!m_swapTextures]; }
 
     void showPresetMenu();
     void showImguiUserSettings();
@@ -315,6 +320,8 @@ struct WeatherSnapshot;
     Resources::Resource m_volumeAccumulatedRadianceCoCg[2];
     Resources::Resource m_volumeAccumulatedRadianceAge[2];
     Resources::Resource m_volumeSkyRadiance;
+    Resources::Resource m_volumeSunRadianceY[2];
+    Resources::Resource m_volumeSunRadianceCoCg[2];
     bool m_swapTextures = false;
     bool m_rebuildFroxels = false;
 

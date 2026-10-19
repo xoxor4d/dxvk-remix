@@ -291,8 +291,8 @@ namespace {
 
       RemixGui::DragFloat("Sun In Fog", &RtxAtmosphere::sunVolumetricScaleObject(), 0.01f, 0.0f, 10.0f, "%.2f", sliderFlags);
       RemixGui::SetTooltipToLastWidgetOnHover(
-        "Weight of the sun in the global volumetrics (froxel fog). Surfaces "
-        "are unaffected. 0 = the distance haze scatters the sun from the "
+        "Weight of the sun in the global volumetric fog. Surfaces, particles "
+        "and decals keep the full sun. 0 = the distance haze scatters the sun from the "
         "camera outward instead of starting past the froxel range, and the "
         "fog keeps its local lights; the haze's own Local Lights are then off "
         "while volumetrics are on. Above 0 the fog scatters the sun up to its "

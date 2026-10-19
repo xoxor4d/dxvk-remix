@@ -563,8 +563,9 @@ public:
                "overrides the sun light's half-angle WITHOUT changing the visible sun disc — larger = "
                "softer penumbra, for artistic soft shadows under a small sun.");
     RTX_OPTION_ARGS("rtx.atmosphere", float, sunVolumetricScale, 1.0f,
-               "How much the sun feeds the global volumetrics (froxel fog), as a multiplier on its radiance there. "
-               "Surface lighting is unaffected.\n"
+               "How much the sun feeds the global volumetric fog, as a multiplier on its radiance there. Surface "
+               "lighting is unaffected, and so are particles and decals: the froxel radiance cache they read "
+               "keeps the sun at full weight.\n"
                "At 0 the aerial perspective scatters the sun from the camera outward instead of starting past "
                "rtx.volumetrics.froxelMaxDistanceMeters, so a long froxel range keeps the fog's local lights "
                "without hiding the distance haze and its sun shafts. The aerial perspective's own local lights "

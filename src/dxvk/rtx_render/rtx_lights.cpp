@@ -852,7 +852,8 @@ void RtDistantLight::applyTransform(const Matrix4& lightToWorld) {
   updateCachedHash();
 }
 
-void RtDistantLight::writeGPUData(unsigned char* data, std::size_t& offset, bool ignoreViewModel, bool atmosphereCloudShadowed) const {
+void RtDistantLight::writeGPUData(unsigned char* data, std::size_t& offset, bool ignoreViewModel, bool atmosphereCloudShadowed,
+                                  bool atmosphereSun) const {
   [[maybe_unused]] const std::size_t oldOffset = offset;
 
   // Direction and orientation are stored as full float32 (not float16): float16's coarse angular
@@ -885,6 +886,7 @@ void RtDistantLight::writeGPUData(unsigned char* data, std::size_t& offset, bool
   uint32_t flags = lightTypeDistant << 29;
   if (ignoreViewModel) flags |= 1 << 1; // ignoreViewModel flag at bit 1
   if (atmosphereCloudShadowed) flags |= 1 << 2; // atmosphere cloud-shadow flag at bit 2 (fork)
+  if (atmosphereSun) flags |= 1 << 3; // atmosphere sun flag at bit 3 (fork)
   writeGPUHelper(data, offset, flags);
 
   assert(offset - oldOffset == kLightGPUSize);
@@ -984,6 +986,7 @@ void RtLight::copyFrom(const RtLight& light) {
   isDynamic = light.isDynamic;
   ignoreViewModel = light.ignoreViewModel;
   atmosphereCloudShadowed = light.atmosphereCloudShadowed;
+  atmosphereSun = light.atmosphereSun;
   m_type = light.m_type;
   
   // Copy only the active union member based on the light type
@@ -1123,7 +1126,7 @@ void RtLight::writeGPUData(unsigned char* data, std::size_t& offset) const {
     m_cylinderLight.writeGPUData(data, offset, this->ignoreViewModel);
     break;
   case RtLightType::Distant:
-    m_distantLight.writeGPUData(data, offset, this->ignoreViewModel, this->atmosphereCloudShadowed);
+    m_distantLight.writeGPUData(data, offset, this->ignoreViewModel, this->atmosphereCloudShadowed, this->atmosphereSun);
     break;
   }
 }
