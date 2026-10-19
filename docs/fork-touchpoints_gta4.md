@@ -656,3 +656,13 @@ option keeps its name, meaning and the aerial perspective handoff gate.
 - **`src/dxvk/shaders/rtx/pass/volumetrics/volume_integrate_binding_indices.h` / `volume_integrate_bindings.slangh`** - fork-touchpoint inline tweak. *`PrevSunRadianceY/CoCg`, `SunRadianceY/CoCg`, new max binding 52.*
 - **`src/dxvk/shaders/rtx/pass/composite/composite_binding_indices.h` / `composite_bindings.slangh`, `src/dxvk/rtx_render/rtx_composite.cpp`** - fork-touchpoint inline tweak. *`VolumeSunRadianceY/CoCg` on slots 72-73.*
 - **`src/dxvk/shaders/rtx/algorithm/rtx_fork_volumetric_integration.slangh`** - fork-owned file. *Passes the sun share and `volumeArgs.fogSunScale`.*
+
+## Workstream - Volumetric cache readers keep the last depth slice past the far plane (fork - 2026-10-19)
+
+`evalVolumetricNEE` (particles, decals, PSR, SAB Path B, dust) returned zero for a surface beyond the froxel
+grid, after fading over the last tenth of the depth range. With the distance haze now bright behind them,
+particles past the 1200-1500 m grid read as dark sprites against it. The last depth slice now stands in for
+the rest of the view ray and the edge fade applies to the near plane only.
+
+- **`submodules/rtxdi` → `ade4482`** - submodule pointer (branch `game/gta4`, on top of `7768d63`).
+  - `volume_lighting.slangh`: `evalVolumetricNEE` clamps `virtualFroxelUVW.z` to the last slice's centre and leaves the far plane out of `distToEdge`.
