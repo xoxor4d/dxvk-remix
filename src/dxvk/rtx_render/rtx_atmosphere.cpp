@@ -1302,8 +1302,9 @@ AtmosphereArgs RtxAtmosphere::getAtmosphereArgs() const {
     // applied here are the ship-state defaults: skyAmbientStrength = 0 keeps
     // the feature off by default; cloudOcclusionStrength = 1 means full
     // physical cloud occlusion when the feature is enabled.
-    args.cloudSkyAmbientStrength = RtxAtmosphere::cloudSkyAmbientStrength();
-    args.cloudSkyAmbientCloudOcclusionStrength = RtxAtmosphere::cloudSkyAmbientCloudOcclusionStrength();
+    args.cloudSkyAmbientStrength = wx ? wx->cloudSkyAmbientStrength : RtxAtmosphere::cloudSkyAmbientStrength();
+    args.cloudSkyAmbientCloudOcclusionStrength =
+      wx ? wx->cloudSkyAmbientCloudOcclusionStrength : RtxAtmosphere::cloudSkyAmbientCloudOcclusionStrength();
     // Cloud cluster footprint for the placement map bake (column-shaping
     // rework). Lives in the former padCloudC2 slot; CB layout unchanged.
     args.cloudCellSizeKm = RtxAtmosphere::cloudCellSizeKm();

@@ -527,6 +527,12 @@ namespace dxvk { namespace {
     if (std::strcmp(name, "noiseFieldOctaves") == 0) {
       return RtxGlobalVolumetrics::noiseFieldOctavesObject().getDescription();
     }
+    if (std::strcmp(name, "cloudSkyAmbientStrength") == 0) {
+      return RtxAtmosphere::cloudSkyAmbientStrengthObject().getDescription();
+    }
+    if (std::strcmp(name, "cloudSkyAmbientCloudOcclusionStrength") == 0) {
+      return RtxAtmosphere::cloudSkyAmbientCloudOcclusionStrengthObject().getDescription();
+    }
     if (std::strcmp(name, "precipitationIntensity") == 0) {
       return PrecipitationSystem::intensityObject().getDescription();
     }
@@ -772,6 +778,8 @@ namespace dxvk { namespace {
     s.enableTranslucentShadows = RtxGlobalVolumetrics::enableTranslucentShadows();
     s.depthOffset              = RtxGlobalVolumetrics::depthOffset();
     s.noiseFieldOctaves        = static_cast<float>(RtxGlobalVolumetrics::noiseFieldOctaves());
+    s.cloudSkyAmbientStrength               = RtxAtmosphere::cloudSkyAmbientStrength();
+    s.cloudSkyAmbientCloudOcclusionStrength = RtxAtmosphere::cloudSkyAmbientCloudOcclusionStrength();
     s.precipitationIntensity    = PrecipitationSystem::intensity();
     s.precipitationFallSpeed    = PrecipitationSystem::fallSpeed();
     s.precipitationWindResponse = PrecipitationSystem::windResponse();
@@ -832,6 +840,8 @@ namespace dxvk { namespace {
   WVARIES(enableTranslucentShadows)
   WVARIES(depthOffset)
   WVARIES(noiseFieldOctaves)
+  WVARIES(cloudSkyAmbientStrength)
+  WVARIES(cloudSkyAmbientCloudOcclusionStrength)
   WVARIES(cloudUndersideLightSigma)
   WVARIES(cloudBottomDarkening)
   WVARIES(cloudAerialFadePerKm)
@@ -875,6 +885,8 @@ namespace dxvk { namespace {
     FALLBACK_IF_INVARIANT(enableTranslucentShadows);
     FALLBACK_IF_INVARIANT(depthOffset);
     FALLBACK_IF_INVARIANT(noiseFieldOctaves);
+    FALLBACK_IF_INVARIANT(cloudSkyAmbientStrength);
+    FALLBACK_IF_INVARIANT(cloudSkyAmbientCloudOcclusionStrength);
     FALLBACK_IF_INVARIANT(cloudUndersideLightSigma);
     FALLBACK_IF_INVARIANT(cloudBottomDarkening);
     FALLBACK_IF_INVARIANT(cloudAerialFadePerKm);

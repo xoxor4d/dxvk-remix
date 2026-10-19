@@ -590,3 +590,15 @@ froxel integrator adds per froxel) had no widget. With `sunVolumetricScale` at 0
 froxel fog, so they sit next to "Sun In Fog".
 
 - **`src/dxvk/rtx_render/rtx_atmosphere_ui.cpp`** - fork-owned file. *"Sky In Fog" and "Sky In Fog Cloud Occlusion" sliders under Sun size & shadows; the second is disabled while the first is 0.*
+
+## Workstream - Sky light in the fog per weather preset (fork - 2026-10-19)
+
+`cloudSkyAmbientStrength` ("Sky In Fog") and `cloudSkyAmbientCloudOcclusionStrength` are weather preset
+fields in the Volumetric Fog > Medium section, defaulting to 0 and 1 in every preset. Like the other fields
+added after the snapshot refactor they fall back to the live `rtx.atmosphere.*` option while all presets
+agree, and like the rest of the Volumetric Fog group they only apply with `rtx.weather.controlVolumetricFog`.
+The atmosphere tab shows them read-only while weather owns them.
+
+- **`src/dxvk/rtx_render/rtx_weather.h`** - fork-owned file. *Two `WEATHER_PRESET_FIELD_LIST` entries and the matching line in all 12 `WEATHER_PRESET_VALUES_*` blocks; field counts in the comments updated.*
+- **`src/dxvk/rtx_render/rtx_weather.cpp`** - fork-owned file. *Tooltips, `snapshotRenderer`, `WVARIES` / `FALLBACK_IF_INVARIANT` for both.*
+- **`src/dxvk/rtx_render/rtx_atmosphere.cpp` / `rtx_atmosphere_ui.cpp`** - fork-owned files. *`getAtmosphereArgs` reads both from the weather snapshot; `renderSunUI` takes their weather overrides and draws them through `dragFloatWithWeatherOverride`.*

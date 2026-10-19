@@ -1,6 +1,6 @@
 #pragma once
 
-// rtx_weather.h — 756 RTX_OPTIONs (12 presets x 63 fields) under rtx.weather.preset.*
+// rtx_weather.h — 780 RTX_OPTIONs (12 presets x 65 fields) under rtx.weather.preset.*
 // Adding a field to WEATHER_PRESET_FIELD_LIST automatically propagates it everywhere.
 
 #include <mutex>
@@ -58,7 +58,7 @@ namespace dxvk {
   X(Vector3, nightSkyColor,                      Vector3(0.15f, 0.2f, 0.4f),      WK_Color,      "Sky & Moon",     "Sky & Moon",       "Night Sky Color",            0.0f,    1.0f,    0.005f,  "%.3f") \
   X(float,   moonNeeStrength,                    1.0f,                            WK_Scalar,     "Sky & Moon",     "Sky & Moon",       "NEE Strength",               0.0f,    10.0f,   0.05f,   "%.2f") \
   X(float,   moonAtmosphericCouplingStrength,    1.0f,                            WK_Scalar,     "Sky & Moon",     "Sky & Moon",       "Atmospheric Coupling",       0.0f,    10.0f,   0.05f,   "%.2f") \
-  /* Volumetric (27); volumetricAnisotropy avoids clash with the old cloudAnisotropy */ \
+  /* Volumetric (28); volumetricAnisotropy avoids clash with the old cloudAnisotropy */ \
   X(Vector3, transmittanceColor,                 Vector3(0.999f, 0.999f, 0.999f), WK_Color,      "Volumetric Fog", "Medium",           "Transmittance Color",        0.0f,    1.0f,    0.005f,  "%.3f") \
   X(float,   transmittanceMeasurementDistanceMeters, 200.0f,                      WK_Extinction, "Volumetric Fog", "Medium",           "Transmittance Measurement Distance", 1.0f, 2000.0f, 5.0f,  "%.0f") \
   X(Vector3, singleScatteringAlbedo,             Vector3(0.999f, 0.999f, 0.999f), WK_Color,      "Volumetric Fog", "Medium",           "Single Scattering Albedo",   0.0f,    1.0f,    0.005f,  "%.3f") \
@@ -86,6 +86,8 @@ namespace dxvk {
   X(float, depthOffset,              0.5f,  WK_Scalar, "Volumetric Fog", "Medium",        "Depth Offset",        0.0f, 1.0f,  0.01f, "%.2f") \
   X(float, noiseFieldOctaves,        2.0f,  WK_Scalar, "Volumetric Fog", "Heterogeneous", "Noise Field Number of Octaves", 1.0f, 8.0f,  1.0f,  "%.0f") \
   X(float,   volumetricAnisotropy,               0.0f,                            WK_Scalar,     "Volumetric Fog", "Medium",           "Anisotropy",                -1.0f,    1.0f,    0.01f,   "%.2f") \
+  X(float,   cloudSkyAmbientStrength,            0.0f,                            WK_Scalar,     "Volumetric Fog", "Medium",           "Sky In Fog",                 0.0f,    3.0f,    0.01f,   "%.2f") \
+  X(float,   cloudSkyAmbientCloudOcclusionStrength, 1.0f,                         WK_Scalar,     "Volumetric Fog", "Medium",           "Sky In Fog Cloud Occlusion", 0.0f,    1.0f,    0.01f,   "%.2f") \
   /* Precipitation (11) — rain / snow / blowing sand particles.                  */ \
   /* PrecipitationSystem consumes these from the effective WeatherSnapshot;      */ \
   /* rtx.weather.precipitation.* remains the dormant/base fallback. Intensity 0  */ \
@@ -174,6 +176,8 @@ namespace dxvk {
   X(float, depthOffset,              0.5f) \
   X(float, noiseFieldOctaves,        2.0f) \
   X(float,   volumetricAnisotropy,                      0.0f) \
+  X(float,   cloudSkyAmbientStrength,                   0.0f) \
+  X(float,   cloudSkyAmbientCloudOcclusionStrength,     1.0f) \
   /* Precipitation - no precipitation */ \
   X(float,   precipitationIntensity,    0.0f                        ) \
   X(float,   precipitationFallSpeed,    8.0f                        ) \
@@ -241,6 +245,8 @@ namespace dxvk {
   X(float, depthOffset,              0.5f) \
   X(float, noiseFieldOctaves,        2.0f) \
   X(float,   volumetricAnisotropy,                      0.05f) \
+  X(float,   cloudSkyAmbientStrength,                   0.0f) \
+  X(float,   cloudSkyAmbientCloudOcclusionStrength,     1.0f) \
   /* Precipitation - no precipitation */ \
   X(float,   precipitationIntensity,    0.0f                        ) \
   X(float,   precipitationFallSpeed,    8.0f                        ) \
@@ -308,6 +314,8 @@ namespace dxvk {
   X(float, depthOffset,              0.5f) \
   X(float, noiseFieldOctaves,        2.0f) \
   X(float,   volumetricAnisotropy,                      0.05f) \
+  X(float,   cloudSkyAmbientStrength,                   0.0f) \
+  X(float,   cloudSkyAmbientCloudOcclusionStrength,     1.0f) \
   /* Precipitation - no precipitation (dry overcast) */ \
   X(float,   precipitationIntensity,    0.0f                        ) \
   X(float,   precipitationFallSpeed,    8.0f                        ) \
@@ -375,6 +383,8 @@ namespace dxvk {
   X(float, depthOffset,              0.5f) \
   X(float, noiseFieldOctaves,        2.0f) \
   X(float,   volumetricAnisotropy,                      0.30f) \
+  X(float,   cloudSkyAmbientStrength,                   0.0f) \
+  X(float,   cloudSkyAmbientCloudOcclusionStrength,     1.0f) \
   /* Precipitation - no precipitation */ \
   X(float,   precipitationIntensity,    0.0f                        ) \
   X(float,   precipitationFallSpeed,    8.0f                        ) \
@@ -442,6 +452,8 @@ namespace dxvk {
   X(float, depthOffset,              0.5f) \
   X(float, noiseFieldOctaves,        2.0f) \
   X(float,   volumetricAnisotropy,                      0.0f) \
+  X(float,   cloudSkyAmbientStrength,                   0.0f) \
+  X(float,   cloudSkyAmbientCloudOcclusionStrength,     1.0f) \
   /* Precipitation - barely-there mist drift, mostly there to make the fog feel wet */ \
   X(float,   precipitationIntensity,    0.06f                       ) \
   X(float,   precipitationFallSpeed,    3.0f                        ) \
@@ -509,6 +521,8 @@ namespace dxvk {
   X(float, depthOffset,              0.5f) \
   X(float, noiseFieldOctaves,        2.0f) \
   X(float,   volumetricAnisotropy,                      0.10f) \
+  X(float,   cloudSkyAmbientStrength,                   0.0f) \
+  X(float,   cloudSkyAmbientCloudOcclusionStrength,     1.0f) \
   /* Precipitation - fine, slow, short streaks */ \
   X(float,   precipitationIntensity,    0.28f                       ) \
   X(float,   precipitationFallSpeed,    5.5f                        ) \
@@ -576,6 +590,8 @@ namespace dxvk {
   X(float, depthOffset,              0.5f) \
   X(float, noiseFieldOctaves,        2.0f) \
   X(float,   volumetricAnisotropy,                      0.10f) \
+  X(float,   cloudSkyAmbientStrength,                   0.0f) \
+  X(float,   cloudSkyAmbientCloudOcclusionStrength,     1.0f) \
   /* Precipitation - heavy, fast, long slanted streaks */ \
   X(float,   precipitationIntensity,    0.80f                       ) \
   X(float,   precipitationFallSpeed,    9.5f                        ) \
@@ -643,6 +659,8 @@ namespace dxvk {
   X(float, depthOffset,              0.5f) \
   X(float, noiseFieldOctaves,        2.0f) \
   X(float,   volumetricAnisotropy,                      0.0f) \
+  X(float,   cloudSkyAmbientStrength,                   0.0f) \
+  X(float,   cloudSkyAmbientCloudOcclusionStrength,     1.0f) \
   /* Precipitation - torrential; the streaks are the storm */ \
   X(float,   precipitationIntensity,    1.00f                       ) \
   X(float,   precipitationFallSpeed,    11.0f                       ) \
@@ -710,6 +728,8 @@ namespace dxvk {
   X(float, depthOffset,              0.5f) \
   X(float, noiseFieldOctaves,        2.0f) \
   X(float,   volumetricAnisotropy,                      0.0f) \
+  X(float,   cloudSkyAmbientStrength,                   0.0f) \
+  X(float,   cloudSkyAmbientCloudOcclusionStrength,     1.0f) \
   /* Precipitation - slow tumbling flakes - no streak, high drag + turbulence is what makes them flutter */ \
   X(float,   precipitationIntensity,    0.45f                       ) \
   X(float,   precipitationFallSpeed,    1.1f                        ) \
@@ -777,6 +797,8 @@ namespace dxvk {
   X(float, depthOffset,              0.5f) \
   X(float, noiseFieldOctaves,        2.0f) \
   X(float,   volumetricAnisotropy,                      0.0f) \
+  X(float,   cloudSkyAmbientStrength,                   0.0f) \
+  X(float,   cloudSkyAmbientCloudOcclusionStrength,     1.0f) \
   /* Precipitation - driven snow: wind dominates the fall direction */ \
   X(float,   precipitationIntensity,    1.00f                       ) \
   X(float,   precipitationFallSpeed,    2.2f                        ) \
@@ -844,6 +866,8 @@ namespace dxvk {
   X(float, depthOffset,              0.5f) \
   X(float, noiseFieldOctaves,        2.0f) \
   X(float,   volumetricAnisotropy,                      0.60f) \
+  X(float,   cloudSkyAmbientStrength,                   0.0f) \
+  X(float,   cloudSkyAmbientCloudOcclusionStrength,     1.0f) \
   /* Precipitation - blowing grit - almost horizontal, tinted, semi-transparent */ \
   X(float,   precipitationIntensity,    0.85f                       ) \
   X(float,   precipitationFallSpeed,    1.6f                        ) \
@@ -911,6 +935,8 @@ namespace dxvk {
   X(float, depthOffset,              0.5f) \
   X(float, noiseFieldOctaves,        2.0f) \
   X(float,   volumetricAnisotropy,                      0.20f) \
+  X(float,   cloudSkyAmbientStrength,                   0.0f) \
+  X(float,   cloudSkyAmbientCloudOcclusionStrength,     1.0f) \
   /* Precipitation - no precipitation */ \
   X(float,   precipitationIntensity,    0.0f                        ) \
   X(float,   precipitationFallSpeed,    8.0f                        ) \
@@ -952,7 +978,7 @@ namespace dxvk {
 #undef WEATHER_PRESET_FIELD_AS_OWNERSHIP_
   };
 
-  // Plain-value copy of all 63 effective weather params, plus ownership metadata
+  // Plain-value copy of all 65 effective weather params, plus ownership metadata
   // for UI/debug consumers. Renderers consume only the values; ImGui can use the
   // mask to decide whether to show a read-only weather value or the editable base
   // RtxOption without reintroducing transient Derived-layer writes.
@@ -980,7 +1006,7 @@ namespace dxvk {
     void showImguiSettings();
     void renderEditorWindow();  // no-op while closed; call once per frame
 
-    // 756 RTX_OPTIONs: 12 presets x 63 fields. Getter form: WeatherBlender::clear_cloudDensity(), etc.
+    // 780 RTX_OPTIONs: 12 presets x 65 fields. Getter form: WeatherBlender::clear_cloudDensity(), etc.
     DECLARE_ALL_WEATHER_PRESETS();
 #undef DECLARE_ALL_WEATHER_PRESETS
 #undef DECLARE_WEATHER_PRESET

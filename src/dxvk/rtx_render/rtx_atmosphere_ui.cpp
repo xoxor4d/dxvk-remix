@@ -241,7 +241,8 @@ namespace {
     }
   }
 
-  void renderSunUI(float liveTimeOfDayHours) {
+  void renderSunUI(float liveTimeOfDayHours, const float* skyInFogOverride,
+                   const float* skyInFogCloudOcclusionOverride) {
     constexpr ImGuiSliderFlags sliderFlags = ImGuiSliderFlags_AlwaysClamp;
 
     RemixGui::DragFloat("Sun Intensity", &RtxAtmosphere::sunIntensityObject(), 0.01f, 0.0f, 100.0f, "%.2f", sliderFlags);
@@ -297,15 +298,20 @@ namespace {
         "while volumetrics are on. Above 0 the fog scatters the sun up to its "
         "range and the haze takes over past it.");
 
-      RemixGui::DragFloat("Sky In Fog", &RtxAtmosphere::cloudSkyAmbientStrengthObject(), 0.01f, 0.0f, 3.0f, "%.2f", sliderFlags);
+      dragFloatWithWeatherOverride(
+        "Sky In Fog", &RtxAtmosphere::cloudSkyAmbientStrengthObject(), skyInFogOverride,
+        0.01f, 0.0f, 3.0f, "%.2f", sliderFlags);
       RemixGui::SetTooltipToLastWidgetOnHover(
         "Sky light in the global volumetrics (froxel fog): the sky seen from "
         "six fixed upper-hemisphere directions, dimmed by the clouds. 0 = off, "
         "1 = physical. With Sun In Fog at 0 this is what lights daytime fog. "
         "Not occluded by the scene, so it also brightens fog indoors.");
 
-      ImGui::BeginDisabled(RtxAtmosphere::cloudSkyAmbientStrength() <= 0.0f);
-      RemixGui::DragFloat("Sky In Fog Cloud Occlusion", &RtxAtmosphere::cloudSkyAmbientCloudOcclusionStrengthObject(), 0.01f, 0.0f, 1.0f, "%.2f", sliderFlags);
+      const float skyInFog = skyInFogOverride ? *skyInFogOverride : RtxAtmosphere::cloudSkyAmbientStrength();
+      ImGui::BeginDisabled(skyInFog <= 0.0f);
+      dragFloatWithWeatherOverride(
+        "Sky In Fog Cloud Occlusion", &RtxAtmosphere::cloudSkyAmbientCloudOcclusionStrengthObject(),
+        skyInFogCloudOcclusionOverride, 0.01f, 0.0f, 1.0f, "%.2f", sliderFlags);
       RemixGui::SetTooltipToLastWidgetOnHover(
         "How much the cloud cover dims Sky In Fog. 1 = physical, overcast fog "
         "is darker than clear-sky fog; 0 ignores the clouds.");
@@ -771,7 +777,8 @@ void RtxAtmosphere::showSkyAppearance(const WeatherSnapshot* weatherSnapshot) {
   RemixGui::SetTooltipToLastWidgetOnHover("Applies a starting atmosphere and sun color. Clouds and weather are configured in their own tabs.");
 
   ImGui::Separator();
-  renderSunUI(getTimeOfDayHours());
+  renderSunUI(getTimeOfDayHours(), WEATHER_OVERRIDE_PTR(cloudSkyAmbientStrength),
+              WEATHER_OVERRIDE_PTR(cloudSkyAmbientCloudOcclusionStrength));
 
   if (ImGui::TreeNode("Sky color & brightness")) {
     dragFloatWithWeatherOverride(
