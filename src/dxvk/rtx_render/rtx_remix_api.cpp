@@ -1781,7 +1781,11 @@ namespace {
 
     dxvk::Config newSetting;
     newSetting.setOptionMove(std::move(strKey), std::move(strValue));
-    option->readOption(newSetting, layer);
+    {
+      // The CS thread reads and clears the dirty-option map under this mutex in RtxOptionManager::applyPendingValues().
+      std::lock_guard<std::mutex> optionLock(dxvk::RtxOptionImpl::getUpdateMutex());
+      option->readOption(newSetting, layer);
+    }
 
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
