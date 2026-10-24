@@ -76,9 +76,13 @@
 //
 // PATCH 4 adds remixapi_MeshInfoReplacementHashEXT (the key a mesh is looked up
 // by for USD replacements and named by in captures).
+//
+// PATCH 5 adds remixapi_MaterialInfoGameTexturesEXT::colorIsEmissive (the game
+// colormap doubles as the emissive texture of the keyed material). Read from
+// callers reporting >= 0.1000.5 only.
 #define REMIXAPI_VERSION_MAJOR 0
 #define REMIXAPI_VERSION_MINOR 1000
-#define REMIXAPI_VERSION_PATCH 4
+#define REMIXAPI_VERSION_PATCH 5
 
 
 // External
@@ -982,6 +986,11 @@ extern "C" {
     remixapi_StructType sType;
     void*               pNext;
     IDirect3DTexture9*  colorTexture;
+    // The colormap is also the emissive texture: emission is enabled on the keyed material with the
+    // emissiveIntensity / emissiveColorConstant of the remixapi_MaterialInfo (a USD replacement of the
+    // key still takes precedence). Unlike an additive blend state this keeps the instance in the
+    // ordered geometry (motion vectors, G-buffer).
+    remixapi_Bool       colorIsEmissive;
   } remixapi_MaterialInfoGameTexturesEXT;
 
 

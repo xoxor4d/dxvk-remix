@@ -21,6 +21,7 @@ typedef struct remixapi_MaterialInfoGameTexturesEXT {
   remixapi_StructType sType;          // ..._MATERIAL_INFO_GAME_TEXTURES_EXT
   void*               pNext;
   IDirect3DTexture9*  colorTexture;
+  remixapi_Bool       colorIsEmissive; // 0.1000.5
 } remixapi_MaterialInfoGameTexturesEXT;
 ```
 
@@ -33,6 +34,12 @@ texture's image hash, so it shares `mat_<hash>` with D3D9 draws. A matching
 replacement is merged over it like on the D3D9 path; changes to
 `rtx.legacyMaterial.*` and `rtx.ignoreAlphaOnTextures` apply live. Materials
 without the extension are unchanged.
+
+With `colorIsEmissive` (0.1000.5) the colormap is also the material's emissive
+texture, lit with the `emissiveIntensity` and `emissiveColorConstant` of the
+`remixapi_MaterialInfo` (the one input the legacy defaults do not replace).
+Unlike an additive blend state this keeps the instance in the ordered geometry,
+so it has motion vectors; a replacement of the key still takes precedence.
 
 ## Instances: `remixapi_InstanceInfoD3DOverridesEXT`, object picking
 

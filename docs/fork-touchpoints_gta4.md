@@ -666,3 +666,17 @@ the rest of the view ray and the edge fade applies to the near plane only.
 
 - **`submodules/rtxdi` → `ade4482`** - submodule pointer (branch `game/gta4`, on top of `7768d63`).
   - `volume_lighting.slangh`: `evalVolumetricNEE` clamps `virtualFroxelUVW.z` to the last slice's centre and leaves the far plane out of `distToEdge`.
+
+## Workstream - Emissive colormap-keyed API materials (fork - 2026-10-24)
+
+API `0.1000.5`: `remixapi_MaterialInfoGameTexturesEXT` gains `colorIsEmissive`. A keyed
+material with it emits its colormap (emissive texture = the colormap view) with the
+`emissiveIntensity` / `emissiveColorConstant` of the `remixapi_MaterialInfo`, in the ordered
+geometry. Before, the only emission a keyed material could get was the additive blend state's
+emissive-blend override, which puts the instance into the unordered TLAS (no motion vectors:
+the gta4-rtx fake distant cars streaked at night). A USD replacement of the key still wins.
+
+- **`public/include/remix/remix_c.h`** - inline. *`colorIsEmissive` appended to `remixapi_MaterialInfoGameTexturesEXT`, version `0.1000.5`, PATCH history comment.*
+- **`src/dxvk/rtx_render/rtx_remix_api.cpp`** - hook call site, 1 LOC. *`remixapi_CreateMaterial` passes `s_apiVersion >= 0.1000.5` to `resolveMaterialGameTextures` so the field is only read from callers that have it.*
+- **`src/dxvk/rtx_render/rtx_fork_hooks.h`, `rtx_fork_game_textures.{h,cpp}`, `rtx_fork_game_textures_keyed.cpp`** - fork-owned. *`game_textures::Texture::isEmissive`; `KeyedMaterial` keeps the flag and the API material's emission, `makeLegacyMaterial` enables emission with the colormap view as emissive texture.*
+- **`bridge/src/util/util_remixapi.cpp`** - inline. *`MaterialInfoGameTextures` serializes the flag after the texture id.*

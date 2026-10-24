@@ -682,12 +682,14 @@ namespace dxvk {
 
     // remixapi_CreateMaterial, API thread: resolves the colorTexture of a chained
     // remixapi_MaterialInfoGameTexturesEXT (null when absent, malformed, or the
-    // material has an albedoTexture).
+    // material has an albedoTexture). extHasEmissiveFlag: the caller's API version
+    // has the colorIsEmissive field (>= 0.1000.5).
     // Implementation in rtx_fork_game_textures.cpp.
     std::shared_ptr<const game_textures::Texture> resolveMaterialGameTextures(
       D3D9DeviceEx* remixDevice,
       const remixapi_MaterialInfo& info,
-      const remixapi_MaterialInfoGameTexturesEXT* ext);
+      const remixapi_MaterialInfoGameTexturesEXT* ext,
+      bool extHasEmissiveFlag);
 
     // remixapi_CreateMaterial, render thread. An opaque material with a resolved
     // color texture becomes a legacy-defaults material (as a non-replaced D3D9

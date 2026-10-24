@@ -55,6 +55,7 @@ D3D9 draw of that texture gets.
 | `remixapi_StructType` | `sType` |  |
 | `void*` | `pNext` |  |
 | `IDirect3DTexture9*` | `colorTexture` |  |
+| `remixapi_Bool` | `colorIsEmissive` | 0.1000.5: the colormap is also the emissive texture, lit with the material's emissiveIntensity / emissiveColorConstant (ordered geometry, unlike an additive blend state) |
 
 ### `remixapi_MeshInfoReplacementHashEXT`
 

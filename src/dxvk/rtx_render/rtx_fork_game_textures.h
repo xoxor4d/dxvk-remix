@@ -24,6 +24,8 @@ namespace dxvk {
       Rc<DxvkImageView> view;
       // D3D9 image hash, identical to the hash a D3D9 draw computes.
       XXH64_hash_t hash = kEmptyHash;
+      // The colormap is also the emissive texture (remixapi_MaterialInfoGameTexturesEXT::colorIsEmissive).
+      bool isEmissive = false;
 
       bool isValid() const {
         return view != nullptr && hash != kEmptyHash;

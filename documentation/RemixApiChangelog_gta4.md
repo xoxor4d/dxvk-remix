@@ -4,6 +4,22 @@ Companion of [`RemixApiChangelog.md`](RemixApiChangelog.md), which stays at its 
 state on this branch. Same format; these entries sit on top of Remix Plus's `[0.1000.1]`.
 Merge them into the hub changelog when the branch is rebased.
 
+## [0.1000.5]
+
+Emissive colormap-keyed materials (2026-10-24).
+
+### Added
+- `remixapi_MaterialInfoGameTexturesEXT::colorIsEmissive`: the game colormap is also
+  the emissive texture of the keyed material, with the `emissiveIntensity` /
+  `emissiveColorConstant` of the `remixapi_MaterialInfo`. Keeps the instance in the
+  ordered geometry (motion vectors), unlike the emissive-blend override of an
+  additive blend state. A USD replacement of the key still takes precedence.
+- Bridge: `CreateMaterial` forwards the flag.
+
+### Changed
+- `REMIXAPI_VERSION` is now `0.1000.5` (was `0.1000.4`). Additive, the field is only
+  read from callers reporting `0.1000.5` or newer.
+
 ## [0.1000.4]
 
 Replacement key for API meshes (2026-10-14).

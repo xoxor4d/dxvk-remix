@@ -1103,7 +1103,8 @@ namespace {
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
     }
 
-    auto gameTextures = dxvk::fork_hooks::resolveMaterialGameTextures(remixDevice, *info, pnext::find<remixapi_MaterialInfoGameTexturesEXT>(info));
+    auto gameTextures = dxvk::fork_hooks::resolveMaterialGameTextures(remixDevice, *info, pnext::find<remixapi_MaterialInfoGameTexturesEXT>(info),
+                                                                       s_apiVersion >= REMIXAPI_VERSION_MAKE(0, 1000, 5));
 
     // async load
     std::lock_guard lock { s_mutex };

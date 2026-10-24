@@ -449,11 +449,12 @@ void MaterialInfoPortal::_dtor() {
 // colorTexture crosses the bridge as the client's D3D object id: the client translates
 // its texture proxy before serializing and the server resolves the id afterwards
 uint32_t MaterialInfoGameTextures::_calcSize() const {
-  return fold_helper::calcSize(sType) + sizeOf<uint32_t>();
+  return fold_helper::calcSize(sType) + sizeOf<uint32_t>() + fold_helper::calcSize(colorIsEmissive);
 }
 void MaterialInfoGameTextures::_serialize(void*& pSerialize) const {
   fold_helper::serialize(pSerialize, sType);
   bridge_util::serialize((uint32_t) (uintptr_t) colorTexture, pSerialize);
+  fold_helper::serialize(pSerialize, colorIsEmissive);
 }
 void MaterialInfoGameTextures::_deserialize(void*& pDeserialize) {
   pNext = nullptr;
@@ -461,6 +462,7 @@ void MaterialInfoGameTextures::_deserialize(void*& pDeserialize) {
   uint32_t textureId = 0;
   bridge_util::deserialize(pDeserialize, textureId);
   colorTexture = reinterpret_cast<IDirect3DTexture9*>((uintptr_t) textureId);
+  fold_helper::deserialize(pDeserialize, colorIsEmissive);
 }
 void MaterialInfoGameTextures::_dtor() {
 }

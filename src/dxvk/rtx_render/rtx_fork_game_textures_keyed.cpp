@@ -22,6 +22,10 @@ namespace {
     Rc<DxvkImageView> view;
     // What a D3D9 draw takes from the game: albedo, sampler, alpha state.
     OpaqueMaterialData gameState;
+    // colorIsEmissive: the colormap is the emissive texture, with the emission of the API material.
+    bool colorIsEmissive = false;
+    float emissiveIntensity = 0.f;
+    Vector3 emissiveColorConstant = Vector3(0.f);
     std::shared_ptr<MaterialData> legacy;
     XXH64_hash_t legacyStamp = kEmptyHash;
     // Last replacement merged for this material, and the merge result.
@@ -86,6 +90,13 @@ namespace {
     const auto& ignoreAlpha = RtxOptions::ignoreAlphaOnTextures();
     opaque.setIgnoreAlphaChannel(LegacyMaterialDefaults::ignoreAlphaChannel() ||
                                  ignoreAlpha.find(keyed.key) != ignoreAlpha.end());
+
+    if (keyed.colorIsEmissive) {
+      opaque.setEnableEmission(true);
+      opaque.setEmissiveIntensity(keyed.emissiveIntensity);
+      opaque.setEmissiveColorConstant(keyed.emissiveColorConstant);
+      opaque.setEmissiveColorTexture(TextureRef(keyed.view));
+    }
     return legacy;
   }
 
@@ -179,6 +190,9 @@ namespace fork_hooks {
     KeyedMaterial& keyed = s_keyedMaterials[handle];
     keyed.key = color->hash;
     keyed.view = color->view;
+    keyed.colorIsEmissive = color->isEmissive;
+    keyed.emissiveIntensity = material.getOpaqueMaterialData().getEmissiveIntensity();
+    keyed.emissiveColorConstant = material.getOpaqueMaterialData().getEmissiveColorConstant();
 
     OpaqueMaterialData gameState = material.getOpaqueMaterialData();
     gameState.setAlbedoOpacityTexture(TextureRef(color->view));

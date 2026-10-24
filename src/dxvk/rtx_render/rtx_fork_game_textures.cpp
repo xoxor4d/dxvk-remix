@@ -80,7 +80,8 @@ namespace fork_hooks {
   std::shared_ptr<const game_textures::Texture> resolveMaterialGameTextures(
       D3D9DeviceEx* remixDevice,
       const remixapi_MaterialInfo& info,
-      const remixapi_MaterialInfoGameTexturesEXT* ext) {
+      const remixapi_MaterialInfoGameTexturesEXT* ext,
+      bool extHasEmissiveFlag) {
     if (remixDevice == nullptr || ext == nullptr) {
       return nullptr;
     }
@@ -103,6 +104,7 @@ namespace fork_hooks {
                         "before CreateMaterial; it renders without albedo."));
       return nullptr;
     }
+    color->isEmissive = extHasEmissiveFlag && ext->colorIsEmissive;
     return color;
   }
 
