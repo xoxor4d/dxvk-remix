@@ -4,6 +4,21 @@ Companion of [`RemixApiChangelog.md`](RemixApiChangelog.md), which stays at its 
 state on this branch. Same format; these entries sit on top of Remix Plus's `[0.1000.1]`.
 Merge them into the hub changelog when the branch is rebased.
 
+## [0.1000.6]
+
+CardNormals instance category (2026-10-26).
+
+### Added
+- `REMIXAPI_INSTANCE_CATEGORY_BIT_CARD_NORMALS` (bit 27) in
+  `remixapi_InstanceCategoryBit`: the instance is shaded with a bent normal built
+  per hit (card center to hit point, mixed with world up) instead of its vertex
+  normals, for flat LOD card trees. Runtime category `CardNormals`, texture list
+  `rtx.cardNormalsTextures`, tunable `rtx.cardNormals.upWeight`.
+
+### Changed
+- `REMIXAPI_VERSION` is now `0.1000.6` (was `0.1000.5`). Additive, older callers
+  never set the bit.
+
 ## [0.1000.5]
 
 Emissive colormap-keyed materials (2026-10-24).

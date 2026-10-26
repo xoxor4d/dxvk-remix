@@ -207,7 +207,8 @@ namespace dxvk {
     {"raytracedRenderTargetTextures","Raytraced Render Target Textures (optional)", &RtxOptions::raytracedRenderTargetTexturesObject(), ImGUI::kTextureFlagsRenderTarget},
     {"particleemittertextures","Particle Emitters (optional)", &RtxOptions::particleEmitterTexturesObject()},
     {"smoothnormalstextures","Smooth Normals (optional)", &RtxOptions::smoothNormalsTexturesObject()},
-    {"disablebackfacecullingtextures","Disable Backface Culling (optional)", &RtxOptions::disableBackfacecullingTexturesObject()}
+    {"disablebackfacecullingtextures","Disable Backface Culling (optional)", &RtxOptions::disableBackfacecullingTexturesObject()},
+    {"cardnormalstextures","Card Normals (optional)", &RtxOptions::cardNormalsTexturesObject()}
   };
 
   RemixGui::ComboWithKey<RenderPassGBufferRaytraceMode> renderPassGBufferRaytraceModeCombo {
@@ -2909,6 +2910,7 @@ namespace dxvk {
         RemixGui::DragFloat("World Space UI Background Offset", &RtxOptions::worldSpaceUiBackgroundOffsetObject(), 0.01f, -FLT_MAX, FLT_MAX, "%.3f", sliderFlags);
         RemixGui::Checkbox("Ignore last texture stage", &RtxOptions::ignoreLastTextureStageObject());
         RemixGui::Checkbox("Enable Multiple Stage Texture Factor Blending", &RtxOptions::enableMultiStageTextureFactorBlendingObject());
+        RemixGui::DragFloat("Card Normals Up Weight", &RtxOptions::CardNormals::upWeightObject(), 0.01f, 0.0f, 1.0f, "%.2f", sliderFlags);
         ImGui::Unindent();
       }
 

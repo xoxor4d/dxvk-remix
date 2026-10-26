@@ -652,6 +652,7 @@ enum class InstanceCategories : uint32_t {
   SmoothNormals,
   HairCards,
   DisableBackfaceCulling,
+  CardNormals,
 
   Count,
 };

@@ -12,7 +12,7 @@ fields of `remixapi_MaterialInfoOpaqueEXT`; neither is this branch's.)
 
 | Macro | Value |
 | :-- | :-- |
-| `REMIXAPI_VERSION_PATCH` | `4` |
+| `REMIXAPI_VERSION_PATCH` | `6` |
 
 ## `remixapi_StructType`
 
@@ -21,6 +21,12 @@ fields of `remixapi_MaterialInfoOpaqueEXT`; neither is this branch's.)
 | `REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_GAME_TEXTURES_EXT` | `29` |  |
 | `REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_D3D_OVERRIDES_EXT` | `30` |  |
 | `REMIXAPI_STRUCT_TYPE_MESH_INFO_REPLACEMENT_HASH_EXT` | `31` |  |
+
+## `remixapi_InstanceCategoryBit`
+
+| Name | Value | Notes |
+| :-- | :-- | :-- |
+| `REMIXAPI_INSTANCE_CATEGORY_BIT_CARD_NORMALS` | `1 << 27` | 0.1000.6: shaded with a bent normal (card center to hit point, mixed with world up) instead of the vertex normals; for flat LOD card trees. |
 
 ## Structs
 

@@ -225,6 +225,40 @@ void calcSpritesheetValues(
   uvBias = vec2(frame % spriteSheetCols, frame / spriteSheetCols) * uvSize;
 }
 
+// Bent normal for a flat card (CardNormals category): the direction from the card's center to the hit
+// point, mixed with world up. A rectangle split in two triangles has the diagonal as its longest edge,
+// so the midpoint of that edge is the card center; for crossed LOD tree cards it lies on the trunk axis.
+// The result lies in the card plane and therefore reads the same from both sides of the card.
+vec3 calcCardNormal(const vec3 worldPositions[3], const vec3 hitPosition, const vec3 fallbackNormal)
+{
+  const vec3 up = cb.isZUp ? vec3(0.0f, 0.0f, 1.0f) : vec3(0.0f, 1.0f, 0.0f);
+
+  const vec3 d01 = worldPositions[1] - worldPositions[0];
+  const vec3 d12 = worldPositions[2] - worldPositions[1];
+  const vec3 d20 = worldPositions[0] - worldPositions[2];
+  const float edge01 = dot(d01, d01);
+  const float edge12 = dot(d12, d12);
+  const float edge20 = dot(d20, d20);
+
+  vec3 center = (worldPositions[0] + worldPositions[1]) * 0.5f;
+  if (edge12 > edge01 && edge12 >= edge20)
+  {
+    center = (worldPositions[1] + worldPositions[2]) * 0.5f;
+  }
+  else if (edge20 > edge01)
+  {
+    center = (worldPositions[2] + worldPositions[0]) * 0.5f;
+  }
+
+  vec3 outward = hitPosition - center;
+  outward -= dot(outward, up) * up;
+  outward = safeNormalize(outward, up);
+
+  const float upWeight = saturate(cb.cardNormalsUpWeight);
+
+  return safeNormalize(outward * (1.0f - upWeight) + up * upWeight, fallbackNormal);
+}
+
 SurfaceInteraction surfaceInteractionCreate<let GenerateTangents : bool>(
   Surface surface, RayInteraction rayInteraction, Ray ray,
   bool usePreviousPositions = false, uint footprintMode = kFootprintFromRayDirection)
@@ -426,7 +460,12 @@ SurfaceInteraction surfaceInteractionCreate<let GenerateTangents : bool>(
     normals[1] *= dot(normals[1], flippedTriangleNormal) >= float16_t(0.0) ? 1 : -1;
     normals[2] *= dot(normals[2], flippedTriangleNormal) >= float16_t(0.0) ? 1 : -1;
 
-    const vec3 interpolatedNormal = safeNormalize(interpolateHitAttribute(normals, bary), triangleNormal);
+    vec3 interpolatedNormal = safeNormalize(interpolateHitAttribute(normals, bary), triangleNormal);
+
+    if (surface.useCardNormals)
+    {
+      interpolatedNormal = calcCardNormal(worldPositions, hitPosition, triangleNormal);
+    }
 
 #ifdef GBUFFER_FEATURE_DEBUG_VIEW
 #if GBUFFER_FEATURE_DEBUG_VIEW

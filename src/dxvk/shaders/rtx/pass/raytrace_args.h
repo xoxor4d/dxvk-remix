@@ -487,6 +487,9 @@ struct RaytraceArgs {
   float wetMapTraceTop;
   float wetMapTraceBottom;
 
+  // Fork: rtx.cardNormals.upWeight for CardNormals surfaces (surface_interaction.slangh).
+  float cardNormalsUpWeight;
+
   // NOTE: Add structs to the top section of RaytraceArgs, not the bottom.
   // NOTE: bool does not work in debug builds, use uint instead.
 };

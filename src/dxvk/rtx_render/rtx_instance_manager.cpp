@@ -1032,6 +1032,7 @@ namespace dxvk {
     // These can change in the Runtime UI so need to check during update
     currentInstance.m_isHidden = currentInstance.testCategoryFlags(InstanceCategories::Hidden);
     currentInstance.m_isPlayerModel = currentInstance.testCategoryFlags(InstanceCategories::ThirdPersonPlayerModel);
+    currentInstance.surface.useCardNormals = currentInstance.testCategoryFlags(InstanceCategories::CardNormals);
     // GTA4 tags emissive surfaces as WorldUI; IgnoreLights on top keeps the game-controlled emissive strength
     // of a replacement material instead of the unlit WorldUI override.
     currentInstance.m_isWorldSpaceUI = currentInstance.testCategoryFlags(InstanceCategories::WorldUI) && !currentInstance.testCategoryFlags(InstanceCategories::IgnoreLights);

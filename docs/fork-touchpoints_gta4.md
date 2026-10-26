@@ -680,3 +680,33 @@ the gta4-rtx fake distant cars streaked at night). A USD replacement of the key 
 - **`src/dxvk/rtx_render/rtx_remix_api.cpp`** - hook call site, 1 LOC. *`remixapi_CreateMaterial` passes `s_apiVersion >= 0.1000.5` to `resolveMaterialGameTextures` so the field is only read from callers that have it.*
 - **`src/dxvk/rtx_render/rtx_fork_hooks.h`, `rtx_fork_game_textures.{h,cpp}`, `rtx_fork_game_textures_keyed.cpp`** - fork-owned. *`game_textures::Texture::isEmissive`; `KeyedMaterial` keeps the flag and the API material's emission, `makeLegacyMaterial` enables emission with the colormap view as emissive texture.*
 - **`bridge/src/util/util_remixapi.cpp`** - inline. *`MaterialInfoGameTextures` serializes the flag after the texture id.*
+
+---
+
+## Workstream - CardNormals category (fork - 2026-10-26)
+
+API `0.1000.6`: `REMIXAPI_INSTANCE_CATEGORY_BIT_CARD_NORMALS` (bit 27), runtime
+`InstanceCategories::CardNormals`, texture list `rtx.cardNormalsTextures`, tunable
+`rtx.cardNormals.upWeight`. GTA4's lowest-LOD trees are two crossed cards (plus a top card)
+and shade as flat planes: one card lit, the other black. A tagged surface is shaded with a
+bent normal built per hit instead of its vertex normals, the SpeedTree-style sphere normal:
+the direction from the card center to the hit point mixed with world up. The card center is
+the midpoint of the triangle's longest edge (a rectangle's diagonal), so a combined mesh of
+many trees needs no per-tree data. The normal lies in the card plane, so the viewer-side
+vertex normal flip never touches it and both sides shade alike. No mesh changes.
+
+- **`src/dxvk/rtx_render/rtx_types.h`** - inline, 1 LOC. *`CardNormals` appended to `InstanceCategories` before `Count` (D3D RS42 bit 26).*
+- **`src/dxvk/rtx_render/rtx_options.h`** - inline. *`rtx.cardNormalsTextures` after `disableBackfacecullingTextures`; `struct CardNormals { rtx.cardNormals.upWeight }` before `struct ShadowTerminator`.*
+- **`src/dxvk/rtx_render/rtx_types.cpp`** - inline, 1 LOC. *`setupCategoriesForTexture`: last `setCategory` line.*
+- **`src/dxvk/rtx_render/rtx_fork_submit.cpp`** - fork-owned. *`externalDrawTextureCategories`: last `applyCategory` line.*
+- **`public/include/remix/remix_c.h`** - inline. *The category bit, version `0.1000.6`, PATCH history comment.*
+- **`src/dxvk/rtx_render/rtx_remix_api.cpp`** - inline, 1 LOC + assert. *`toRtCategories` maps the bit; `static_assert(Count == 27)`.*
+- **`src/dxvk/rtx_render/rtx_materials.h`** - inline. *`RtSurface::useCardNormals`, written as `flags0` bit 2 in `writeGPUData` (the bit freed 2026-06-19), printed with the other flags.*
+- **`src/dxvk/shaders/rtx/concept/surface/surface.h`** - inline. *`Surface::useCardNormals` property, `data0b.z` bit 2.*
+- **`src/dxvk/rtx_render/rtx_instance_manager.cpp`** - inline, 1 LOC. *`processInstanceBuffers`: `surface.useCardNormals` set from the category next to `m_isHidden`.*
+- **`src/dxvk/shaders/rtx/pass/raytrace_args.h`** - inline, 1 field. *`cardNormalsUpWeight` appended after the wetness fields.*
+- **`src/dxvk/rtx_render/rtx_context.cpp`** - inline, 1 LOC. *Filled next to `constants.isZUp`.*
+- **`src/dxvk/shaders/rtx/concept/surface/surface_interaction.slangh`** - inline. *`calcCardNormal()` above `surfaceInteractionCreate`; `interpolatedNormal` becomes non-const and is replaced by it on `surface.useCardNormals`, right before `getBentNormal`. Lives in the branch for surfaces with a normal buffer (API meshes always have one).*
+- **`src/dxvk/imgui/dxvk_imgui.cpp`** - inline, 2 LOC. *`rtxTextureOptions`: "Card Normals (optional)" row; Game Setup > Texture Parameters: "Card Normals Up Weight" slider after the multi-stage texture factor checkbox.*
+- **`src/lssusd/remix_category_names.h`** - inline, 1 LOC. *`remix_category:card_normals` row (the `usd_common.h` static_assert counts it).*
+- **`RtxOptions.md`** - regenerate for `rtx.cardNormalsTextures` and `rtx.cardNormals.upWeight`.

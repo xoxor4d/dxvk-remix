@@ -361,6 +361,7 @@ namespace fork_hooks {
       applyCategory(RtxOptions::particleEmitterTextures(), InstanceCategories::ParticleEmitter);
       applyCategory(RtxOptions::hairCardTextures(), InstanceCategories::HairCards);
       applyCategory(RtxOptions::disableBackfacecullingTextures(), InstanceCategories::DisableBackfaceCulling);
+      applyCategory(RtxOptions::cardNormalsTextures(), InstanceCategories::CardNormals);
     }
   }
 

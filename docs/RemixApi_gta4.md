@@ -89,3 +89,17 @@ Row to add to the "Convention namespaces" table:
 | Namespace | Channel | Page |
 | :-- | :-- | :-- |
 | `rtx.wet.*` | `SetConfigVariable` | [`RemixWetnessAPI_gta4.md`](RemixWetnessAPI_gta4.md) |
+
+## Instances: `REMIXAPI_INSTANCE_CATEGORY_BIT_CARD_NORMALS`
+
+Hub section "Instances (per-frame draw)", after "The full list of category bits is
+`remixapi_InstanceCategoryBit` in the header.":
+
+`REMIXAPI_INSTANCE_CATEGORY_BIT_CARD_NORMALS` (bit 27, 0.1000.6) shades the
+instance with a bent normal built per hit instead of its vertex normals: the
+direction from the card center (the midpoint of the triangle's longest edge) to
+the hit point, mixed with world up by `rtx.cardNormals.upWeight`. Meant for flat
+LOD trees made of crossed cards, which otherwise shade as one lit and one black
+plane. The same effect by texture: list the material key in
+`rtx.cardNormalsTextures`; for colormap-keyed materials that is the colormap's
+image hash.
