@@ -710,3 +710,14 @@ vertex normal flip never touches it and both sides shade alike. No mesh changes.
 - **`src/dxvk/imgui/dxvk_imgui.cpp`** - inline, 2 LOC. *`rtxTextureOptions`: "Card Normals (optional)" row; Game Setup > Texture Parameters: "Card Normals Up Weight" slider after the multi-stage texture factor checkbox.*
 - **`src/lssusd/remix_category_names.h`** - inline, 1 LOC. *`remix_category:card_normals` row (the `usd_common.h` static_assert counts it).*
 - **`RtxOptions.md`** - regenerate for `rtx.cardNormalsTextures` and `rtx.cardNormals.upWeight`.
+
+## Workstream - RTXDI Sample Best Lights fix (upstream - 2026-10-27, picked 2026-10-27)
+
+Cherry-pick of upstream `c57f4644c` ([REMIX-6147], merged as `81c9903b8`) with `-x`. The RTXDI submodule's
+`game/gta4` branch carries upstream RTXDI `d50de0bf8` (best light score from the target function) and
+`639c99fd0` (sampling bias fix), picked with `-x` on top of the fork's volumetrics commits; the superproject
+pointer moves to the result, `a60179064`.
+
+- **`src/dxvk/shaders/rtx/pass/raytrace_args.h`** - cherry-pick resolution. *`enableRtxdiBestLightJitter` sits where upstream has it, after `writePrimaryVirtualMotionVector` and above the fork's appended block, so the fork tail stays contiguous.*
+- **`RtxOptions.md`** - kept as is (the upstream row for `rtx.di.enableBestLightJitter` was dropped, see point 4 above).
+- **Drop on rebase.** The superproject commit is contained in upstream `main` from `81c9903b8` on, the two submodule commits in upstream RTXDI from `639c99fd0` on.

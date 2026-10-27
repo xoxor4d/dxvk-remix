@@ -435,6 +435,8 @@ struct RaytraceArgs {
   uint writeSecondaryDenoisingGuides;
   uint writePrimaryVirtualMotionVector;
 
+  uint enableRtxdiBestLightJitter;
+
   // Fork (2026-07-26): scale on the sky-ambient term that the resolver's
   // opacity lighting approximation adds for sky-lit particle materials
   // (weather precipitation). 0 disables the term entirely. Appended at the
