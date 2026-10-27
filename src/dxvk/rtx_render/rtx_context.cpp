@@ -851,7 +851,7 @@ namespace dxvk {
         dispatchDLFG();
 
         // Match FSR-3.1 sequencing: configure/prepare frame generation before final game-target blit.
-        fork_hooks::dispatchFsrFrameGeneration(*this, srcImage);
+        fork_hooks::dispatchFsrFrameGeneration(*this, rtOutput.m_finalOutput.resource(Resources::AccessType::Read));
 
         // Blit to the game target
         {
@@ -2115,8 +2115,15 @@ namespace dxvk {
     // sRGB conversion + dithering are deferred to dispatchSRGBDither (upstream's post-FX
     // pipeline refactor), so the tonemapper runs with performSRGBConversion=false and leaves
     // the image in linear space for the final output pass.
-    {
-      DxvkToneMapping& toneMapper = m_common->metaToneMapping();
+    // The alt operator is its own pass with its own exposure, outside the operator pipeline, color grading
+    // and User Brightness. The Tonemapping stage's enable switch still applies to it.
+    DxvkToneMapping& toneMapper = m_common->metaToneMapping();
+    if (DxvkAltToneMapping::isActive() && toneMapper.isEnabled()) {
+      m_common->metaAltToneMapping().dispatch(this,
+        autoExposure.getExposureTexture().view,
+        rtOutput,
+        autoExposure.enabled());
+    } else {
       toneMapper.dispatch(this,
         autoExposure.getExposureTexture().view,
         rtOutput,

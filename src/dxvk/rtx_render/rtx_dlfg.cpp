@@ -475,6 +475,7 @@ namespace dxvk {
                                             present.frameInterpolation.depth,
                                             interpolatedFrameIndex,
                                             present.frameInterpolation.interpolatedFrameCount,
+                                            m_info.format.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT,
                                             false);
 
     // The acquired image is still presented if FG fails.
@@ -1347,6 +1348,7 @@ namespace dxvk {
                           Rc<DxvkImageView> primaryDepth,                      // VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
                           uint32_t interpolatedFrameIndex,                     // starts at 0
                           uint32_t interpolatedFrameCount,                     // total number of frames we will interpolate before the next rendered frame
+                          bool colorBuffersHDR,
                           bool resetHistory) {
     ScopedCpuProfileZone();
 
@@ -1393,6 +1395,12 @@ namespace dxvk {
       m_contextDirty = true;
     }
 
+    // The feature is created for one back buffer format, which changes with the swap chain's color space.
+    if (outputImage->info().format != m_currentOutputFormat) {
+      m_currentOutputFormat = outputImage->info().format;
+      m_contextDirty = true;
+    }
+
     if (m_contextDirty) {
       assert(m_dlfgContext != nullptr);
 
@@ -1435,6 +1443,7 @@ namespace dxvk {
                                                     Vector2(1.0f, 1.0f),
                                                     interpolatedFrameIndex,
                                                     interpolatedFrameCount,
+                                                    colorBuffersHDR,
                                                     resetHistory);
 
       switch (res) {

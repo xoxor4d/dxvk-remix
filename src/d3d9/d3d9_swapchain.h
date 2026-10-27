@@ -203,6 +203,15 @@ namespace dxvk {
     bool                      m_dirty    = true;
     bool                      m_vsync    = true;
 
+    // NV-DXVK start: HDR10 output for the alt tonemapper
+    // The back buffers are A16B16G16R16F, so the alt tonemapper can switch to HDR10 output at any time.
+    bool                      m_hdrBackBuffer = false;
+    // The last swap chain was asked for an ST.2084 format.
+    bool                      m_hdr10Requested = false;
+
+    bool WantsHdr10() const;
+    // NV-DXVK end
+
     bool                      m_dialog;
     bool                      m_lastDialog = false;
 

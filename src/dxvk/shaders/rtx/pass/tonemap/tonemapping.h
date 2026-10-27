@@ -36,6 +36,9 @@
 #define TONEMAPPING_APPLY_TONEMAPPING_EXPOSURE_INPUT       2
 #define TONEMAPPING_APPLY_TONEMAPPING_COLOR_OUTPUT         3
 
+#define ALT_TONEMAPPING_COLOR_INPUT_OUTPUT                0
+#define ALT_TONEMAPPING_EXPOSURE_INPUT                    1
+
 #define EXPOSURE_HISTOGRAM_SIZE                           256
 
 // Dither modes.
@@ -55,6 +58,7 @@ static const uint32_t tonemapOperatorLottes         = 5;  // Lottes 2016 (shares
 static const uint32_t tonemapOperatorPsycho17       = 6;  // Renodx Psycho Test 17 (PsychoV17_Beta).
 static const uint32_t tonemapOperatorGT7            = 7;  // Gran Turismo 7 (Polyphony Digital / MIT). SDR, peak 1.0, ICtCp UCS.
 static const uint32_t tonemapOperatorNeutwo         = 8;  // Renodx Neutwo per-channel saturation curve (MIT).
+static const uint32_t tonemapOperatorAlt            = 9;  // Alt tonemapper. Its own pass (tonemapping_alt.comp.slang); applyTonemapOperator never sees it.
 
 // Inputs for the auto-exposure pass. Pipeline shape:
 //   1. Histogram pass bins per-pixel CIE 170-2 luminosity Yf
@@ -176,6 +180,19 @@ struct FastToneMappingArgs {
   //   .x/.y = exposed HDR max-channel preserve range
   //   .z/.w = exposed LDR max-channel shoulder range
   vec4 highlightRecoveryThresholds;
+
+  // Selects the alt tone curve in place of the ACES approximation while the alt tonemapper is active.
+  uint useAltCurve;
+  uint pad1;
+  uint pad2;
+  uint pad3;
+};
+
+struct AltToneMappingArgs {
+  uint enableAutoExposure;
+  float exposureFactor;
+  float peak;      // The curve's peak relative to paper white: 1 for SDR, peak nits / paper white nits for HDR10.
+  uint pad0;
 };
 
 #ifdef __cplusplus

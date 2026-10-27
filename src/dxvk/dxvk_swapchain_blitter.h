@@ -54,6 +54,22 @@ namespace dxvk {
             uint32_t            cpCount,
       const DxvkGammaCp*        cpData);
 
+    // NV-DXVK start: HDR10 output for the alt tonemapper
+    /**
+     * \brief Sets HDR10 encoding for presentation
+     *
+     * When enabled, the back buffer is read as gamma 2.2 encoded,
+     * with 1.0 at UI white and values above 1 as highlights, and
+     * written as BT.2020 PQ with 1.0 at \p whiteNits. The gamma
+     * ramp is not applied.
+     * \param [in] enable Encode HDR10
+     * \param [in] whiteNits Nits of back buffer 1.0
+     */
+    void setHdr10Output(
+            bool                enable,
+            float               whiteNits);
+    // NV-DXVK end
+
   private:
 
     enum BindingIds : uint32_t {
@@ -67,7 +83,16 @@ namespace dxvk {
         VkExtent2D srcExtent;
         VkOffset2D dstOffset;
       };
+      // NV-DXVK start: HDR10 output for the alt tonemapper
+      uint32_t hdr10;
+      float whiteNits;
+      // NV-DXVK end
     };
+
+    // NV-DXVK start: HDR10 output for the alt tonemapper
+    bool                m_hdr10 = false;
+    float               m_whiteNits = 203.0f;
+    // NV-DXVK end
 
     Rc<DxvkDevice>      m_device;
 

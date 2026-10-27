@@ -306,6 +306,9 @@ namespace dxvk {
     DxvkExt extDepthClipEnable                = { VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME,                  DxvkExtMode::Optional };
     DxvkExt extExtendedDynamicState           = { VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME,             DxvkExtMode::Optional };
     DxvkExt extFullScreenExclusive            = { VK_EXT_FULL_SCREEN_EXCLUSIVE_EXTENSION_NAME,              DxvkExtMode::Optional };
+    // NV-DXVK start: HDR10 output for the alt tonemapper
+    DxvkExt extHdrMetadata                    = { VK_EXT_HDR_METADATA_EXTENSION_NAME,                       DxvkExtMode::Optional };
+    // NV-DXVK end
     DxvkExt extMemoryBudget                   = { VK_EXT_MEMORY_BUDGET_EXTENSION_NAME,                      DxvkExtMode::Passive  };
     DxvkExt extMemoryPriority                 = { VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME,                    DxvkExtMode::Optional };
     DxvkExt extRobustness2                    = { VK_EXT_ROBUSTNESS_2_EXTENSION_NAME,                       DxvkExtMode::Optional };
@@ -378,6 +381,9 @@ namespace dxvk {
     DxvkExt khrSurface                      = { VK_KHR_SURFACE_EXTENSION_NAME,                          DxvkExtMode::Required };
     DxvkExt khrDeviceProperties2            = { VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME, DxvkExtMode::Required };
     DxvkExt khrDebugReport                  = { VK_EXT_DEBUG_REPORT_EXTENSION_NAME,                     DxvkExtMode::Required };
+    // NV-DXVK start: HDR10 output for the alt tonemapper
+    DxvkExt extSwapchainColorSpace          = { VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME,            DxvkExtMode::Optional };
+    // NV-DXVK end
     // NV-DXVK start: DLFG integration
     DxvkExt khrExternalMemoryCapabilities   = { VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME,     DxvkExtMode::Optional };
     DxvkExt khrExternalSemaphoreCapabilities = { VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME, DxvkExtMode::Optional };

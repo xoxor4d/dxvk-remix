@@ -30,5 +30,10 @@ struct SRGBDitherArgs {
   uint performSRGBConversion;
   uint ditherMode;
   uint frameIndex;
+  uint hdrOutput;  // Set for HDR10 output from the alt tonemapper. The present blit then encodes PQ.
+
+  float hdrSceneScale;  // Paper white nits / UI nits, so back buffer 1.0 is UI white and the scene stays at paper white.
   uint pad0;
+  uint pad1;
+  uint pad2;
 };

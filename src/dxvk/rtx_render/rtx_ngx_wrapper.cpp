@@ -1135,6 +1135,7 @@ namespace dxvk
                                                           Vector2 motionVectorScale,
                                                           uint32_t interpolatedFrameIndex,
                                                           uint32_t interpolatedFrameCount,
+                                                          bool colorBuffersHDR,
                                                           bool resetHistory) {
     ScopedCpuProfileZone();
 
@@ -1183,7 +1184,7 @@ namespace dxvk
     decomposeProjection(viewToProjection, consts.cameraAspectRatio, consts.cameraFOV, consts.cameraNear, consts.cameraFar, shearX, shearY, isLHS, isReverseZ);
 
     //consts.numberOfFramesToGenerate = 1;  // xxxnsubtil: this doesn't do anything, each eval call always generates one frame only
-    consts.colorBuffersHDR = false;
+    consts.colorBuffersHDR = colorBuffersHDR;
     consts.depthInverted = false;
     consts.cameraMotionIncluded = true;
     consts.reset = resetHistory;

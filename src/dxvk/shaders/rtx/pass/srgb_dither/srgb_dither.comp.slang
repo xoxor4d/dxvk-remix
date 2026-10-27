@@ -43,6 +43,18 @@ void main(uint2 threadId : SV_DispatchThreadID)
   }
 
   const float3 inputColor = imageLoad(InOutColorBuffer, threadId).xyz;
+
+  // The HDR10 back buffer is float and gamma encoded like SDR, so the game's UI composites over it unchanged.
+  // Its 1.0 is UI white, and values above 1 are highlights.
+  // The present blit decodes it, converts to BT.2020, encodes PQ and dithers at 10-bit precision.
+  if (cb.hdrOutput)
+  {
+    const float3 linearColor = max(inputColor, float3(0.0f)) * cb.hdrSceneScale;
+    const float3 encodedColor = (cb.performSRGBConversion > 0) ? linearToGamma(linearColor) : linearColor;
+    InOutColorBuffer[threadId] = float4(encodedColor, 1.0f);
+    return;
+  }
+
   const float3 gammaColor = (cb.performSRGBConversion > 0) ? linearToGamma(inputColor) : inputColor;
 
   // Apply dithering as the last step before output to break up banding artifacts.

@@ -53,7 +53,10 @@ namespace dxvk::vk {
     VkExtent2D          imageExtent;
     uint32_t            imageCount;
     uint32_t            numFormats;
-    VkSurfaceFormatKHR  formats[4];
+    // NV-DXVK start: HDR10 output for the alt tonemapper
+    // Holds up to 2 HDR10 formats ahead of up to 5 SDR ones.
+    VkSurfaceFormatKHR  formats[8];
+    // NV-DXVK end
     uint32_t            numPresentModes;
     VkPresentModeKHR    presentModes[4];
     VkFullScreenExclusiveEXT fullScreenExclusive;

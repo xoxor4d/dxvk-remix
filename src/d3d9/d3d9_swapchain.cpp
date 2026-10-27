@@ -39,9 +39,63 @@
 
 // NV-DXVK start: FSR FG integration
 #include "../dxvk/rtx_render/rtx_fork_fsr_framegen.h"
+#include "../dxvk/rtx_render/rtx_fork_hooks.h"
+// NV-DXVK end
+
+// NV-DXVK start: HDR10 output for the alt tonemapper
+#include "../dxvk/rtx_render/rtx_alt_tone_mapping.h"
 // NV-DXVK end
 
 namespace dxvk {
+  // NV-DXVK start: HDR10 output for the alt tonemapper
+  // Returns whether Windows has HDR on for the display showing `window`.
+  // Some drivers accept an ST.2084 swap chain with HDR off, so the swap chain format alone cannot tell.
+  // This asks the display configuration API rather than DXGI, because this module hosts DXVK's own DXGI.
+  // Advanced color with wide color enforced is SDR auto color management, not HDR.
+  static bool IsWindowsHdrEnabled(HWND window) {
+    if (window == nullptr)
+      return false;
+
+    MONITORINFOEXW monitorInfo = {};
+    monitorInfo.cbSize = sizeof(monitorInfo);
+    if (!GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitorInfo))
+      return false;
+
+    UINT32 pathCount = 0;
+    UINT32 modeCount = 0;
+    if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &pathCount, &modeCount) != ERROR_SUCCESS)
+      return false;
+
+    std::vector<DISPLAYCONFIG_PATH_INFO> paths(pathCount);
+    std::vector<DISPLAYCONFIG_MODE_INFO> modes(modeCount);
+    if (QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pathCount, paths.data(), &modeCount, modes.data(), nullptr) != ERROR_SUCCESS)
+      return false;
+
+    for (uint32_t i = 0; i < pathCount; i++) {
+      DISPLAYCONFIG_SOURCE_DEVICE_NAME sourceName = {};
+      sourceName.header.type      = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+      sourceName.header.size      = sizeof(sourceName);
+      sourceName.header.adapterId = paths[i].sourceInfo.adapterId;
+      sourceName.header.id        = paths[i].sourceInfo.id;
+      if (DisplayConfigGetDeviceInfo(&sourceName.header) != ERROR_SUCCESS
+       || wcscmp(sourceName.viewGdiDeviceName, monitorInfo.szDevice) != 0)
+        continue;
+
+      DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO colorInfo = {};
+      colorInfo.header.type      = DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO;
+      colorInfo.header.size      = sizeof(colorInfo);
+      colorInfo.header.adapterId = paths[i].targetInfo.adapterId;
+      colorInfo.header.id        = paths[i].targetInfo.id;
+      if (DisplayConfigGetDeviceInfo(&colorInfo.header) != ERROR_SUCCESS)
+        return false;
+
+      return colorInfo.advancedColorEnabled && !colorInfo.wideColorEnforced;
+    }
+
+    return false;
+  }
+  // NV-DXVK end
+
   // NV-DXVK start: deferred end-of-frame events, see D3D9SwapChainEx::onWindowMessageEvent
   static int64_t steadyClockMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -567,6 +621,9 @@ namespace dxvk {
     // NV-DXVK start: DLFG integration
     m_dirty    |= GetPresenter() != nullptr &&
                   !GetPresenter()->hasSwapChain();
+    // NV-DXVK end
+    // NV-DXVK start: HDR10 output for the alt tonemapper
+    m_dirty    |= WantsHdr10() != m_hdr10Requested;
     // NV-DXVK end
 
     m_vsync     = vsync;
@@ -1260,15 +1317,46 @@ namespace dxvk {
         { uint32_t(m_dstRect.right - m_dstRect.left), uint32_t(m_dstRect.bottom - m_dstRect.top) } };
       
 
+      // NV-DXVK start: HDR10 output for the alt tonemapper
+      const bool hdr10 = m_hdrBackBuffer && info.format.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT;
+      DxvkAltToneMapping::setHdrOutputActive(hdr10);
+      m_blitter->setHdr10Output(hdr10, DxvkAltToneMapping::hdrUiNitsClamped());
+
+      auto& gui = m_device->getCommon()->getImgui();
+
+      if (hdr10) {
+        // NV-DXVK start: FSR FG integration
+        fork_hooks::encodeFsrFrameGenHdr10HudLess(m_context.ptr(), *m_blitter);
+        // NV-DXVK end
+
+        // The HUD and the Remix menu are SDR. They are drawn into the back buffer, where 1.0 is UI white,
+        // so the PQ encode puts them at the UI brightness rather than at 10,000 nits.
+        DxvkRenderTargets renderTargets;
+        renderTargets.color[0].view   = m_backBuffers[0]->GetRenderTargetView(false);
+        renderTargets.color[0].layout = m_backBuffers[0]->GetRenderTargetLayout();
+        m_context->bindRenderTargets(renderTargets);
+
+        const VkExtent2D backBufferExtent = { swapImage->info().extent.width, swapImage->info().extent.height };
+
+        if (m_hud != nullptr)
+          m_hud->render(m_context, { swapImage->info().format, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR }, backBufferExtent);
+
+        gui.render(m_context, backBufferExtent);
+      }
+      // NV-DXVK end
+
       m_blitter->presentImage(m_context.ptr(),
         m_imageViews.at(imageIndex), dstRect,
         swapImageView, srcRect);
 
-      if (m_hud != nullptr)
-        m_hud->render(m_context, info.format, info.imageExtent);
+      // NV-DXVK start: HDR10 output for the alt tonemapper
+      if (!hdr10) {
+        if (m_hud != nullptr)
+          m_hud->render(m_context, info.format, info.imageExtent);
 
-      auto& gui = m_device->getCommon()->getImgui();
-      gui.render(m_context, info.imageExtent);
+        gui.render(m_context, info.imageExtent);
+      }
+      // NV-DXVK end
 
       // NV-DXVK start
       m_parent->m_rtx.OnPresent(m_imageViews.at(imageIndex)->image());
@@ -1592,6 +1680,14 @@ namespace dxvk {
     desc.MipLevels          = 1;
     desc.ArraySize          = 1;
     desc.Format             = EnumerateFormat(m_presentParams.BackBufferFormat);
+    // NV-DXVK start: HDR10 output for the alt tonemapper
+    // A float back buffer lets the image go above paper white while the game's UI still composites over it as SDR.
+    // It is created while Windows HDR is on, whichever tonemapper is selected, so the alt tonemapper can switch to HDR10 later.
+    // With an SDR swap chain it presents the same as the game's own back buffer.
+    m_hdrBackBuffer         = DxvkAltToneMapping::hdrEnabled() && IsWindowsHdrEnabled(m_window);
+    if (m_hdrBackBuffer)
+      desc.Format           = D3D9Format::A16B16G16R16F;
+    // NV-DXVK end
     desc.MultiSample        = m_presentParams.MultiSampleType;
     desc.MultisampleQuality = m_presentParams.MultiSampleQuality;
     desc.Pool               = D3DPOOL_DEFAULT;
@@ -1733,6 +1829,15 @@ namespace dxvk {
           VkSurfaceFormatKHR*       pDstFormats) {
     uint32_t n = 0;
 
+    // NV-DXVK start: HDR10 output for the alt tonemapper
+    // The SDR formats below are also the fallback for a driver that refuses the HDR10 format.
+    m_hdr10Requested = WantsHdr10();
+    if (m_hdr10Requested) {
+      pDstFormats[n++] = { VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_COLOR_SPACE_HDR10_ST2084_EXT };
+      pDstFormats[n++] = { VK_FORMAT_A2R10G10B10_UNORM_PACK32, VK_COLOR_SPACE_HDR10_ST2084_EXT };
+    }
+    // NV-DXVK end
+
     switch (Format) {
       default:
         Logger::warn(str::format("D3D9SwapChainEx: Unexpected format: ", Format));
@@ -1766,6 +1871,21 @@ namespace dxvk {
 
     return n;
   }
+
+
+  // NV-DXVK start: HDR10 output for the alt tonemapper
+  bool D3D9SwapChainEx::WantsHdr10() const {
+    if (!DxvkAltToneMapping::isActive() || !DxvkAltToneMapping::hdrEnabled())
+      return false;
+
+    // The first swap chain is created before the back buffers, which then follow the same Windows HDR state.
+    if (m_backBuffers.empty())
+      return IsWindowsHdrEnabled(m_window);
+
+    // An 8-bit back buffer never meets PQ, so Windows HDR turned on mid-game waits for new back buffers.
+    return m_hdrBackBuffer;
+  }
+  // NV-DXVK end
 
 
   uint32_t D3D9SwapChainEx::PickPresentModes(

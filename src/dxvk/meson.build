@@ -182,6 +182,8 @@ dxvk_src = files([
   'rtx_render/rtx_accumulation.h',
   'rtx_render/rtx_sparse_rendering.cpp',
   'rtx_render/rtx_sparse_rendering.h',
+  'rtx_render/rtx_alt_tone_mapping.cpp',
+  'rtx_render/rtx_alt_tone_mapping.h',
   'rtx_render/rtx_asset_data.h',
   'rtx_render/rtx_asset_data_manager.cpp',
   'rtx_render/rtx_asset_data_manager.h',

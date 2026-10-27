@@ -375,7 +375,7 @@ namespace dxvk {
           DxvkDeviceFeatures  enabledFeatures) {
     DxvkDeviceExtensions devExtensions;
 
-    std::array<DxvkExt*, 43> devExtensionList = {{
+    std::array<DxvkExt*, 44> devExtensionList = {{
       &devExtensions.amdMemoryOverallocationBehaviour,
       &devExtensions.amdShaderFragmentMask,
       &devExtensions.ext4444Formats,
@@ -384,6 +384,9 @@ namespace dxvk {
       &devExtensions.extDepthClipEnable,
       &devExtensions.extExtendedDynamicState,
       &devExtensions.extFullScreenExclusive,
+      // NV-DXVK start: HDR10 output for the alt tonemapper
+      &devExtensions.extHdrMetadata,
+      // NV-DXVK end
       &devExtensions.extMemoryBudget,
       &devExtensions.extMemoryPriority,
       &devExtensions.extRobustness2,

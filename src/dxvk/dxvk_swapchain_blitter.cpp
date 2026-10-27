@@ -105,6 +105,16 @@ namespace dxvk {
   }
 
 
+  // NV-DXVK start: HDR10 output for the alt tonemapper
+  void DxvkSwapchainBlitter::setHdr10Output(
+          bool                enable,
+          float               whiteNits) {
+    m_hdr10 = enable;
+    m_whiteNits = whiteNits;
+  }
+  // NV-DXVK end
+
+
   void DxvkSwapchainBlitter::draw(
           DxvkContext*        ctx,
     const Rc<DxvkShader>&     fs,
@@ -210,6 +220,11 @@ namespace dxvk {
       args.dstOffset = dstRect.offset;
     else
       args.srcExtent = srcRect.extent;
+
+    // NV-DXVK start: HDR10 output for the alt tonemapper
+    args.hdr10 = m_hdr10;
+    args.whiteNits = m_whiteNits;
+    // NV-DXVK end
 
     ctx->setPushConstantBank(DxvkPushConstantBank::RTX);
 

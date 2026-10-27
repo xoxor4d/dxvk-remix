@@ -384,6 +384,7 @@ namespace dxvk {
       Vector2 motionVectorScale,
       uint32_t interpolatedFrameIndex,
       uint32_t interpolatedFrameCount,
+      bool colorBuffersHDR,
       bool resetHistory);
 
     void releaseNGXFeature() override;

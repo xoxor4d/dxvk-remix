@@ -29,6 +29,7 @@
 #include "../spirv/spirv_code_buffer.h"
 #include "../util/util_matrix.h"
 #include "rtx_options.h"
+#include "rtx/pass/tonemap/tonemapping.h"
 
 namespace dxvk {
 
@@ -72,6 +73,8 @@ namespace dxvk {
     void showEffectSettings();
 
   private:
+    void setCurveArgs(FastToneMappingArgs& pushArgs) const;
+
     void dispatchApplyToneMapping(
       Rc<RtxContext> ctx,
       Rc<DxvkImageView> exposureView,

@@ -22,6 +22,7 @@
 
 #include "rtx_fork_fsr_framegen.h"
 #include "rtx_fork_hooks.h"
+#include "rtx_alt_tone_mapping.h"
 #include "rtx_context.h"
 #include "rtx_scene_manager.h"
 #include "rtx_camera.h"
@@ -30,6 +31,7 @@
 #include "../dxvk_device.h"
 #include "../dxvk_context.h"
 #include "../dxvk_cmdlist.h"
+#include "../dxvk_swapchain_blitter.h"
 
 // FFX SDK includes - only in cpp file
 #undef FFX_API_ENTRY
@@ -490,6 +492,7 @@ namespace dxvk {
     m_replacedAcquireNextImageKHR = replacementFunctions.pOutAcquireNextImageKHR;
     m_replacedQueuePresentKHR = replacementFunctions.pOutQueuePresentKHR;
     m_replacedGetSwapchainImagesKHR = replacementFunctions.pOutGetSwapchainImagesKHR;
+    m_replacedSetHdrMetadataEXT = replacementFunctions.pOutSetHdrMetadataEXT;
 
     m_asyncWorkloadsSupported = asyncQueueInfo.queueHandle != VK_NULL_HANDLE;
     m_swapchainContextCreated = true;
@@ -598,6 +601,8 @@ namespace dxvk {
       m_replacedAcquireNextImageKHR = nullptr;
       m_replacedQueuePresentKHR = nullptr;
       m_replacedGetSwapchainImagesKHR = nullptr;
+      m_replacedSetHdrMetadataEXT = nullptr;
+      m_hdrMetadataPeakNits = 0.0f;
       m_swapchainSize = { 0, 0 };
       
       Logger::info("FSR FG: Swapchain context destroyed");
@@ -605,11 +610,105 @@ namespace dxvk {
 
     m_initialized = false;
     m_presentColorSource = nullptr;
+    {
+      std::lock_guard<std::mutex> lock(m_hdr10HudLessMutex);
+      m_presentColorSourceView = nullptr;
+    }
+    m_hdr10Output = false;
     m_preparedForPresent.store(false, std::memory_order_release);
   }
 
-  void DxvkFSRFrameGen::setFrameGenerationPresentColorSource(const Rc<DxvkImage>& presentColorSource) {
-    m_presentColorSource = presentColorSource;
+  void DxvkFSRFrameGen::setFrameGenerationPresentColorSource(const Resources::Resource& presentColorSource) {
+    m_presentColorSource = presentColorSource.image;
+
+    std::lock_guard<std::mutex> lock(m_hdr10HudLessMutex);
+    m_presentColorSourceView = presentColorSource.view;
+
+    if (m_hdr10Output && m_presentColorSource != nullptr) {
+      ensureHdr10HudLess(m_presentColorSource->info().extent);
+    }
+  }
+
+  void DxvkFSRFrameGen::ensureHdr10HudLess(const VkExtent3D& extent) {
+    if (m_hdr10HudLess != nullptr && m_hdr10HudLess->info().extent == extent) {
+      return;
+    }
+
+    // The frame generation context is created for R16G16B16A16_SFLOAT and copies the hudless image into
+    // its own resources, so the hudless image has to use that format.
+    DxvkImageCreateInfo info;
+    info.type        = VK_IMAGE_TYPE_2D;
+    info.format      = VK_FORMAT_R16G16B16A16_SFLOAT;
+    info.flags       = 0;
+    info.sampleCount = VK_SAMPLE_COUNT_1_BIT;
+    info.extent      = extent;
+    info.numLayers   = 1;
+    info.mipLevels   = 1;
+    info.usage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    info.stages      = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+    info.access      = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+    info.tiling      = VK_IMAGE_TILING_OPTIMAL;
+    info.layout      = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    info.shared      = VK_FALSE;
+
+    DxvkImageViewCreateInfo viewInfo;
+    viewInfo.type      = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format    = info.format;
+    viewInfo.usage     = info.usage;
+    viewInfo.aspect    = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.minLevel  = 0;
+    viewInfo.numLevels = 1;
+    viewInfo.minLayer  = 0;
+    viewInfo.numLayers = 1;
+
+    m_hdr10HudLess = m_device->createImage(info, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, DxvkMemoryStats::Category::RTXRenderTarget, "FSR FG HDR10 hudless");
+    m_hdr10HudLessView = m_device->createImageView(m_hdr10HudLess, viewInfo);
+  }
+
+  void DxvkFSRFrameGen::encodeHdr10HudLess(DxvkContext* ctx, DxvkSwapchainBlitter& blitter) {
+    if (!m_hdr10Output || !m_frameGenContextCreated) {
+      return;
+    }
+
+    Rc<DxvkImageView> source;
+    Rc<DxvkImageView> target;
+    {
+      std::lock_guard<std::mutex> lock(m_hdr10HudLessMutex);
+      source = m_presentColorSourceView;
+      target = m_hdr10HudLessView;
+    }
+
+    if (source == nullptr || target == nullptr) {
+      return;
+    }
+
+    const VkExtent3D extent = target->imageInfo().extent;
+    const VkRect2D rect = { { 0, 0 }, { extent.width, extent.height } };
+    blitter.presentImage(ctx, target, rect, source, rect);
+  }
+
+  void DxvkFSRFrameGen::updateHdrMetadata() {
+    if (!m_hdr10Output || m_replacedSetHdrMetadataEXT == nullptr || m_swapchain == VK_NULL_HANDLE) {
+      return;
+    }
+
+    // The proxy converts PQ to linear relative to this maximum luminance, and it starts out at zero.
+    const float peakNits = DxvkAltToneMapping::hdrPeakNitsClamped();
+    if (peakNits == m_hdrMetadataPeakNits) {
+      return;
+    }
+
+    VkHdrMetadataEXT metadata = { VK_STRUCTURE_TYPE_HDR_METADATA_EXT };
+    metadata.displayPrimaryRed         = { 0.708f, 0.292f };
+    metadata.displayPrimaryGreen       = { 0.170f, 0.797f };
+    metadata.displayPrimaryBlue        = { 0.131f, 0.046f };
+    metadata.whitePoint                = { 0.3127f, 0.3290f };
+    metadata.maxLuminance              = peakNits;
+    metadata.minLuminance              = 0.0f;
+    metadata.maxContentLightLevel      = peakNits;
+    metadata.maxFrameAverageLightLevel = DxvkAltToneMapping::hdrPaperWhiteNitsClamped();
+    m_replacedSetHdrMetadataEXT(m_device->handle(), 1, &m_swapchain, &metadata);
+    m_hdrMetadataPeakNits = peakNits;
   }
 
   bool DxvkFSRFrameGen::registerPresentColorOverrideForFrame(const Rc<DxvkImage>& presentColorImage, uint64_t frameId) {
@@ -683,8 +782,10 @@ namespace dxvk {
     
     // Keep FFX color path pinned to Remix-provided path-traced output.
     // This avoids SDK-side fallback to proxy swapchain color when HUDLessColor is unset.
+    // With an HDR10 swap chain the proxy reads PQ, so the hudless image is the PQ encode of that output.
+    const bool hdr10 = m_hdr10Output && m_hdr10HudLess != nullptr;
     config.HUDLessColor = createFfxResourceFromImage(
-      m_presentColorSource,
+      hdr10 ? m_hdr10HudLess : m_presentColorSource,
       FFX_API_RESOURCE_STATE_PIXEL_COMPUTE_READ,
       FFX_API_RESOURCE_USAGE_READ_ONLY);
 
@@ -702,6 +803,10 @@ namespace dxvk {
     config.generationRect.top = 0;
     config.generationRect.width = outputWidth;
     config.generationRect.height = outputHeight;
+
+    if (enabled) {
+      updateHdrMetadata();
+    }
 
     ffx::ReturnCode retCode = ffx::Configure(frameGenCtx, config);
     if (retCode != ffx::ReturnCode::Ok) {
@@ -1049,7 +1154,7 @@ namespace dxvk {
     
     if (fsrFrameGen.isInitialized()) {
       m_contextCreated = true;
-      fsrFrameGen.setSwapchain(m_swapchain);
+      fsrFrameGen.setSwapchain(m_swapchain, m_info.format.colorSpace);
       Logger::info(str::format("FSR FG Presenter: FFX contexts created successfully for ",
         m_cachedDesc.imageExtent.width, "x", m_cachedDesc.imageExtent.height,
         " format=", static_cast<int>(backBufferFormat)));
@@ -1190,8 +1295,11 @@ namespace dxvk {
     }
     
     // Skip if size hasn't changed and we already have valid contexts
+    // The color space is part of the request: switching HDR10 on or off at the same size recreates too.
+    const bool colorSpaceUnchanged = desc.numFormats == 0 || m_info.format.colorSpace == desc.formats[0].colorSpace;
     if (m_currentExtent.width == desc.imageExtent.width && 
         m_currentExtent.height == desc.imageExtent.height &&
+        colorSpaceUnchanged &&
         m_contextCreated && m_swapchain != VK_NULL_HANDLE) {
       Logger::info(str::format("FSR FG Presenter: Skipping redundant recreation for ",
         desc.imageExtent.width, "x", desc.imageExtent.height));
@@ -1253,7 +1361,7 @@ namespace dxvk {
     
     if (fsrFrameGen.isInitialized()) {
       m_contextCreated = true;
-      fsrFrameGen.setSwapchain(m_swapchain);
+      fsrFrameGen.setSwapchain(m_swapchain, m_info.format.colorSpace);
       m_currentExtent = desc.imageExtent;
       Logger::info(str::format("FSR FG Presenter: Recreated successfully for ",
         desc.imageExtent.width, "x", desc.imageExtent.height));
@@ -1279,7 +1387,7 @@ namespace dxvk {
       return device->getCommon()->metaFSRFrameGen().supportsFSRFrameGen();
     }
 
-    void dispatchFsrFrameGeneration(RtxContext& ctx, const Rc<DxvkImage>& hudLessBackBuffer) {
+    void dispatchFsrFrameGeneration(RtxContext& ctx, const Resources::Resource& hudLessBackBuffer) {
       DxvkDevice* device = ctx.getDevice().ptr();
       if (!isFsrFrameGenEnabled(device)) {
         return;
@@ -1317,6 +1425,15 @@ namespace dxvk {
         ctx.m_resetHistory,
         device->getCurrentFrameId(),
         GlobalTime::get().deltaTimeMs());
+    }
+
+    void encodeFsrFrameGenHdr10HudLess(DxvkContext* ctx, DxvkSwapchainBlitter& blitter) {
+      DxvkDevice* device = ctx->getDevice().ptr();
+      if (!isFsrFrameGenEnabled(device)) {
+        return;
+      }
+
+      device->getCommon()->metaFSRFrameGen().encodeHdr10HudLess(ctx, blitter);
     }
 
   } // namespace fork_hooks

@@ -185,6 +185,7 @@ namespace dxvk {
     pCommon->metaTAA().prewarmShaders(pCommon->pipelineManager());
     pCommon->metaNIS().prewarmShaders(pCommon->pipelineManager());
     pCommon->metaToneMapping().prewarmShaders(pCommon->pipelineManager());
+    pCommon->metaAltToneMapping().prewarmShaders(pCommon->pipelineManager());
     pCommon->metaNeuralRadianceCache().prewarmShaders(pCommon->pipelineManager());
     pCommon->metaRayReconstruction().prewarmShaders(pCommon->pipelineManager());
 

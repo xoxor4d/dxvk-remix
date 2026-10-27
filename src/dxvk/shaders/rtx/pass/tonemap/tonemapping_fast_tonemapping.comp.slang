@@ -20,6 +20,7 @@
 * DEALINGS IN THE SOFTWARE.
 */
 #include "rtx/pass/tonemap/tonemapping.slangh"
+#include "rtx/pass/tonemap/alt_tone_curve.slangh"
 
 [[vk::binding(TONEMAPPING_APPLY_TONEMAPPING_COLOR_INPUT)]]
 Texture2D<float4> InColorTexture;
@@ -49,7 +50,9 @@ void main(uint2 threadId : SV_DispatchThreadID)
 
   const float exposure = sanitizeExposure(getExposure(InExposure, cb.enableAutoExposure, cb.exposureFactor));
   inputColor *= exposure;
-  float3 outputColor = ACESFilmApproximation(inputColor);
+  float3 outputColor = cb.useAltCurve
+    ? toneCurve(inputColor, 1.0f)
+    : ACESFilmApproximation(inputColor);
 
   outputColor = linearToGamma(outputColor);
   OutColorTexture[threadId] = vec4(outputColor.rgb, 1.0f);

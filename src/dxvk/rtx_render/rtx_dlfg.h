@@ -287,6 +287,7 @@ namespace dxvk {
                   Rc<DxvkImageView> primaryDepth,                      // VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
                   uint32_t interpolatedFrameIndex,                     // starts at 0
                   uint32_t interpolatedFrameCount,                     // total number of frames we will interpolate before the next rendered frame
+                  bool colorBuffersHDR,                                // the color buffer and the output are HDR10 (BT.2020 PQ)
                   bool resetHistory = false);
 
     Rc<RtxSemaphore>& getFrameEndSemaphore() {
@@ -327,6 +328,7 @@ namespace dxvk {
     std::atomic<bool> m_hasDLFGFailed = { false };
     uint32_t m_currentDisplaySize[2] = { 0,0 };
     bool m_contextDirty = true;
+    VkFormat m_currentOutputFormat = VK_FORMAT_UNDEFINED;
     
     DxvkDLFGCommandListArray m_dlfgEvalCommandLists;
 

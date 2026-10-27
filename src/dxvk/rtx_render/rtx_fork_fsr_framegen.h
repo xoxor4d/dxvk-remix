@@ -34,6 +34,7 @@
 #include <vulkan/vulkan.h>
 #include <cstdint>
 #include <atomic>
+#include <mutex>
 
 // No FFX forward declarations here - FFX's ffxContext is "typedef void*"
 // We use void* directly in this header to avoid conflicts
@@ -45,6 +46,7 @@ namespace dxvk {
   class DxvkBarrierSet;
   class RtCamera;
   class DxvkImageView;
+  class DxvkSwapchainBlitter;
   class DxvkFSRFGPresenter;
 
   namespace vk {
@@ -80,7 +82,17 @@ namespace dxvk {
      * This bypasses proxy swapchain color as FG input and lets Remix provide
      * the intended interpolation source image.
      */
-    void setFrameGenerationPresentColorSource(const Rc<DxvkImage>& presentColorSource);
+    void setFrameGenerationPresentColorSource(const Resources::Resource& presentColorSource);
+
+    /**
+     * \brief Encodes the frame generation source to HDR10
+     *
+     * The FFX swap chain proxy reads PQ once the swap chain's color space is
+     * ST.2084, so the hudless image it extracts the UI with has to be PQ too.
+     * Runs on the present path with the swap chain blitter, which must already
+     * be set to HDR10 output. No-op without an HDR10 swap chain.
+     */
+    void encodeHdr10HudLess(DxvkContext* ctx, DxvkSwapchainBlitter& blitter);
 
     /**
      * \brief Configure frame generation for the current frame
@@ -172,6 +184,8 @@ namespace dxvk {
 
   private:
     void destroyContexts();
+    void ensureHdr10HudLess(const VkExtent3D& extent);
+    void updateHdrMetadata();
     bool registerPresentColorOverrideForFrame(const Rc<DxvkImage>& presentColorImage, uint64_t frameId);
     bool consumePreparedFrameForPresent() { return m_preparedForPresent.exchange(false, std::memory_order_acq_rel); }
     uint64_t getFrameGenFrameId() const { return m_frameId; }
@@ -190,6 +204,16 @@ namespace dxvk {
     bool m_frameGenEnabled = false;
     bool m_asyncWorkloadsSupported = false;
     Rc<DxvkImage> m_presentColorSource = nullptr;
+    Rc<DxvkImageView> m_presentColorSourceView = nullptr;
+
+    // HDR10 output: the swap chain's color space is ST.2084. The hudless image is the PQ encode of the
+    // present color source, and the proxy's PQ luminance range is set through its vkSetHdrMetadataEXT.
+    std::atomic<bool> m_hdr10Output = false;
+    Rc<DxvkImage> m_hdr10HudLess = nullptr;
+    Rc<DxvkImageView> m_hdr10HudLessView = nullptr;
+    // Guards the hudless source and target views: the CS thread sets them, the present path reads them.
+    std::mutex m_hdr10HudLessMutex;
+    float m_hdrMetadataPeakNits = 0.0f;
     
     uint2 m_displaySize = { 0, 0 };      // Render resolution (input to upscaler)
     uint2 m_swapchainSize = { 0, 0 };    // Swapchain/output resolution (for generationRect)
@@ -200,12 +224,16 @@ namespace dxvk {
     PFN_vkAcquireNextImageKHR m_replacedAcquireNextImageKHR = nullptr;
     PFN_vkQueuePresentKHR m_replacedQueuePresentKHR = nullptr;
     PFN_vkGetSwapchainImagesKHR m_replacedGetSwapchainImagesKHR = nullptr;
+    PFN_vkSetHdrMetadataEXT m_replacedSetHdrMetadataEXT = nullptr;
     
     // Swapchain handle (set by presenter)
     VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
     
   public:
-    void setSwapchain(VkSwapchainKHR swapchain) { m_swapchain = swapchain; }
+    void setSwapchain(VkSwapchainKHR swapchain, VkColorSpaceKHR colorSpace) {
+      m_swapchain = swapchain;
+      m_hdr10Output = colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT;
+    }
     VkSwapchainKHR getSwapchain() const { return m_swapchain; }
   };
 

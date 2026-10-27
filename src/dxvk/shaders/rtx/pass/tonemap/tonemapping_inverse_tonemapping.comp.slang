@@ -20,6 +20,7 @@
 * DEALINGS IN THE SOFTWARE.
 */
 #include "rtx/pass/tonemap/tonemapping.slangh"
+#include "rtx/pass/tonemap/alt_tone_curve.slangh"
 
 [[vk::binding(TONEMAPPING_APPLY_TONEMAPPING_COLOR_INPUT)]]
 Texture2D<float4> InColorTexture;
@@ -67,7 +68,9 @@ void main(uint2 threadId : SV_DispatchThreadID)
   const float3 originalHdrColor = sanitizeRadiance(imageLoad(InOutColorTexture, threadId).rgb);
   const float exposure = sanitizeExposure(getExposure(InExposure, cb.enableAutoExposure, cb.exposureFactor));
   const float3 toneMappingInput = originalHdrColor * exposure;
-  const float3 originalToneMapped = ACESFilmApproximation(toneMappingInput);
+  const float3 originalToneMapped = cb.useAltCurve
+    ? toneCurve(toneMappingInput, 1.0f)
+    : ACESFilmApproximation(toneMappingInput);
   const float3 inverseScalar = toneMappingInput / max(originalToneMapped, float3(1e-6f));
   const bool isValidInverseScalar =
     isValidValue(inverseScalar) &&

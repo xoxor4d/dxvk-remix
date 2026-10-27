@@ -721,3 +721,32 @@ pointer moves to the result, `a60179064`.
 - **`src/dxvk/shaders/rtx/pass/raytrace_args.h`** - cherry-pick resolution. *`enableRtxdiBestLightJitter` sits where upstream has it, after `writePrimaryVirtualMotionVector` and above the fork's appended block, so the fork tail stays contiguous.*
 - **`RtxOptions.md`** - kept as is (the upstream row for `rtx.di.enableBestLightJitter` was dropped, see point 4 above).
 - **Drop on rebase.** The superproject commit is contained in upstream `main` from `81c9903b8` on, the two submodule commits in upstream RTXDI from `639c99fd0` on.
+
+## Workstream - Alt tonemapper with HDR10 output (upstream branch - 2026-10-22, picked 2026-10-27)
+
+Cherry-pick of `af8905c67` ("Add alt tonemapper with HDR10 output", TheGreatHMMMM/upstream-hdr, on its way
+into the Remix Plus upstream) with `-x`, adapted to this branch. Upstream selects the alt tonemapper through
+`rtx.tonemappingMode = 2`; this branch has no `TonemappingMode`, so it is `rtx.tonemap.tonemapOperator = 9`
+(`TonemapOperator::Alt`, "Alt (HDR10)" in the operator combo) and the alt pass runs in place of the operator
+pass. `rtx.altTonemap.*` and the HDR10 behaviour are upstream's. Beyond the pick, HDR10 output works through
+both frame generation presenters: DLSS-G is told the colour buffers are HDR10 and its feature follows the
+swap chain format; the FSR proxy swap chain gets its luminance range through `vkSetHdrMetadataEXT` and a
+PQ-encoded hudless image.
+
+- Taken as upstream: `src/dxvk/dxvk_instance.cpp`, `src/dxvk/dxvk_swapchain_blitter.cpp` / `.h`, `src/dxvk/meson.build`, `src/dxvk/rtx_render/rtx_initializer.cpp`, `rtx_srgb_dither.cpp`, `src/dxvk/shaders/dxvk_present_frag.frag`, `dxvk_present_frag_blit.frag`, `srgb_dither.comp.slang` / `.h`, `tonemapping_fast_tonemapping.comp.slang`, `tonemapping_inverse_tonemapping.comp.slang`, `src/vulkan/vulkan_presenter.h`, `src/d3d9/d3d9_swapchain.h`; new upstream files `rtx_alt_tone_mapping.cpp` / `.h`, `alt_tone_curve.slangh`, `tonemapping_alt.comp.slang`.
+- **`src/dxvk/rtx_render/rtx_alt_tone_mapping.h` / `.cpp`** - cherry-pick resolution. *`isActive()` reads `RtxForkGlobalTonemap::tonemapOperator()`; `hdrPeakNitsClamped()` / `hdrPaperWhiteNitsClamped()` added for the FSR HDR metadata.*
+- **`src/dxvk/rtx_render/rtx_fork_tonemap.h` / `.cpp`** - fork-owned. *`TonemapOperator::Alt = 9` and its combo item.*
+- **`src/dxvk/shaders/rtx/pass/tonemap/tonemapping.h`** - cherry-pick resolution. *`ALT_TONEMAPPING_*` bindings, `AltToneMappingArgs`, `useAltCurve` in `FastToneMappingArgs`; `tonemapOperatorAlt = 9` kept in lockstep with the enum; upstream's `TONEMAPPING_TONE_CURVE_SAMPLE_COUNT` line dropped.*
+- **`src/dxvk/rtx_render/rtx_tone_mapping.cpp` / `.h`** - cherry-pick resolution. *`setCurveArgs` for the Neural Uplift fast / inverse passes; upstream's `prewarmShaders` / `showImguiSettings` hunks dropped. `showEffectSettings` greys exposure, grading and dither under the alt operator and shows its settings after the operator combo.*
+- **`src/dxvk/rtx_render/rtx_context.cpp` / `.h`** - cherry-pick resolution + inline. *`dispatchToneMapping` runs the alt pass instead of the operator pass while the operator is Alt and the stage is enabled. `dispatchFsrFrameGeneration` receives the final output as a `Resources::Resource` (forward and friend declarations in the header follow).*
+- **`src/dxvk/rtx_render/rtx_fork_post_processing.cpp`** - fork-owned. *User Brightness greyed under the alt operator.*
+- **`src/dxvk/dxvk_objects.h`**, **`src/dxvk/dxvk_device.cpp`** - cherry-pick resolution. *`m_altToneMapping` without upstream's local tonemapper lines.*
+- **`src/dxvk/rtx_render/rtx_options.h`**, **`src/dxvk/imgui/dxvk_imgui.cpp`** - cherry-pick resolution. *Upstream hunks dropped (`TonemappingMode::Alt`, `rtx.tonemappingMode`, the Tonemapping header UI).*
+- **`src/d3d9/d3d9_swapchain.cpp`** - cherry-pick resolution + hook. *Upstream's `IsWindowsHdrEnabled`, back buffer format, `PickFormats`, `WantsHdr10` and present changes taken; `fork_hooks::encodeFsrFrameGenHdr10HudLess(m_context, *m_blitter)` at the top of the `if (hdr10)` block in `PresentImage`.*
+- **`src/dxvk/dxvk_extensions.h`**, **`src/dxvk/dxvk_adapter.cpp`** - inline, 1 field / 1 list entry. *`VK_EXT_hdr_metadata` as an optional device extension, which the FFX proxy needs for `vkSetHdrMetadataEXT`.*
+- **`src/dxvk/rtx_render/rtx_dlfg.h` / `.cpp`** - inline. *`DxvkDLFG::dispatch` takes `colorBuffersHDR` (the presenter passes whether its swap chain colour space is ST.2084) and recreates the feature when the output format changes (`m_currentOutputFormat`).*
+- **`src/dxvk/rtx_render/rtx_ngx_wrapper.h` / `.cpp`** - inline. *`NGXDLFGContext::evaluate` takes `colorBuffersHDR`.*
+- **`src/dxvk/rtx_render/rtx_fork_fsr_framegen.h` / `.cpp`**, **`rtx_fork_hooks.h`** - fork-owned. *`setSwapchain` records the colour space; `setFrameGenerationPresentColorSource` keeps the view and sizes the hudless image; `ensureHdr10HudLess` / `encodeHdr10HudLess` (R16G16B16A16_SFLOAT, the frame generation context's back buffer format) and `updateHdrMetadata` (peak nits as max luminance); `configureFrameGeneration` hands FFX the PQ hudless under HDR10; the presenter's recreate skip check includes the colour space.*
+- **`RtxOptions.md`** - not regenerated (`rtx.altTonemap.*`, operator value 9 in the `rtx.tonemap.tonemapOperator` text).
+- Known limits: display-domain stack members (NTSC / VHS, lens effects, external RemixFX) run between the tonemapper and the sRGB + dither stage and see values above 1 under HDR10, which they may clip; the float back buffer is created whenever Windows HDR is on and `rtx.altTonemap.hdrEnabled` is true, whichever operator is selected (upstream behaviour).
+- **Drop on rebase.** This lands in the Remix Plus upstream; take upstream's version and re-apply only the fork adaptation above (operator selection, frame generation colour space, FSR hudless encode and HDR metadata) where upstream has not grown its own.

@@ -61,6 +61,7 @@ namespace dxvk {
   // not need, but whose names appear in hook signatures.
   class DxvkContext;
   class DxvkDevice;
+  class DxvkSwapchainBlitter;
   class GameCapturer;
   class GameOverlay;
   struct LightManager;
@@ -588,7 +589,15 @@ namespace dxvk {
     // backend. Called from the same site as RtxContext::dispatchDLFG.
     // Requires friend access to RtxContext private members.
     // Implementation in rtx_fork_fsr_framegen.cpp.
-    void dispatchFsrFrameGeneration(RtxContext& ctx, const Rc<DxvkImage>& hudLessBackBuffer);
+    void dispatchFsrFrameGeneration(RtxContext& ctx, const Resources::Resource& hudLessBackBuffer);
+
+    // Encodes the HUD-less frame generation source to HDR10 for FSR frame generation. The FFX swap chain
+    // proxy reads PQ once the swap chain is ST.2084, so the hudless image it extracts the UI with has to
+    // be PQ as well. No-op unless FSR frame generation presents an HDR10 swap chain. Called from
+    // D3D9SwapChainEx::PresentImage ahead of the present blit, with the blitter already set to HDR10.
+    // No private-member access.
+    // Implementation in rtx_fork_fsr_framegen.cpp.
+    void encodeFsrFrameGenHdr10HudLess(DxvkContext* ctx, DxvkSwapchainBlitter& blitter);
 
     // Texture mip-bias contribution when FSR is the active upscaler; returns 0
     // when it is not. Called from Resources::getSampler and

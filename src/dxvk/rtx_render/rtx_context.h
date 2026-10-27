@@ -68,7 +68,7 @@ namespace dxvk {
     bool isFsrUpscalerActive(RtxContext&);
     void dispatchFsrUpscale(RtxContext&, const Resources::RaytracingOutput&);
     void dispatchRcasSharpening(RtxContext&, const Resources::RaytracingOutput&);
-    void dispatchFsrFrameGeneration(RtxContext&, const Rc<DxvkImage>& hudLessBackBuffer);
+    void dispatchFsrFrameGeneration(RtxContext&, const Resources::Resource& hudLessBackBuffer);
     void setFsrDownscaleExtent(RtxContext&, const VkExtent3D& upscaleExtent, VkExtent3D& downscaleExtent);
   } // namespace fork_hooks
   /** 
@@ -379,7 +379,7 @@ namespace dxvk {
     friend void fork_hooks::dispatchFsrUpscale(RtxContext&, const Resources::RaytracingOutput&);
     friend void fork_hooks::dispatchRcasSharpening(RtxContext&, const Resources::RaytracingOutput&);
     friend class RtxPostProcessingStack;
-    friend void fork_hooks::dispatchFsrFrameGeneration(RtxContext&, const Rc<DxvkImage>&);
+    friend void fork_hooks::dispatchFsrFrameGeneration(RtxContext&, const Resources::Resource&);
     friend void fork_hooks::setFsrDownscaleExtent(RtxContext&, const VkExtent3D&, VkExtent3D&);
   };
 } // namespace dxvk

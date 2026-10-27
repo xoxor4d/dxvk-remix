@@ -672,8 +672,11 @@ namespace dxvk {
       case EffectId::Tonemapping:
         // Carried over from the pre-stack Tonemapping header in
         // dxvk_imgui.cpp; these two fork options have no other UI surface.
+        // User Brightness does not affect the alt operator.
+        ImGui::BeginDisabled(DxvkAltToneMapping::isActive());
         RemixGui::SliderInt("User Brightness", &RtxOptions::userBrightnessObject(), 0, 100, "%d");
         RemixGui::DragFloat("User Brightness EV Range", &RtxOptions::userBrightnessEVRangeObject(), 0.5f, 0.f, 10.f, "%.1f");
+        ImGui::EndDisabled();
         RemixGui::Separator();
         common->metaToneMapping().showEffectSettings();
         break;

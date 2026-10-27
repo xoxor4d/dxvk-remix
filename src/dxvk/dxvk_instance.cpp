@@ -712,6 +712,9 @@ namespace dxvk {
       &insExtensions.khrGetSurfaceCapabilities2,
       &insExtensions.khrSurface,
       &insExtensions.khrDeviceProperties2,
+      // NV-DXVK start: HDR10 output for the alt tonemapper
+      &insExtensions.extSwapchainColorSpace,
+      // NV-DXVK end
     }};
 
     // Hide VK_EXT_debug_utils behind an environment variable. This extension
