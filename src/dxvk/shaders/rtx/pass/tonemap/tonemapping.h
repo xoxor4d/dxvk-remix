@@ -105,7 +105,7 @@ struct ToneMappingApplyToneMappingArgs {
   // Color grading scalars (16 bytes).
   float contrast;
   float saturation;
-  float pad0;
+  float outputPeak;          // Clamp ceiling of the pass: 1 in SDR, peakNits / paperWhiteNits under HDR10 output.
   float pad1;
 
   // Color grading tint (16 bytes).
@@ -148,7 +148,7 @@ struct ToneMappingApplyToneMappingArgs {
   // (14 floats + 2 trailing pad floats to keep 16B alignment).
   // Ported from renodx (https://github.com/clshortfuse/renodx). See
   // src/dxvk/shaders/rtx/pass/tonemap/psycho17.slangh for the full notice.
-  float psycho17PeakValue;            // Display peak luminance. Pinned to 1.0 in SDR mode by writeOperatorParams; the dispatcher also passes 1.0 as a literal, so this field is currently informational only (no UI / RtxOption).
+  float psycho17PeakValue;            // Display peak relative to paper white: 1 in SDR, peakNits / paperWhiteNits under HDR10 output.
   float psycho17Exposure;             // Pre-operator exposure multiplier.
   float psycho17Highlights;           // Highlight compression strength (1 = no change).
   float psycho17Shadows;              // Shadow lifting strength (1 = no change).

@@ -546,6 +546,12 @@ namespace dxvk {
     // Implementation in rtx_fork_tonemap.cpp.
     void showTonemapOperatorUI();
 
+    // Renders the shared HDR10 output controls (allow, peak, paper white, UI nits) at the bottom of an
+    // HDR capable operator's panel. Called from the Psycho17 sliders and DxvkAltToneMapping::showImguiSettings.
+    // No private-member access.
+    // Implementation in rtx_fork_tonemap.cpp.
+    void showHdrOutputSettings();
+
 
     // --- FSR 3.1 upscaling, RCAS sharpening and frame generation -------------
     //

@@ -19,8 +19,51 @@
 #include "rtx_fork_tonemap.h"
 #include "rtx_imgui.h"    // RemixGui::Combo, RemixGui::DragFloat, RemixGui::Checkbox
 #include "../imgui/imgui.h"
+#include "../../util/log/log.h"
+#include "../../util/util_string.h"
+
+#include <algorithm>
+#include <atomic>
 
 namespace dxvk {
+  namespace {
+    std::atomic<bool> s_hdrOutputActive { false };
+  }
+
+  bool RtxForkHdrOutput::active() {
+    return s_hdrOutputActive.load(std::memory_order_relaxed);
+  }
+
+  void RtxForkHdrOutput::setActive(bool active) {
+    if (s_hdrOutputActive.exchange(active, std::memory_order_relaxed) != active) {
+      Logger::info(str::format("[HDR output] HDR10 output ", active ? "active" : "inactive"));
+    }
+  }
+
+  float RtxForkHdrOutput::peak() {
+    if (!active()) {
+      return 1.0f;
+    }
+
+    return std::max(peakNitsClamped() / paperWhiteNitsClamped(), 1.0f);
+  }
+
+  float RtxForkHdrOutput::peakNitsClamped() {
+    return std::clamp(peakNits(), 80.0f, 10000.0f);
+  }
+
+  float RtxForkHdrOutput::paperWhiteNitsClamped() {
+    return std::clamp(paperWhiteNits(), 80.0f, 1000.0f);
+  }
+
+  float RtxForkHdrOutput::uiNitsClamped() {
+    return std::clamp(uiNits(), 80.0f, 1000.0f);
+  }
+
+  float RtxForkHdrOutput::sceneToBackBufferScale() {
+    return paperWhiteNitsClamped() / uiNitsClamped();
+  }
+
   namespace fork_hooks {
 
     // Shared helper: copies the Hable / AgX / Lottes RtxOption values into
@@ -56,7 +99,7 @@ namespace dxvk {
       args.agxLook       = static_cast<uint32_t>(AgXClass::look());
       args.agxPad0       = 0.0f;
       args.agxPad1       = 0.0f;
-      args.psycho17PeakValue            = 1.0f; // Hardcoded per design: peak luminance pinned at 1.0 (no UI / RTX_OPTION).
+      args.psycho17PeakValue            = RtxForkHdrOutput::peak();
       args.psycho17Exposure             = Psycho17Class::exposure();
       args.psycho17Highlights           = Psycho17Class::highlights();
       args.psycho17Shadows              = Psycho17Class::shadows();
@@ -77,12 +120,33 @@ namespace dxvk {
     void populateTonemapOperatorArgs(ToneMappingApplyToneMappingArgs& args) {
       const TonemapOperator op = RtxForkGlobalTonemap::tonemapOperator();
       args.tonemapOperator    = static_cast<uint32_t>(op);
+      args.outputPeak         = RtxForkHdrOutput::peak();
       writeOperatorParams<RtxForkAgX, RtxForkLottes, RtxForkPsycho17>(args, op);
     }
 
     // Combo items string uses ImGui's \0-separated format. User-requested
     // dropdown label for the Psycho operator is `PsychoV17_Beta`.
     static const char* k_operatorItems = "None\0Hill ACES\0Narkowicz ACES\0Hable Filmic\0AgX\0Lottes\0PsychoV17_Beta\0Gran Turismo 7\0Neutwo\0Alt (HDR10)\0\0";
+
+    // Shared by the HDR capable operators, at the bottom of their panels.
+    void showHdrOutputSettings() {
+      ImGui::Separator();
+      ImGui::Text("HDR10 Output:");
+      RemixGui::Checkbox("Allow HDR10 Output", &RtxForkHdrOutput::enabledObject());
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("HDR10 is used when Windows HDR is on for the game's display.\n"
+                          "The float back buffer it needs is created with the swap chain, so allowing it after\n"
+                          "starting in SDR takes effect with the next back buffer creation (display mode change or restart).");
+      }
+
+      if (RtxForkHdrOutput::active()) {
+        RemixGui::DragFloat("Peak Brightness", &RtxForkHdrOutput::peakNitsObject(),       1.0f, 80.0f, 10000.0f, "%.0f nits", ImGuiSliderFlags_AlwaysClamp);
+        RemixGui::DragFloat("Paper White",     &RtxForkHdrOutput::paperWhiteNitsObject(), 1.0f, 80.0f,  1000.0f, "%.0f nits", ImGuiSliderFlags_AlwaysClamp);
+        RemixGui::DragFloat("UI Brightness",   &RtxForkHdrOutput::uiNitsObject(),         1.0f, 80.0f,  1000.0f, "%.0f nits", ImGuiSliderFlags_AlwaysClamp);
+      } else {
+        ImGui::TextWrapped("HDR10 output is inactive: Windows HDR was off for this display when the game created its swap chain, or it is not allowed above.");
+      }
+    }
 
     // Shared slider rendering for per-operator parameter panels.
     static void showHableFilmicSliders() {
@@ -163,6 +227,7 @@ namespace dxvk {
       RemixGui::DragFloat("Cone Response Exponent", &Psycho17Class::coneResponseExponentObject(), 0.01f,  0.01f,  10.f, "%.3f",  ImGuiSliderFlags_AlwaysClamp);
       RemixGui::DragFloat("Gamut Compression",      &Psycho17Class::gamutCompressionObject(),     0.01f,  0.0f,    1.f, "%.3f",  ImGuiSliderFlags_AlwaysClamp);
       RemixGui::Combo(    "Gamut Compression Mode", &Psycho17Class::gamutCompressionModeObject(), "BT.709\0BT.2020\0\0");
+      showHdrOutputSettings();
       ImGui::Unindent();
     }
 

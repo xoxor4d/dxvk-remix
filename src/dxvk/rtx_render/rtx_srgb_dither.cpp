@@ -21,7 +21,7 @@
 */
 #include "rtx_srgb_dither.h"
 #include "rtx_context.h"
-#include "rtx_alt_tone_mapping.h"
+#include "rtx_fork_tonemap.h"
 #include "dxvk_device.h"
 #include "dxvk_scoped_annotation.h"
 #include "rtx_render/rtx_shader_manager.h"
@@ -75,9 +75,9 @@ namespace dxvk {
     }
     pushArgs.frameIndex = RtxOptions::rngSeedWithFrameIndex() ? ctx->getDevice()->getCurrentFrameId() : 0;
 
-    const bool hdrOutput = DxvkAltToneMapping::isActive() && DxvkAltToneMapping::hdrOutputActive();
+    const bool hdrOutput = RtxForkHdrOutput::operatorSelected() && RtxForkHdrOutput::active();
     pushArgs.hdrOutput = hdrOutput;
-    pushArgs.hdrSceneScale = hdrOutput ? DxvkAltToneMapping::hdrSceneToBackBufferScale() : 1.0f;
+    pushArgs.hdrSceneScale = hdrOutput ? RtxForkHdrOutput::sceneToBackBufferScale() : 1.0f;
 
     ctx->bindResourceView(SRGB_DITHER_BLUE_NOISE_TEXTURE_INPUT, ctx->getResourceManager().getBlueNoiseTexture(ctx), nullptr);
     ctx->bindResourceView(SRGB_DITHER_COLOR_INPUT_OUTPUT, inoutColorBuffer.view, nullptr);

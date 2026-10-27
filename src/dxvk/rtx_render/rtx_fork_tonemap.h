@@ -92,7 +92,7 @@ namespace dxvk {
   // src/dxvk/shaders/rtx/pass/tonemap/psycho17.slangh for the MIT attribution
   // (Copyright (c) 2025 Carlos Lopez Jr.). Defaults track the renodx reference.
   class RtxForkPsycho17 {
-    // peakValue is hardcoded to 1.0 in the populate hook (rtx_fork_tonemap.cpp) — no UI, no RTX_OPTION.
+    // The peak follows RtxForkHdrOutput::peak(): 1 in SDR, peakNits / paperWhiteNits under HDR10 output.
     RTX_OPTION("rtx.tonemap.psycho17", float, exposure,             1.0f,         "Psycho17: pre-operator exposure multiplier.");
     RTX_OPTION("rtx.tonemap.psycho17", float, highlights,           1.0f,         "Psycho17: highlight compression strength. Values > 1 compress highlights more aggressively.");
     RTX_OPTION("rtx.tonemap.psycho17", float, shadows,              1.0f,         "Psycho17: shadow lifting strength. Values > 1 lift shadows.");
@@ -106,6 +106,51 @@ namespace dxvk {
     RTX_OPTION("rtx.tonemap.psycho17", float, coneResponseExponent, 1.0f,         "Psycho17: cone response exponent for the Naka-Rushton stage.");
     RTX_OPTION("rtx.tonemap.psycho17", float, gamutCompression,     1.0f,         "Psycho17: output gamut compression strength. 0 = off, 1 = full.");
     RTX_OPTION("rtx.tonemap.psycho17", int,   gamutCompressionMode, 1,            "Psycho17: target gamut for output compression. 0 = BT.709, 1 = BT.2020.");
+  };
+
+  // HDR10 output, shared by the HDR capable operators (Alt and Psycho17). The D3D9 swap chain asks for an
+  // ST.2084 format while one of them is selected, `enabled` is set and Windows had HDR on for the game's
+  // display when the back buffers were created. The display settings feed the operator's peak, the final
+  // sRGB stage, the present blit and the frame generation presenters.
+  class RtxForkHdrOutput {
+    RTX_OPTION("rtx.hdr", bool, enabled, true,
+               "Allows HDR10 output (BT.2020 primaries, ST.2084 PQ, 10-bit swap chain) while an HDR capable tonemapping operator "
+               "(Alt or PsychoV17_Beta) is selected. HDR10 is used when Windows has HDR on for the game's display when the game "
+               "creates its swap chain, and SDR otherwise. The other operators always present SDR. Set False to always output SDR.");
+    RTX_OPTION("rtx.hdr", float, peakNits, 1000.0f,
+               "HDR10 output: the display's peak brightness in nits, which the operator rolls highlights off towards. Range 80 to 10000.");
+    RTX_OPTION("rtx.hdr", float, paperWhiteNits, 203.0f,
+               "HDR10 output: the brightness of the scene's SDR white in nits. 203 is the BT.2408 reference. "
+               "Range 80 to 1000, and at most rtx.hdr.peakNits.");
+    RTX_OPTION("rtx.hdr", float, uiNits, 203.0f,
+               "HDR10 output: the brightness of UI white in nits, for the game's UI, the HUD and the Remix menu. Range 80 to 1000.");
+
+  public:
+    // The selected operator tone maps towards an HDR peak.
+    static bool operatorSelected() {
+      const TonemapOperator op = RtxForkGlobalTonemap::tonemapOperator();
+      return op == TonemapOperator::Alt || op == TonemapOperator::Psycho17;
+    }
+
+    // The swap chain should ask for an ST.2084 format.
+    static bool wanted() { return operatorSelected() && enabled(); }
+
+    // HDR10 output is active while the D3D9 swap chain presents to an ST.2084 swap chain from a float back buffer.
+    // The image then stays relative to paper white, up to the peak, and the present blit encodes it to BT.2020 PQ.
+    static bool active();
+    static void setActive(bool active);
+
+    // The operator's peak relative to paper white: peakNits / paperWhiteNits while HDR10 output is active, 1 otherwise.
+    static float peak();
+
+    // The nits options within their documented ranges.
+    static float peakNitsClamped();
+    static float paperWhiteNitsClamped();
+    static float uiNitsClamped();
+
+    // The HDR10 back buffer holds 1.0 at UI white, so the game's SDR UI lands at uiNits.
+    // The scene is scaled by paperWhiteNits / uiNits before its gamma encode to stay at paper white.
+    static float sceneToBackBufferScale();
   };
 
 } // namespace dxvk

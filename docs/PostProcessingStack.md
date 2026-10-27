@@ -104,10 +104,11 @@ The existing `rtx_fork_tonemap` path already provides built-in operators,
 including Psycho17 and Neutwo, and remains the tonemapping backend. The stack
 therefore treats tonemapping as one fixed anchor rather than duplicating or
 wrapping the operator implementation.
-The upstream alt tonemapper is one of those operators (`Alt (HDR10)`); it runs
-as its own pass in place of the operator pass and switches the swap chain to
-HDR10 while Windows HDR is on, through every presenter including DLSS and FSR
-frame generation.
+Two operators are HDR capable, Psycho17 and the upstream alt tonemapper
+(`Alt (HDR10)`, its own pass in place of the operator pass). While one of them
+is selected the swap chain switches to HDR10 when Windows HDR is on, through
+every presenter including DLSS and FSR frame generation; the shared display
+settings (`rtx.hdr.*`) sit at the bottom of both operator panels.
 
 External RemixFX files are ordinary HDR or display-space stack members; they do
 not replace the fixed tonemapping boundary. A future external tonemapper ABI can

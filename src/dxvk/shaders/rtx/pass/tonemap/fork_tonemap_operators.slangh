@@ -88,7 +88,7 @@ float3 applyTonemapOperator(uint op, float3 color, bool suppressBlackLevelClamp,
   {
     float3 psychoResult = renodx::tonemap::psycho::psychotm_test17(
         color,
-        /*peak_value=*/ 1.0f,
+        psycho17PeakValue,
         psycho17Exposure,
         psycho17Highlights,
         psycho17Shadows,

@@ -750,3 +750,25 @@ PQ-encoded hudless image.
 - **`RtxOptions.md`** - not regenerated (`rtx.altTonemap.*`, operator value 9 in the `rtx.tonemap.tonemapOperator` text).
 - Known limits: display-domain stack members (NTSC / VHS, lens effects, external RemixFX) run between the tonemapper and the sRGB + dither stage and see values above 1 under HDR10, which they may clip; the float back buffer is created whenever Windows HDR is on and `rtx.altTonemap.hdrEnabled` is true, whichever operator is selected (upstream behaviour).
 - **Drop on rebase.** This lands in the Remix Plus upstream; take upstream's version and re-apply only the fork adaptation above (operator selection, frame generation colour space, FSR hudless encode and HDR metadata) where upstream has not grown its own.
+
+## Workstream - Psycho17 HDR10 output and shared HDR display settings (fork - 2026-10-27)
+
+HDR10 output is no longer tied to the alt operator. `RtxForkHdrOutput` (`rtx_fork_tonemap.h` / `.cpp`) owns the
+display settings and the active state: `rtx.hdr.enabled` (default true), `rtx.hdr.peakNits` (1000),
+`rtx.hdr.paperWhiteNits` (203) and `rtx.hdr.uiNits` (203) replace the `rtx.altTonemap.hdr*` options of the
+previous workstream. The swap chain asks for ST.2084 while an HDR capable operator (Alt or Psycho17) is
+selected and `rtx.hdr.enabled` is set, with Windows HDR on when the back buffers are created. Psycho17
+receives `peakNits / paperWhiteNits` as its Naka-Rushton peak (1 in SDR), and the apply pass clamps to that
+peak instead of 1. Both operator panels end with the shared "HDR10 Output" controls (allow checkbox, peak,
+paper white and UI nits).
+
+- **`src/dxvk/rtx_render/rtx_fork_tonemap.h` / `.cpp`**, **`rtx_fork_hooks.h`** - fork-owned. *`RtxForkHdrOutput` options, `operatorSelected()` / `wanted()` / `active()` / `peak()` / clamped nits / `sceneToBackBufferScale()`; `populateTonemapOperatorArgs` writes `psycho17PeakValue` and `outputPeak`; `fork_hooks::showHdrOutputSettings()` drawn at the bottom of the Psycho17 sliders.*
+- **`src/dxvk/rtx_render/rtx_alt_tone_mapping.h` / `.cpp`** - cherry-pick resolution (alt tonemapper, drop on rebase). *The `rtx.altTonemap.hdr*` options and the HDR state are gone; `hdrOutputActive()` and `tonemapPeak()` forward to `RtxForkHdrOutput`, the panel shows Exposure plus the shared HDR controls.*
+- **`src/d3d9/d3d9_swapchain.cpp`** - cherry-pick resolution. *`WantsHdr10` reads `RtxForkHdrOutput::wanted()`, the back buffer format `RtxForkHdrOutput::enabled()`, the present path `RtxForkHdrOutput::setActive` / `uiNitsClamped`.*
+- **`src/dxvk/rtx_render/rtx_srgb_dither.cpp`** - cherry-pick resolution. *HDR branch gated on `RtxForkHdrOutput::operatorSelected() && active()`.*
+- **`src/dxvk/rtx_render/rtx_fork_fsr_framegen.cpp`** - fork-owned. *HDR metadata reads `RtxForkHdrOutput`.*
+- **`src/dxvk/shaders/rtx/pass/tonemap/tonemapping.h`** - inline, 1 field. *`outputPeak` in `ToneMappingApplyToneMappingArgs` (the former `pad0`; the struct size is unchanged).*
+- **`src/dxvk/shaders/rtx/pass/tonemap/tonemapping_apply_tonemapping.comp.slang`** - inline, 2 LOC. *The final clamp and the contrast clamp go to `max(outputPeak, 1)`.*
+- **`src/dxvk/shaders/rtx/pass/tonemap/fork_tonemap_operators.slangh`** - fork-owned. *Psycho17 receives `psycho17PeakValue` instead of the literal 1.*
+- **`RtxOptions.md`** - not regenerated (`rtx.hdr.*`; `rtx.altTonemap.hdr*` removed).
+

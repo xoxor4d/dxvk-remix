@@ -1319,8 +1319,8 @@ namespace dxvk {
 
       // NV-DXVK start: HDR10 output for the alt tonemapper
       const bool hdr10 = m_hdrBackBuffer && info.format.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT;
-      DxvkAltToneMapping::setHdrOutputActive(hdr10);
-      m_blitter->setHdr10Output(hdr10, DxvkAltToneMapping::hdrUiNitsClamped());
+      RtxForkHdrOutput::setActive(hdr10);
+      m_blitter->setHdr10Output(hdr10, RtxForkHdrOutput::uiNitsClamped());
 
       auto& gui = m_device->getCommon()->getImgui();
 
@@ -1684,7 +1684,7 @@ namespace dxvk {
     // A float back buffer lets the image go above paper white while the game's UI still composites over it as SDR.
     // It is created while Windows HDR is on, whichever tonemapper is selected, so the alt tonemapper can switch to HDR10 later.
     // With an SDR swap chain it presents the same as the game's own back buffer.
-    m_hdrBackBuffer         = DxvkAltToneMapping::hdrEnabled() && IsWindowsHdrEnabled(m_window);
+    m_hdrBackBuffer         = RtxForkHdrOutput::enabled() && IsWindowsHdrEnabled(m_window);
     if (m_hdrBackBuffer)
       desc.Format           = D3D9Format::A16B16G16R16F;
     // NV-DXVK end
@@ -1875,7 +1875,7 @@ namespace dxvk {
 
   // NV-DXVK start: HDR10 output for the alt tonemapper
   bool D3D9SwapChainEx::WantsHdr10() const {
-    if (!DxvkAltToneMapping::isActive() || !DxvkAltToneMapping::hdrEnabled())
+    if (!RtxForkHdrOutput::wanted())
       return false;
 
     // The first swap chain is created before the back buffers, which then follow the same Windows HDR state.

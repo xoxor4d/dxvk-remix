@@ -19,10 +19,8 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-#include <algorithm>
-#include <atomic>
-
 #include "rtx_alt_tone_mapping.h"
+#include "rtx_fork_hooks.h"
 #include "dxvk_device.h"
 #include "dxvk_scoped_annotation.h"
 #include "rtx_render/rtx_shader_manager.h"
@@ -45,46 +43,10 @@ namespace dxvk {
         RW_TEXTURE1D_READONLY(ALT_TONEMAPPING_EXPOSURE_INPUT)
       END_PARAMETER()
     };
-
-    std::atomic<bool> s_hdrOutputActive { false };
   }
 
   DxvkAltToneMapping::DxvkAltToneMapping(DxvkDevice* device)
   : CommonDeviceObject(device) {
-  }
-
-  bool DxvkAltToneMapping::hdrOutputActive() {
-    return s_hdrOutputActive.load(std::memory_order_relaxed);
-  }
-
-  void DxvkAltToneMapping::setHdrOutputActive(bool active) {
-    if (s_hdrOutputActive.exchange(active, std::memory_order_relaxed) != active) {
-      Logger::info(str::format("[Alt Tonemapper] HDR10 output ", active ? "active" : "inactive"));
-    }
-  }
-
-  float DxvkAltToneMapping::tonemapPeak() {
-    if (!hdrOutputActive()) {
-      return 1.0f;
-    }
-
-    return std::max(hdrPeakNitsClamped() / hdrPaperWhiteNitsClamped(), 1.0f);
-  }
-
-  float DxvkAltToneMapping::hdrPeakNitsClamped() {
-    return std::clamp(hdrPeakNits(), 80.0f, 10000.0f);
-  }
-
-  float DxvkAltToneMapping::hdrPaperWhiteNitsClamped() {
-    return std::clamp(hdrPaperWhiteNits(), 80.0f, 1000.0f);
-  }
-
-  float DxvkAltToneMapping::hdrUiNitsClamped() {
-    return std::clamp(hdrUiNits(), 80.0f, 1000.0f);
-  }
-
-  float DxvkAltToneMapping::hdrSceneToBackBufferScale() {
-    return hdrPaperWhiteNitsClamped() / hdrUiNitsClamped();
   }
 
   void DxvkAltToneMapping::prewarmShaders(DxvkPipelineManager& pipelineManager) const {
@@ -95,15 +57,7 @@ namespace dxvk {
 
   void DxvkAltToneMapping::showImguiSettings() {
     RemixGui::DragFloat("Exposure", &exposureBiasObject(), 0.01f, -4.f, 4.f);
-
-    // The HDR controls only apply while HDR10 output runs. In SDR the curve peaks at 1.
-    if (hdrOutputActive()) {
-      RemixGui::DragFloat("Peak Brightness", &hdrPeakNitsObject(), 1.0f, 80.0f, 10000.0f, "%.0f nits", ImGuiSliderFlags_AlwaysClamp);
-      RemixGui::DragFloat("Paper White", &hdrPaperWhiteNitsObject(), 1.0f, 80.0f, 1000.0f, "%.0f nits", ImGuiSliderFlags_AlwaysClamp);
-      RemixGui::DragFloat("UI Brightness", &hdrUiNitsObject(), 1.0f, 80.0f, 1000.0f, "%.0f nits", ImGuiSliderFlags_AlwaysClamp);
-    } else {
-      ImGui::TextWrapped("HDR10 output is inactive. It starts when Windows HDR is on for this display when the game creates its swap chain.");
-    }
+    fork_hooks::showHdrOutputSettings();
   }
 
   void DxvkAltToneMapping::dispatch(

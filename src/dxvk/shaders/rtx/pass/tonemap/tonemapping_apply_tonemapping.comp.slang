@@ -47,7 +47,7 @@ float3 colorGrading(float3 inputColor)
   inputColor = inputColor * cb.colorBalance;
 
   // Contrast around 18% mid grey.
-  inputColor = saturate((cb.contrast * (inputColor - 0.18f)) + 0.18f);
+  inputColor = clamp((cb.contrast * (inputColor - 0.18f)) + 0.18f, 0.0f, max(cb.outputPeak, 1.0f));
 
   // Saturation around BT.709 luminance.
   inputColor = mix(float3(calcBt709Luminance(inputColor)), inputColor, cb.saturation);
@@ -139,8 +139,8 @@ void main(uint2 threadId : SV_DispatchThreadID)
 
   float3 outputColor = applyToneMapping(inputColor, threadId);
 
-  // Clamp outputColor to avoid problems with NIS.
-  outputColor = saturate(outputColor);
+  // The clamp keeps NIS stable. HDR10 output keeps values up to the operator's peak for the PQ encode at present.
+  outputColor = clamp(outputColor, 0.0f, max(cb.outputPeak, 1.0f));
 
   OutColorBuffer[threadId] = vec4(outputColor, 1.0f);
 }

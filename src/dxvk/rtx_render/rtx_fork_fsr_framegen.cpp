@@ -22,7 +22,7 @@
 
 #include "rtx_fork_fsr_framegen.h"
 #include "rtx_fork_hooks.h"
-#include "rtx_alt_tone_mapping.h"
+#include "rtx_fork_tonemap.h"
 #include "rtx_context.h"
 #include "rtx_scene_manager.h"
 #include "rtx_camera.h"
@@ -693,7 +693,7 @@ namespace dxvk {
     }
 
     // The proxy converts PQ to linear relative to this maximum luminance, and it starts out at zero.
-    const float peakNits = DxvkAltToneMapping::hdrPeakNitsClamped();
+    const float peakNits = RtxForkHdrOutput::peakNitsClamped();
     if (peakNits == m_hdrMetadataPeakNits) {
       return;
     }
@@ -706,7 +706,7 @@ namespace dxvk {
     metadata.maxLuminance              = peakNits;
     metadata.minLuminance              = 0.0f;
     metadata.maxContentLightLevel      = peakNits;
-    metadata.maxFrameAverageLightLevel = DxvkAltToneMapping::hdrPaperWhiteNitsClamped();
+    metadata.maxFrameAverageLightLevel = RtxForkHdrOutput::paperWhiteNitsClamped();
     m_replacedSetHdrMetadataEXT(m_device->handle(), 1, &m_swapchain, &metadata);
     m_hdrMetadataPeakNits = peakNits;
   }
