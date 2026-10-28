@@ -50,13 +50,31 @@ namespace RemixGui {
     return ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && GImGui->HoveredIdTimer > delay_in_seconds;
   }
 
+  bool TooltipDelayElapsed(ImGuiID target) {
+    static ImGuiID s_target = 0;
+    static double s_since = 0.0;
+    static int s_frame = -1;
+
+    // Only the first claim of a frame moves the timer, so a widget and the row around it share it.
+    const int frame = ImGui::GetFrameCount();
+    if (s_frame != frame) {
+      if (s_target != target || s_frame != frame - 1) {
+        s_target = target;
+        s_since = ImGui::GetTime();
+      }
+      s_frame = frame;
+    }
+
+    return !ImGui::IsAnyItemActive() && ImGui::GetTime() - s_since >= kTooltipDelaySeconds;
+  }
+
   void SetTooltipToLastWidgetOnHover(const char* text) {
     // Note: Don't display tooltips for empty strings, easily detectable if the first character in the string is the null terminator.
     if (text[0] == '\0') {
       return;
     }
 
-    if (!IsItemHoveredDelay(0.5f)) {
+    if (!ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) || !TooltipDelayElapsed(GImGui->LastItemData.ID)) {
       return;
     }
 

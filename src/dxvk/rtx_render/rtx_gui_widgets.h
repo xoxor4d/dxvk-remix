@@ -31,6 +31,14 @@
 #include <utility>
 
 namespace RemixGui {
+  // Hover time before a widget or option row shows its tooltip.
+  constexpr float kTooltipDelaySeconds = 0.5f;
+
+  // Returns whether the tooltip of `target` may show this frame: it has been hovered for kTooltipDelaySeconds
+  // and nothing is being dragged or edited. Every tooltip path shares this one timer, which restarts when the
+  // first target claimed in a frame differs from the previous frame's or nothing was hovered in between.
+  bool TooltipDelayElapsed(ImGuiID target);
+
   // Forward declaration
   std::string BuildRtxOptionTooltip(dxvk::RtxOptionImpl* impl);
   void SetTooltipUnformatted(const char* text);
@@ -176,7 +184,7 @@ namespace RemixGui {
           window->DrawList->AddCircleFilled(circleCenter, circleRadius, fill);
           window->DrawList->AddCircle(circleCenter, circleRadius, outline, 0, 1.0f);
 
-          if (resetButtonHovered) {
+          if (resetButtonHovered && RemixGui::TooltipDelayElapsed(id)) {
             ImGui::SetTooltip("Reset to default (%s)", option->getName());
           }
         }
@@ -187,7 +195,8 @@ namespace RemixGui {
         const float y0 = startCursorPos.y;
         const float y1 = startCursorPos.y + lineHeight;
         
-        if (!resetButtonHovered && ImGui::IsMouseHoveringRect(ImVec2(x0, y0), ImVec2(x1, y1))) {
+        const bool rowHovered = !resetButtonHovered && ImGui::IsMouseHoveringRect(ImVec2(x0, y0), ImVec2(x1, y1));
+        if (rowHovered && RemixGui::TooltipDelayElapsed(window->GetID(option->getName()))) {
           // Check if any tooltip window was created (by code between the construction and destruction of this wrapper)
           bool tooltipAlreadyShown = false;
           for (int i = 0; i <= g.TooltipOverrideCount; i++) {
