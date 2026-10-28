@@ -29,6 +29,7 @@
 #define AUTO_EXPOSURE_EXPOSURE_INPUT_OUTPUT               1
 #define AUTO_EXPOSURE_COLOR_INPUT                         2
 #define AUTO_EXPOSURE_DEBUG_VIEW_OUTPUT                   3
+#define AUTO_EXPOSURE_READOUT_OUTPUT                      4
 
 // Apply-tonemapping pass bindings.
 #define TONEMAPPING_APPLY_BLUE_NOISE_TEXTURE_INPUT         0

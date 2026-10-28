@@ -29,6 +29,9 @@
 #include "../spirv/spirv_code_buffer.h"
 #include "../util/util_matrix.h"
 #include "rtx_options.h"
+#include "../dxvk_gpu_query.h"
+
+#include <atomic>
 
 namespace dxvk {
 
@@ -63,6 +66,21 @@ namespace dxvk {
 
     Resources::Resource m_exposure;
     Resources::Resource m_exposureHistogram;
+
+    // The last resolve's numbers, copied back once the GPU is through with them, for the settings panel.
+    Rc<DxvkBuffer> m_readoutGpu;
+    Rc<DxvkBuffer> m_readoutStaging;
+    Rc<DxvkGpuQuery> m_readoutReady;
+    bool m_readoutPending = false;
+    std::atomic<bool> m_readoutValid = false;
+    std::atomic<float> m_readoutAdaptedYf = 0.0f;
+    std::atomic<float> m_readoutRawTargetExposure = 1.0f;
+    std::atomic<float> m_readoutTargetExposure = 1.0f;
+    std::atomic<float> m_readoutExposure = 1.0f;
+
+    void pollReadout();
+    void queueReadout(Rc<DxvkContext> ctx);
+    void showReadout();
 
     bool m_resetState = true;
 

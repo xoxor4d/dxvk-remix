@@ -31,6 +31,10 @@ RWTexture1D<float> OutExposure;
 layout(binding = AUTO_EXPOSURE_DEBUG_VIEW_OUTPUT)
 RWTexture2D<float4> DebugView;
 
+// Metered Yf, the unclamped and clamped target exposure and the smoothed exposure, read back for the settings panel.
+layout(binding = AUTO_EXPOSURE_READOUT_OUTPUT)
+RWStructuredBuffer<float4> OutReadout;
+
 layout(push_constant)
 ConstantBuffer<ToneMappingAutoExposureArgs> cb;
 
@@ -162,7 +166,9 @@ void main(uint2 threadId : SV_DispatchThreadID, uint linearIndex : SV_GroupIndex
     const float logNew          = adaptation::v1::ExponentialBlend(
         logPrev, logTarget, cb.deltaTime, tau);
 
-    OutExposure[0] = max(exp2(logNew), 1e-6f);
+    const float newExposure = max(exp2(logNew), 1e-6f);
+    OutExposure[0] = newExposure;
+    OutReadout[0] = float4(adaptedYf, rawTargetExposure, targetExposure, newExposure);
   }
 
   if (cb.debugMode)
