@@ -82,7 +82,12 @@ struct ToneMappingAutoExposureArgs {
   uint  debugMode;           // 1 => write the exposure-histogram debug visualization.
   float targetAdaptedYf;     // Mid-gray adaptation target (default 0.18); raise/lower to bias brightness.
   float maxExposure;         // Hard ceiling on the auto-exposure multiplier; caps brightening in dark scenes.
+  float minExposure;         // Floor on the auto-exposure multiplier; caps darkening in bright scenes. 0 = none.
+
+  float meteringSigma;       // Gaussian radius of the center-weighted metering, in units of the shorter screen axis.
   uint  pad0;
+  uint  pad1;
+  uint  pad2;
 };
 
 // Inputs for the apply-tonemapping pass. The dynamic tone curve and
@@ -192,7 +197,16 @@ struct AltToneMappingArgs {
   uint enableAutoExposure;
   float exposureFactor;
   float peak;      // The curve's peak relative to paper white: 1 for SDR, peak nits / paper white nits for HDR10.
+  uint colorGradingEnabled;
+
+  // The global tonemapper's color grading, applied after the curve.
+  vec3 colorBalance;
+  float contrast;
+
+  float saturation;
   uint pad0;
+  uint pad1;
+  uint pad2;
 };
 
 #ifdef __cplusplus

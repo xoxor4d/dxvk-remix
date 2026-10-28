@@ -79,6 +79,8 @@ namespace dxvk {
       RemixGui::DragFloat("Dark Adapt Tau (s)",  &darkAdaptTauObject(),  0.01f,  0.05f, 10.f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
       RemixGui::DragFloat("Target Mid-Gray (Yf)", &targetAdaptedYfObject(), 0.001f, 0.01f, 2.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
       RemixGui::DragFloat("Max Exposure (x)",     &maxExposureObject(),     0.1f,  1.0f, 64.0f, "%.2fx", ImGuiSliderFlags_AlwaysClamp);
+      RemixGui::DragFloat("Min Exposure (x)",     &minExposureObject(),     0.005f, 0.0f, 1.0f, "%.3fx", ImGuiSliderFlags_AlwaysClamp);
+      RemixGui::DragFloat("Metering Radius (sigma)", &meteringSigmaObject(), 0.01f, 0.05f, 2.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
       RemixGui::Separator();
       ImGui::Unindent();
     }
@@ -163,6 +165,8 @@ namespace dxvk {
     pushArgs.darkAdaptTau       = darkAdaptTau();
     pushArgs.targetAdaptedYf    = targetAdaptedYf();
     pushArgs.maxExposure        = maxExposure();
+    pushArgs.minExposure        = minExposure();
+    pushArgs.meteringSigma      = meteringSigma();
     pushArgs.debugMode = (ctx->getCommonObjects()->metaDebugView().debugViewIdx() == DEBUG_VIEW_EXPOSURE_HISTOGRAM);
 
     {

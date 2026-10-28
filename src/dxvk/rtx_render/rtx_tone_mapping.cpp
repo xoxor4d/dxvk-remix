@@ -96,12 +96,14 @@ namespace dxvk {
   }
 
   void DxvkToneMapping::showEffectSettings() {
-    // The alt operator applies its own exposure and skips color grading and this pass's dither,
-    // so those controls are greyed while it is selected and its own settings follow the operator combo.
+    // The alt operator applies its own exposure and skips this pass's dither, so those controls are
+    // greyed while it is selected and its own settings follow the operator combo. Color grading applies
+    // after its curve as it does after the other operators.
     const bool altActive = DxvkAltToneMapping::isActive();
 
     ImGui::BeginDisabled(altActive);
     RemixGui::DragFloat("Global Exposure", &exposureBiasObject(), 0.01f, -4.f, 4.f);
+    ImGui::EndDisabled();
 
     // Grey the dependent controls rather than removing them: the enable toggles
     // sit on the stack row header, so hiding the body made an expanded but
@@ -115,7 +117,6 @@ namespace dxvk {
     ImGui::EndDisabled();
     RemixGui::Separator();
     ImGui::Unindent();
-    ImGui::EndDisabled();
 
     ImGui::Indent();
     ImGui::BeginDisabled(!tonemappingEnabled());

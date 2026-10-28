@@ -22,6 +22,7 @@
 #include "rtx/pass/tonemap/tonemapping.slangh"
 #include "rtx/pass/tonemap/tonemapping_noise.slangh"
 #include "rtx/pass/tonemap/fork_tonemap_operators.slangh"
+#include "rtx/pass/tonemap/fork_color_grading.slangh"
 #include "rtx/utility/math.slangh"
 #include "rtx/utility/color.slangh"
 
@@ -39,21 +40,6 @@ RWTexture2D<float4> OutColorBuffer;
 
 layout(push_constant)
 ConstantBuffer<ToneMappingApplyToneMappingArgs> cb;
-
-// Apply post-tonemap color grading: tint, contrast, saturation.
-float3 colorGrading(float3 inputColor)
-{
-  // Tint.
-  inputColor = inputColor * cb.colorBalance;
-
-  // Contrast around 18% mid grey.
-  inputColor = clamp((cb.contrast * (inputColor - 0.18f)) + 0.18f, 0.0f, max(cb.outputPeak, 1.0f));
-
-  // Saturation around BT.709 luminance.
-  inputColor = mix(float3(calcBt709Luminance(inputColor)), inputColor, cb.saturation);
-
-  return inputColor;
-}
 
 float3 applyToneMapping(float3 color, uint2 pixelPosition)
 {
@@ -96,7 +82,7 @@ float3 applyToneMapping(float3 color, uint2 pixelPosition)
 
   if (cb.colorGradingEnabled > 0)
   {
-    color = colorGrading(color);
+    color = applyColorGrading(color, cb.colorBalance, cb.contrast, cb.saturation, cb.outputPeak);
   }
 
   if (cb.performSRGBConversion > 0)

@@ -772,3 +772,19 @@ paper white and UI nits).
 - **`src/dxvk/shaders/rtx/pass/tonemap/fork_tonemap_operators.slangh`** - fork-owned. *Psycho17 receives `psycho17PeakValue` instead of the literal 1.*
 - **`RtxOptions.md`** - not regenerated (`rtx.hdr.*`; `rtx.altTonemap.hdr*` removed).
 
+## Workstream - Alt color grading, auto exposure metering knobs, combo width (fork - 2026-10-28)
+
+The global tonemapper's color grading applies after the alt curve too, through a shared
+`fork_color_grading.slangh`. Auto exposure gains `rtx.autoExposure.minExposure` (floor on the multiplier,
+default 0 = none) and `rtx.autoExposure.meteringSigma` (radius of the center-weighted metering, default
+0.25 of the shorter screen axis, the previous constant). The string and array `RemixGui::Combo` overloads
+no longer nest a labeled row inside the getter overload's own row, which had halved every combo's width.
+
+- **`src/dxvk/shaders/rtx/pass/tonemap/fork_color_grading.slangh`** - fork-owned, new. *`applyColorGrading(color, balance, contrast, saturation, peak)`.*
+- **`src/dxvk/shaders/rtx/pass/tonemap/tonemapping_apply_tonemapping.comp.slang`** - inline. *Calls the shared grading instead of its local function.*
+- **`src/dxvk/shaders/rtx/pass/tonemap/tonemapping_alt.comp.slang`**, **`tonemapping.h`**, **`src/dxvk/rtx_render/rtx_alt_tone_mapping.cpp` / `.h`** - cherry-pick resolution (alt tonemapper, drop on rebase). *`AltToneMappingArgs` carries the grading state, read from `DxvkToneMapping`'s options; grading runs after the curve.*
+- **`src/dxvk/rtx_render/rtx_tone_mapping.cpp`** - cherry-pick resolution. *Only Global Exposure and Dither Mode stay greyed under the alt operator.*
+- **`src/dxvk/shaders/rtx/pass/tonemap/tonemapping.h`**, **`auto_exposure_histogram.comp.slang`**, **`auto_exposure.comp.slang`**, **`src/dxvk/rtx_render/rtx_auto_exposure.h` / `.cpp`** - fork-touchpoint inline tweaks. *`minExposure` and `meteringSigma` in `ToneMappingAutoExposureArgs` (the struct grows by one 16B row), the target exposure is clamped to `[minExposure, maxExposure]`, the Gaussian sigma comes from the option; two sliders in the Auto Exposure panel.*
+- **`src/dxvk/rtx_render/rtx_gui_widgets.cpp`** - fork-touchpoint inline tweak. *The two convenience `Combo` overloads forward to the getter overload with the real label.*
+- **`RtxOptions.md`** - not regenerated (`rtx.autoExposure.minExposure`, `rtx.autoExposure.meteringSigma`).
+

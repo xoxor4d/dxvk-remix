@@ -21,6 +21,7 @@
 */
 #include "rtx_alt_tone_mapping.h"
 #include "rtx_fork_hooks.h"
+#include "rtx_tone_mapping.h"
 #include "dxvk_device.h"
 #include "dxvk_scoped_annotation.h"
 #include "rtx_render/rtx_shader_manager.h"
@@ -77,6 +78,10 @@ namespace dxvk {
     pushArgs.enableAutoExposure = autoExposureEnabled;
     pushArgs.exposureFactor = exposureFactor();
     pushArgs.peak = tonemapPeak();
+    pushArgs.colorGradingEnabled = DxvkToneMapping::colorGradingEnabled();
+    pushArgs.colorBalance = DxvkToneMapping::colorBalance();
+    pushArgs.contrast = DxvkToneMapping::contrast();
+    pushArgs.saturation = DxvkToneMapping::saturation();
 
     ctx->bindResourceView(ALT_TONEMAPPING_COLOR_INPUT_OUTPUT, colorBuffer.view, nullptr);
     ctx->bindResourceView(ALT_TONEMAPPING_EXPOSURE_INPUT, exposureView, nullptr);

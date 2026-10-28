@@ -33,7 +33,8 @@ namespace dxvk {
   class DxvkPipelineManager;
 
   // Alternative tonemapper: exposure, the tone curve in shaders/rtx/pass/tonemap/alt_tone_curve.slangh,
-  // and HDR10 output. It ignores User Brightness and the global tonemapper's exposure and color grading.
+  // and HDR10 output. It ignores User Brightness and the global tonemapper's exposure; the global
+  // tonemapper's color grading applies after its curve.
   // The HDR10 output state and display settings live in RtxForkHdrOutput, shared with Psycho17.
   class DxvkAltToneMapping : public CommonDeviceObject {
   public:

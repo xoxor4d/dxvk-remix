@@ -786,26 +786,23 @@ namespace RemixGui {
   }
 
 
+  // NV-DXVK start: the getter overload lays out the label row itself; wrapping it in a second row
+  // reserved the label column twice and left the combo at half the field width.
   bool Combo(const char* label, int* currentItem, const char* const items[], int itemsCount, int heightInItems) {
-    return withLabeledRow(label, [&]() {
-      SetNextItemWidth(GetRowFieldWidth());
-      return Combo("##v", currentItem, Items_ArrayGetter, (void*) items, itemsCount, heightInItems);
-    });
+    return Combo(label, currentItem, Items_ArrayGetter, (void*) items, itemsCount, heightInItems);
   }
 
   // Combo box helper allowing to pass all items in a single string literal holding multiple zero-terminated items "item1\0item2\0"
   bool Combo(const char* label, int* currentItem, const char* itemsSeparatedByZeros, int heightInItems) {
-    return withLabeledRow(label, [&]() {
-      SetNextItemWidth(GetRowFieldWidth());
-      int itemsCount = 0;
-      const char* p = itemsSeparatedByZeros;
-      while (*p) {
-        p += strlen(p) + 1;
-        itemsCount++;
-      }
-      return Combo("##v", currentItem, Items_SingleStringGetter, (void*) itemsSeparatedByZeros, itemsCount, heightInItems);
-    });
+    int itemsCount = 0;
+    const char* p = itemsSeparatedByZeros;
+    while (*p) {
+      p += strlen(p) + 1;
+      itemsCount++;
+    }
+    return Combo(label, currentItem, Items_SingleStringGetter, (void*) itemsSeparatedByZeros, itemsCount, heightInItems);
   }
+  // NV-DXVK end
 
   void Separator() {
     ImGui::Dummy(ImVec2(0, 12));

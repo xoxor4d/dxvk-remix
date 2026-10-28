@@ -99,15 +99,17 @@ void main(uint2 threadId : SV_DispatchThreadID, uint linearIndex : SV_GroupIndex
     // on widescreen), so the Gaussian is circular in pixel space
     // and the horizontal periphery on a 16:9 / 21:9 frame falls
     // off properly instead of contributing the same as the vertical
-    // periphery. At sigma = 0.25 of the short axis:
+    // periphery. The radius is rtx.autoExposure.meteringSigma; at
+    // 0.25 of the short axis:
     //   * vertical edge midpoint  (|dy| = 0.5)   -> exp(-2)  ~= 0.135
     //   * horizontal edge midpoint on 16:9       -> exp(-6.3)~= 0.002
     //   * horizontal edge midpoint on 21:9       -> exp(-12) ~= 6e-6
+    // so the default is close to a spot meter on the screen centre.
     const float invScale = 1.0f / float(min(dimensions.x, dimensions.y));
     const float2 delta   = (float2(threadId) + 0.5f - 0.5f * float2(dimensions)) * invScale;
     const float  rSq     = dot(delta, delta);
-    const float  kSigma  = 0.25f;
-    const float  gauss   = exp(-0.5f * rSq / (kSigma * kSigma));
+    const float  sigma   = max(cb.meteringSigma, 0.01f);
+    const float  gauss   = exp(-0.5f * rSq / (sigma * sigma));
 
     // Fixed-point weight (scale 256). The resolve pass divides
     // sum(weight * logYf) by sum(weight) so the absolute scale cancels.

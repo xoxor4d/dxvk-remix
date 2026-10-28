@@ -146,7 +146,7 @@ void main(uint2 threadId : SV_DispatchThreadID, uint linearIndex : SV_GroupIndex
     // Clamp the target before the temporal blend, not after. Clamping the
     // smoothed output would let the integrator wind up against the cap and
     // produce a sluggish recovery when the scene brightens again.
-    const float targetExposure    = min(rawTargetExposure, cb.maxExposure);
+    const float targetExposure    = clamp(rawTargetExposure, cb.minExposure, cb.maxExposure);
 
     // Asymmetric exponential adaptation in log-exposure space. Human
     // eyes adapt faster to bright scenes (cone bleaching) than to dark

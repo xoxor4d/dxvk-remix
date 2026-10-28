@@ -21,6 +21,7 @@
 */
 #include "rtx/pass/tonemap/tonemapping.slangh"
 #include "rtx/pass/tonemap/alt_tone_curve.slangh"
+#include "rtx/pass/tonemap/fork_color_grading.slangh"
 
 [[vk::binding(ALT_TONEMAPPING_COLOR_INPUT_OUTPUT)]]
 RWTexture2D<float4> InOutColorBuffer;
@@ -43,6 +44,11 @@ void main(uint2 threadId : SV_DispatchThreadID)
   float3 color = imageLoad(InOutColorBuffer, threadId).xyz;
   color *= getExposure(InExposure, cb.enableAutoExposure, cb.exposureFactor);
   color = toneCurve(color, cb.peak);
+
+  if (cb.colorGradingEnabled)
+  {
+    color = applyColorGrading(color, cb.colorBalance, cb.contrast, cb.saturation, cb.peak);
+  }
 
   // The clamp also keeps NIS stable.
   // HDR10 output keeps values up to the peak for the PQ encode at present.
