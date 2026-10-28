@@ -139,6 +139,10 @@ namespace dxvk {
                "0.25 meters a spot around the screen centre (the periphery barely counts), 0.5 weights most of "
                "the frame, 2.0 is close to a plain average. Larger values react less to what happens to be in "
                "the centre of the view.");
+    RTX_OPTION("rtx.autoExposure", float, skyWeight, 0.25f,
+               "How much sky pixels (primary misses) count in the metering, relative to geometry. The sky is "
+               "radiometrically much brighter than it looks after tonemapping, the sky around the sun most of "
+               "all, so at 1.0 a view with a lot of sky darkens the ground. 0 meters geometry only.");
   };
   
 }

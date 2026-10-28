@@ -48,6 +48,7 @@ namespace dxvk {
       BEGIN_PARAMETER()
         RW_TEXTURE2D(AUTO_EXPOSURE_COLOR_INPUT)
         RW_TEXTURE1D(AUTO_EXPOSURE_HISTOGRAM_INPUT_OUTPUT)
+        TEXTURE2D(AUTO_EXPOSURE_CONE_RADIUS_INPUT)
       END_PARAMETER()
     };
 
@@ -86,6 +87,7 @@ namespace dxvk {
       RemixGui::DragFloat("Max Exposure (x)",     &maxExposureObject(),     0.1f,  1.0f, 64.0f, "%.2fx", ImGuiSliderFlags_AlwaysClamp);
       RemixGui::DragFloat("Min Exposure (x)",     &minExposureObject(),     0.005f, 0.0f, 1.0f, "%.3fx", ImGuiSliderFlags_AlwaysClamp);
       RemixGui::DragFloat("Metering Radius (sigma)", &meteringSigmaObject(), 0.01f, 0.05f, 2.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+      RemixGui::DragFloat("Sky Weight",            &skyWeightObject(),     0.005f, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
       RemixGui::Separator();
       showReadout();
       RemixGui::Separator();
@@ -273,6 +275,12 @@ namespace dxvk {
     pushArgs.maxExposure        = maxExposure();
     pushArgs.minExposure        = minExposure();
     pushArgs.meteringSigma      = meteringSigma();
+    pushArgs.skyWeight          = skyWeight();
+    {
+      const VkExtent3D coneExtent = rtOutput.m_primaryConeRadius.image->info().extent;
+      pushArgs.coneRadiusScaleX = float(coneExtent.width) / float(std::max(rtOutput.m_finalOutputExtent.width, 1u));
+      pushArgs.coneRadiusScaleY = float(coneExtent.height) / float(std::max(rtOutput.m_finalOutputExtent.height, 1u));
+    }
     pushArgs.debugMode = (ctx->getCommonObjects()->metaDebugView().debugViewIdx() == DEBUG_VIEW_EXPOSURE_HISTOGRAM);
 
     {
@@ -282,6 +290,7 @@ namespace dxvk {
 
       ctx->bindResourceView(AUTO_EXPOSURE_HISTOGRAM_INPUT_OUTPUT, m_exposureHistogram.view, nullptr);
       ctx->bindResourceView(AUTO_EXPOSURE_COLOR_INPUT, rtOutput.m_finalOutput.view(Resources::AccessType::Read), nullptr);
+      ctx->bindResourceView(AUTO_EXPOSURE_CONE_RADIUS_INPUT, rtOutput.m_primaryConeRadius.view, nullptr);
 
       ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, AutoExposureHistogramShader::getShader());
       const VkExtent3D workgroups = util::computeBlockCount(rtOutput.m_finalOutputExtent, VkExtent3D { 16, 16, 1 });

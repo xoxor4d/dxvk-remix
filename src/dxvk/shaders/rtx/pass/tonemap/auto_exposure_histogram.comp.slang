@@ -28,6 +28,10 @@ RWTexture1D<uint> OutHistogram;
 layout(binding = AUTO_EXPOSURE_COLOR_INPUT)
 RWTexture2D<float4> InColorBuffer;
 
+// Zero marks a primary miss, which is sky. Render resolution.
+layout(binding = AUTO_EXPOSURE_CONE_RADIUS_INPUT)
+Texture2D<float> PrimaryConeRadius;
+
 layout(push_constant)
 ConstantBuffer<ToneMappingAutoExposureArgs> cb;
 
@@ -112,12 +116,24 @@ void main(uint2 threadId : SV_DispatchThreadID, uint linearIndex : SV_GroupIndex
     const float  sigma   = max(cb.meteringSigma, 0.01f);
     const float  gauss   = exp(-0.5f * rSq / (sigma * sigma));
 
+    // Sky is radiometrically far brighter than it reads after tonemapping,
+    // the circumsolar sky most of all, so it meters with its own weight.
+    uint2 coneDimensions;
+    PrimaryConeRadius.GetDimensions(coneDimensions.x, coneDimensions.y);
+    const uint2 coneCoord = min(uint2(float2(threadId) * float2(cb.coneRadiusScaleX, cb.coneRadiusScaleY)), coneDimensions - 1u);
+    const bool isSky = PrimaryConeRadius[coneCoord] == 0.0f;
+
     // Fixed-point weight (scale 256). The resolve pass divides
     // sum(weight * logYf) by sum(weight) so the absolute scale cancels.
-    // Any pixel that contributes at all gets at least 1 count, so
-    // the dimmest periphery still nudges the histogram.
-    const uint weight = max(uint(gauss * 256.0f + 0.5f), 1u);
-    InterlockedAdd(g_localData[bucketIdx], weight);
+    // Any geometry pixel that contributes at all gets at least 1 count,
+    // so the dimmest periphery still nudges the histogram; sky at a
+    // weight of 0 drops out entirely.
+    const float scaledWeight = gauss * 256.0f * (isSky ? cb.skyWeight : 1.0f);
+    const uint weight = isSky ? uint(scaledWeight + 0.5f) : max(uint(scaledWeight + 0.5f), 1u);
+    if (weight != 0)
+    {
+      InterlockedAdd(g_localData[bucketIdx], weight);
+    }
   }
 
   GroupMemoryBarrierWithGroupSync();

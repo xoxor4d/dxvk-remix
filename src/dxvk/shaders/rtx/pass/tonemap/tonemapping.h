@@ -30,6 +30,7 @@
 #define AUTO_EXPOSURE_COLOR_INPUT                         2
 #define AUTO_EXPOSURE_DEBUG_VIEW_OUTPUT                   3
 #define AUTO_EXPOSURE_READOUT_OUTPUT                      4
+#define AUTO_EXPOSURE_CONE_RADIUS_INPUT                   5
 
 // Apply-tonemapping pass bindings.
 #define TONEMAPPING_APPLY_BLUE_NOISE_TEXTURE_INPUT         0
@@ -86,9 +87,9 @@ struct ToneMappingAutoExposureArgs {
   float minExposure;         // Floor on the auto-exposure multiplier; caps darkening in bright scenes. 0 = none.
 
   float meteringSigma;       // Gaussian radius of the center-weighted metering, in units of the shorter screen axis.
-  uint  pad0;
-  uint  pad1;
-  uint  pad2;
+  float skyWeight;           // Weight of primary-miss (sky) pixels in the metering, 0 = geometry only, 1 = like everything else.
+  float coneRadiusScaleX;    // Output pixel to primary cone radius pixel, the latter is at render resolution.
+  float coneRadiusScaleY;
 };
 
 // Inputs for the apply-tonemapping pass. The dynamic tone curve and
