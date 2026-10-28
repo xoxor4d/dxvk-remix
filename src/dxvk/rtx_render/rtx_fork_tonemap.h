@@ -117,13 +117,16 @@ namespace dxvk {
                "Allows HDR10 output (BT.2020 primaries, ST.2084 PQ, 10-bit swap chain) while an HDR capable tonemapping operator "
                "(Alt or PsychoV17_Beta) is selected. HDR10 is used when Windows has HDR on for the game's display when the game "
                "creates its swap chain, and SDR otherwise. The other operators always present SDR. Set False to always output SDR.");
-    RTX_OPTION("rtx.hdr", float, peakNits, 1000.0f,
-               "HDR10 output: the display's peak brightness in nits, which the operator rolls highlights off towards. Range 80 to 10000.");
-    RTX_OPTION("rtx.hdr", float, paperWhiteNits, 203.0f,
-               "HDR10 output: the brightness of the scene's SDR white in nits. 203 is the BT.2408 reference. "
-               "Range 80 to 1000, and at most rtx.hdr.peakNits.");
-    RTX_OPTION("rtx.hdr", float, uiNits, 203.0f,
-               "HDR10 output: the brightness of UI white in nits, for the game's UI, the HUD and the Remix menu. Range 80 to 1000.");
+    RTX_OPTION_ARGS("rtx.hdr", float, peakNits, 1000.0f,
+                    "HDR10 output: the display's peak brightness in nits, which the operator rolls highlights off towards. Range 80 to 10000.",
+                    args.flags = RtxOptionFlags::UserSetting);
+    RTX_OPTION_ARGS("rtx.hdr", float, paperWhiteNits, 203.0f,
+                    "HDR10 output: the brightness of the scene's SDR white in nits. 203 is the BT.2408 reference. "
+                    "Range 80 to 1000, and at most rtx.hdr.peakNits.",
+                    args.flags = RtxOptionFlags::UserSetting);
+    RTX_OPTION_ARGS("rtx.hdr", float, uiNits, 350.0f,
+                    "HDR10 output: the brightness of UI white in nits, for the game's UI, the HUD and the Remix menu. Range 80 to 1000.",
+                    args.flags = RtxOptionFlags::UserSetting);
 
   public:
     // The selected operator tone maps towards an HDR peak.

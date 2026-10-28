@@ -104,7 +104,8 @@ void main(uint2 threadId : SV_DispatchThreadID, uint linearIndex : SV_GroupIndex
     //   * vertical edge midpoint  (|dy| = 0.5)   -> exp(-2)  ~= 0.135
     //   * horizontal edge midpoint on 16:9       -> exp(-6.3)~= 0.002
     //   * horizontal edge midpoint on 21:9       -> exp(-12) ~= 6e-6
-    // so the default is close to a spot meter on the screen centre.
+    // which is close to a spot meter on the screen centre; the default
+    // 0.5 weights most of the frame.
     const float invScale = 1.0f / float(min(dimensions.x, dimensions.y));
     const float2 delta   = (float2(threadId) + 0.5f - 0.5f * float2(dimensions)) * invScale;
     const float  rSq     = dot(delta, delta);

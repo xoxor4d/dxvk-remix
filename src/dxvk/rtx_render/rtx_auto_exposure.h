@@ -111,12 +111,12 @@ namespace dxvk {
                "to brighten the image when looking at something dark (1.0 = no brightening, "
                "8.0 = up to 8x brighter, ~56 = uncapped default behaviour). Lower this if "
                "shadows / dark rooms get blown out into mid-gray.");
-    RTX_OPTION("rtx.autoExposure", float, minExposure, 0.0f,
+    RTX_OPTION("rtx.autoExposure", float, minExposure, 0.25f,
                "Minimum auto-exposure multiplier. Caps how much the algorithm is allowed to darken the image "
                "when the metered area is bright (0 = no floor, 0.25 = at most 2 stops darker than neutral, "
                "0.125 = at most 3 stops). Raise this if bright walls, ground or sky in the metered area pull "
                "the rest of the scene too dark.");
-    RTX_OPTION("rtx.autoExposure", float, meteringSigma, 0.25f,
+    RTX_OPTION("rtx.autoExposure", float, meteringSigma, 0.5f,
                "Radius of the center-weighted metering, as a Gaussian sigma in units of the shorter screen axis. "
                "0.25 meters a spot around the screen centre (the periphery barely counts), 0.5 weights most of "
                "the frame, 2.0 is close to a plain average. Larger values react less to what happens to be in "

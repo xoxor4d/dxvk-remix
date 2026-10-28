@@ -59,9 +59,10 @@ namespace dxvk {
     // The curve's peak relative to paper white: 1 in SDR, peakNits / paperWhiteNits under HDR10 output.
     static float tonemapPeak() { return RtxForkHdrOutput::peak(); }
 
-    RTX_OPTION("rtx.altTonemap", float, exposureBias, -2.0f,
+    RTX_OPTION("rtx.altTonemap", float, exposureBias, 0.0f,
                "The exposure in EV applied by the alt tonemapper, on top of auto exposure when it is enabled. "
-               "User Brightness and rtx.tonemap.exposureBias do not affect the alt tonemapper.");
+               "User Brightness and rtx.tonemap.exposureBias do not affect the alt tonemapper. Auto exposure already "
+               "meters the scene to the curve's 0.18 anchor, so 0 is neutral (upstream's -2 was tuned to its own metering).");
   };
 
 }

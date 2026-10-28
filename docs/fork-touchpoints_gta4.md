@@ -755,8 +755,8 @@ PQ-encoded hudless image.
 
 HDR10 output is no longer tied to the alt operator. `RtxForkHdrOutput` (`rtx_fork_tonemap.h` / `.cpp`) owns the
 display settings and the active state: `rtx.hdr.enabled` (default true), `rtx.hdr.peakNits` (1000),
-`rtx.hdr.paperWhiteNits` (203) and `rtx.hdr.uiNits` (203) replace the `rtx.altTonemap.hdr*` options of the
-previous workstream. The swap chain asks for ST.2084 while an HDR capable operator (Alt or Psycho17) is
+`rtx.hdr.paperWhiteNits` (203) and `rtx.hdr.uiNits` (350) replace the `rtx.altTonemap.hdr*` options of the
+previous workstream; the three nits options are user settings (`RtxOptionFlags::UserSetting`). The swap chain asks for ST.2084 while an HDR capable operator (Alt or Psycho17) is
 selected and `rtx.hdr.enabled` is set, with Windows HDR on when the back buffers are created. Psycho17
 receives `peakNits / paperWhiteNits` as its Naka-Rushton peak (1 in SDR), and the apply pass clamps to that
 peak instead of 1. Both operator panels end with the shared "HDR10 Output" controls (allow checkbox, peak,
@@ -776,9 +776,11 @@ paper white and UI nits).
 
 The global tonemapper's color grading applies after the alt curve too, through a shared
 `fork_color_grading.slangh`. Auto exposure gains `rtx.autoExposure.minExposure` (floor on the multiplier,
-default 0 = none) and `rtx.autoExposure.meteringSigma` (radius of the center-weighted metering, default
-0.25 of the shorter screen axis, the previous constant). The string and array `RemixGui::Combo` overloads
-no longer nest a labeled row inside the getter overload's own row, which had halved every combo's width.
+default 0.25 = at most two stops darker than neutral) and `rtx.autoExposure.meteringSigma` (radius of the
+center-weighted metering, default 0.5 of the shorter screen axis; the previous constant was 0.25).
+`rtx.altTonemap.exposureBias` defaults to 0 instead of upstream's -2: the fork's metering already lands
+mid-gray on the curve's 0.18 anchor. The string and array `RemixGui::Combo` overloads no longer nest a
+labeled row inside the getter overload's own row, which had halved every combo's width.
 
 - **`src/dxvk/shaders/rtx/pass/tonemap/fork_color_grading.slangh`** - fork-owned, new. *`applyColorGrading(color, balance, contrast, saturation, peak)`.*
 - **`src/dxvk/shaders/rtx/pass/tonemap/tonemapping_apply_tonemapping.comp.slang`** - inline. *Calls the shared grading instead of its local function.*
