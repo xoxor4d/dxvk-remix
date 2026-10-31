@@ -12,7 +12,9 @@ fields of `remixapi_MaterialInfoOpaqueEXT`; neither is this branch's.)
 
 | Macro | Value |
 | :-- | :-- |
-| `REMIXAPI_VERSION_PATCH` | `6` |
+| `REMIXAPI_VERSION_PATCH` | `7` |
+| `REMIXAPI_RETAINED_UPDATE_TRANSFORM` | `0x1u` |
+| `REMIXAPI_RETAINED_UPDATE_VISIBILITY` | `0x2u` |
 
 ## `remixapi_StructType`
 
@@ -76,3 +78,28 @@ replacements authored against D3D9 captures apply. Several meshes may share it. 
 | `remixapi_StructType` | `sType` |  |
 | `void*` | `pNext` |  |
 | `uint64_t` | `replacementHash` |  |
+
+### `remixapi_RetainedInstanceUpdate`
+
+One item of UpdateRetainedInstances: the handle, and the transform and visibility the flags select.
+
+| Type | Field | Notes |
+| :-- | :-- | :-- |
+| `uint64_t` | `handle` |  |
+| `remixapi_Transform` | `transform` | valid with REMIXAPI_RETAINED_UPDATE_TRANSFORM |
+| `uint32_t` | `flags` | REMIXAPI_RETAINED_UPDATE_* |
+| `remixapi_Bool` | `visible` | valid with REMIXAPI_RETAINED_UPDATE_VISIBILITY |
+
+## `remixapi_Interface`
+
+Appended after `GetGameValue` (0.1000.7). Host chosen nonzero handles; commands apply in command stream
+order; every live visible entry is drawn every frame until destroyed; destroy a retained instance before
+its mesh.
+
+| Type | Field | Notes |
+| :-- | :-- | :-- |
+| `PFN_remixapi_CreateRetainedInstances` | `CreateRetainedInstances` | `(const remixapi_InstanceInfo* infos, const uint64_t* handles, uint32_t count)`; nothing is created unless every item is valid |
+| `PFN_remixapi_UpdateRetainedInstance` | `UpdateRetainedInstance` | `(uint64_t handle, const remixapi_InstanceInfo* info)`; whole description, keeps the visibility |
+| `PFN_remixapi_UpdateRetainedInstances` | `UpdateRetainedInstances` | `(const remixapi_RetainedInstanceUpdate* updates, uint32_t count)` |
+| `PFN_remixapi_DestroyRetainedInstances` | `DestroyRetainedInstances` | `(const uint64_t* handles, uint32_t count)` |
+| `PFN_remixapi_DrawRetainedInstances` | `DrawRetainedInstances` | `(const float* sceneOrigin)`; once per frame, sceneOrigin must be NULL |

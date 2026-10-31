@@ -167,6 +167,13 @@ namespace dxvk {
                                  const std::shared_ptr<const std::vector<RasterGeometry>>& submeshes,
                                  ReplacementInstance& replacementInstance);
 
+    // Whether the last externalDrawTryPreserve handled its draw: the retained instance
+    // replay (rtx_fork_retained.cpp) resets the report before a draw and reads it after.
+    // Render thread only. Implemented in rtx_fork_submit.cpp.
+    void resetExternalDrawPreserveReport();
+    bool externalDrawWasPreserved();
+    bool externalPreserveEnabled();
+
     // Called from RtxTextureManager (sampler feedback readback): whether the
     // texture garbage collection runs this frame (rtx.textureGcFrameInterval).
     // Implemented in rtx_fork_texture_streaming.cpp.

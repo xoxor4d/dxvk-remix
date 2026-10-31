@@ -146,7 +146,7 @@ struct TranslucentSurfaceMaterial
   // 18-22: per draw call modifiers from the GTA4 compatibility mod, see shared_constants.h
   uint16_t d3dModifierFlags;
   uint16_t wetnessParams1; // scalar (6 bits) + max_z (5 bits) + blend_width (5 bits)
-  uint16_t wetnessParams2; // raindrop_scale (8 bits) + wetness flags (8 bits)
+  uint16_t wetnessParams2; // raindrop_scale (7 bits) + global wetness flag (1 bit) + wetness flags (8 bits)
   float16_t freeFloat01;   // world position UV scale
   float16_t freeFloat02;   // distance after which the normal map fades out
 

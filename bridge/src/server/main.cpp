@@ -175,6 +175,101 @@ static void deserializeFromQueue(SerializableT& serializableT) {
   serializableT = std::move(dslz);
 }
 
+static uint64_t pullUint64() {
+  void* p = nullptr;
+  const uint32_t size = DeviceBridge::get_data(&p);
+  assert(size == sizeof(uint64_t));
+  uint64_t value = 0;
+  memcpy(&value, p, sizeof(value));
+  return value;
+}
+
+// The extensions of one instance description. Allocated by the caller: a batch holds one per item,
+// and the variable sized ones (bones, particles) own their deserialized memory.
+struct InstanceExtensions {
+  serialize::InstanceInfoObjectPicking objectPicking;
+  serialize::InstanceInfoBlend blend;
+  serialize::InstanceInfoD3DOverrides d3dOverrides;
+  serialize::InstanceInfoTransforms boneXforms;
+  serialize::InstanceInfoParticleSystem particleSystem;
+};
+
+// An instance description and its pNext chain as sendInstanceInfo on the client writes it: the base
+// struct, then extensions each preceded by a true Bool and its sType, then a false Bool. The mesh
+// handle is mapped to the server side mesh.
+static void pullInstanceInfo(remixapi_InstanceInfo& instInfo, InstanceExtensions& exts, const char* call) {
+  memset(&exts, 0, sizeof(InstanceExtensions));
+
+  const auto instSType = remixapi::pullSType();
+  assert(instSType == REMIXAPI_STRUCT_TYPE_INSTANCE_INFO);
+  serialize::InstanceInfo slzdInfo;
+  deserializeFromQueue(slzdInfo);
+  instInfo = static_cast<const remixapi_InstanceInfo&>(slzdInfo);
+
+  MeshHandle meshHandle(instInfo.mesh);
+  if(meshHandle.isValid()) {
+    instInfo.mesh = meshHandle;
+  } else {
+    Logger::err(std::string("[") + call + "] Invalid mesh handle!");
+  }
+
+  instInfo.pNext = nullptr;
+
+  bool bInstExtExists = remixapi::pullBool();
+  auto* pInfoProto = &getInfoProto(instInfo);
+  while(bInstExtExists) {
+    const auto extSType = remixapi::pullSType();
+    switch (extSType) {
+      case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_OBJECT_PICKING_EXT:
+      {
+        assert(!exts.objectPicking.pNext);
+        deserializeFromQueue(exts.objectPicking);
+        pInfoProto->pNext = &(exts.objectPicking);
+        pInfoProto = &getInfoProto(exts.objectPicking);
+        break;
+      }
+      case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT:
+      {
+        assert(!exts.blend.pNext);
+        deserializeFromQueue(exts.blend);
+        pInfoProto->pNext = &(exts.blend);
+        pInfoProto = &getInfoProto(exts.blend);
+        break;
+      }
+      case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_D3D_OVERRIDES_EXT:
+      {
+        assert(!exts.d3dOverrides.pNext);
+        deserializeFromQueue(exts.d3dOverrides);
+        pInfoProto->pNext = &(exts.d3dOverrides);
+        pInfoProto = &getInfoProto(exts.d3dOverrides);
+        break;
+      }
+      case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT:
+      {
+        assert(!exts.boneXforms.pNext);
+        deserializeFromQueue(exts.boneXforms);
+        pInfoProto->pNext = &(exts.boneXforms);
+        pInfoProto = &getInfoProto(exts.boneXforms);
+        break;
+      }
+      case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_PARTICLE_SYSTEM_EXT:
+      {
+        assert(!exts.particleSystem.pNext);
+        deserializeFromQueue(exts.particleSystem);
+        pInfoProto->pNext = &(exts.particleSystem);
+        pInfoProto = &getInfoProto(exts.particleSystem);
+        break;
+      }
+      default:
+      {
+        Logger::warn(std::string("[") + call + "] Unknown sType. Skipping.");
+        break;
+      }
+    }
+    bInstExtExists = remixapi::pullBool();
+  }
+}
+
 // Game textures arrive as client D3D object ids, map them to the server-side textures
 static void resolveGameTextures(serialize::MaterialInfoGameTextures& info) {
   const uint32_t textureId = (uint32_t) (uintptr_t) info.colorTexture;
@@ -3116,87 +3211,87 @@ void ProcessDeviceCommandQueue() {
         // Rather than allocate deserialized struct extensions on the heap,
         // allocate them locally, since we know only one instance will be
         // supported at a time
-        struct InstanceExtensions {
-          serialize::InstanceInfoObjectPicking objectPicking;
-          serialize::InstanceInfoBlend blend;
-          serialize::InstanceInfoD3DOverrides d3dOverrides;
-          serialize::InstanceInfoTransforms boneXforms;
-          serialize::InstanceInfoParticleSystem particleSystem;
-        } exts;
-        memset(&exts, 0, sizeof(InstanceExtensions));
-
-        const auto instSType = remixapi::pullSType();
-        assert(instSType == REMIXAPI_STRUCT_TYPE_INSTANCE_INFO);
-        serialize::InstanceInfo instInfo;
-        deserializeFromQueue(instInfo);
-        
-        MeshHandle meshHandle(instInfo.mesh);
-        if(meshHandle.isValid()) {
-          instInfo.mesh = meshHandle;
-        } else {
-          Logger::err("[RemixApi_DrawInstance] Invalid mesh handle!" );
-        }
-
-        instInfo.pNext = nullptr;
-        
-        bool bInstExtExists = remixapi::pullBool();
-        auto* pInfoProto = &getInfoProto(instInfo);
-        while(bInstExtExists) {
-          const auto extSType = remixapi::pullSType();
-          switch (extSType) {
-            case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_OBJECT_PICKING_EXT:
-            {
-              assert(!exts.objectPicking.pNext);
-              deserializeFromQueue(exts.objectPicking);
-              pInfoProto->pNext = &(exts.objectPicking);
-              pInfoProto = &getInfoProto(exts.objectPicking);
-              break;
-            }
-            case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT:
-            {
-              assert(!exts.blend.pNext);
-              deserializeFromQueue(exts.blend);
-              pInfoProto->pNext = &(exts.blend);
-              pInfoProto = &getInfoProto(exts.blend);
-              break;
-            }
-            case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_D3D_OVERRIDES_EXT:
-            {
-              assert(!exts.d3dOverrides.pNext);
-              deserializeFromQueue(exts.d3dOverrides);
-              pInfoProto->pNext = &(exts.d3dOverrides);
-              pInfoProto = &getInfoProto(exts.d3dOverrides);
-              break;
-            }
-            case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT:
-            {
-              assert(!exts.boneXforms.pNext);
-              deserializeFromQueue(exts.boneXforms);
-              pInfoProto->pNext = &(exts.boneXforms);
-              pInfoProto = &getInfoProto(exts.boneXforms);
-              break;
-            }
-            case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_PARTICLE_SYSTEM_EXT:
-            {
-              assert(!exts.particleSystem.pNext);
-              deserializeFromQueue(exts.particleSystem);
-              pInfoProto->pNext = &(exts.particleSystem);
-              pInfoProto = &getInfoProto(exts.particleSystem);
-              break;
-            }
-            default:
-            {
-              Logger::warn("[RemixApi_DrawInstance] Unknown sType. Skipping.");
-              break;
-            }
-          }
-          bInstExtExists = remixapi::pullBool();
-        }
+        InstanceExtensions exts;
+        remixapi_InstanceInfo instInfo;
+        pullInstanceInfo(instInfo, exts, "RemixApi_DrawInstance");
 
         if(remixapi::g_remix.DrawInstance(&instInfo) != REMIXAPI_ERROR_CODE_SUCCESS) {
           Logger::err("[RemixApi_DrawInstance] Remix API call failed!");
         }
 
+        break;
+      }
+
+      case RemixApi_CreateRetainedInstances:
+      {
+        PULL_U(count);
+        std::vector<remixapi_InstanceInfo> infos(count);
+        std::vector<uint64_t> handles(count);
+        std::vector<InstanceExtensions> exts(count);
+        for (uint32_t i = 0; i < count; i++) {
+          handles[i] = pullUint64();
+          pullInstanceInfo(infos[i], exts[i], "RemixApi_CreateRetainedInstances");
+        }
+
+        if(remixapi::g_remix.CreateRetainedInstances(infos.data(), handles.data(), count) != REMIXAPI_ERROR_CODE_SUCCESS) {
+          Logger::err("[RemixApi_CreateRetainedInstances] Remix API call failed!");
+        }
+        break;
+      }
+
+      case RemixApi_UpdateRetainedInstance:
+      {
+        const uint64_t handle = pullUint64();
+        InstanceExtensions exts;
+        remixapi_InstanceInfo instInfo;
+        pullInstanceInfo(instInfo, exts, "RemixApi_UpdateRetainedInstance");
+
+        if(remixapi::g_remix.UpdateRetainedInstance(handle, &instInfo) != REMIXAPI_ERROR_CODE_SUCCESS) {
+          Logger::err("[RemixApi_UpdateRetainedInstance] Remix API call failed!");
+        }
+        break;
+      }
+
+      case RemixApi_UpdateRetainedInstances:
+      {
+        PULL_U(count);
+        void* updates = nullptr;
+        const uint32_t size = DeviceBridge::get_data(&updates);
+        assert(size == count * sizeof(remixapi_RetainedInstanceUpdate));
+
+        if(remixapi::g_remix.UpdateRetainedInstances(static_cast<const remixapi_RetainedInstanceUpdate*>(updates), count) != REMIXAPI_ERROR_CODE_SUCCESS) {
+          Logger::err("[RemixApi_UpdateRetainedInstances] Remix API call failed!");
+        }
+        break;
+      }
+
+      case RemixApi_DestroyRetainedInstances:
+      {
+        PULL_U(count);
+        void* handles = nullptr;
+        const uint32_t size = DeviceBridge::get_data(&handles);
+        assert(size == count * sizeof(uint64_t));
+
+        if(remixapi::g_remix.DestroyRetainedInstances(static_cast<const uint64_t*>(handles), count) != REMIXAPI_ERROR_CODE_SUCCESS) {
+          Logger::err("[RemixApi_DestroyRetainedInstances] Remix API call failed!");
+        }
+        break;
+      }
+
+      case RemixApi_DrawRetainedInstances:
+      {
+        float origin[3] = {};
+        const float* pOrigin = nullptr;
+        if (remixapi::pullBool()) {
+          void* p = nullptr;
+          const uint32_t size = DeviceBridge::get_data(&p);
+          memcpy(origin, p, std::min<size_t>(size, sizeof(origin)));
+          pOrigin = origin;
+        }
+
+        if(remixapi::g_remix.DrawRetainedInstances(pOrigin) != REMIXAPI_ERROR_CODE_SUCCESS) {
+          Logger::err("[RemixApi_DrawRetainedInstances] Remix API call failed!");
+        }
         break;
       }
 

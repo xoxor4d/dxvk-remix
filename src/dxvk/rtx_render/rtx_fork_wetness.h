@@ -128,6 +128,13 @@ namespace dxvk {
                     "Strength of raindrop impacts on wet ground outside puddles, relative to inside puddles.",
                     args.minValue = 0.0f, args.maxValue = 1.0f);
 
+    // Frame wetness
+    RTX_OPTION_ARGS("rtx.wet", float, globalWetness, 1.0f,
+                    "Wetness of the frame, 0 dry to 1 wet, for the surfaces whose packed value carries the global wetness flag: "
+                    "their wetness scalar is the fully wet value and this takes it there from dry. The game sets it per frame, "
+                    "so retained instances need no update while it rains.",
+                    args.minValue = 0.0f, args.maxValue = 1.0f);
+
     static void fillShaderParams(RtxContext& ctx, RaytraceArgs& constants);
     static void showImguiSettings();
   };

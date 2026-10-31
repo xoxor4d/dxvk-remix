@@ -792,3 +792,38 @@ labeled row inside the getter overload's own row, which had halved every combo's
 - **`src/dxvk/rtx_render/rtx_auto_exposure.h` / `.cpp`**, **`auto_exposure_histogram.comp.slang`**, **`tonemapping.h`** - fork-touchpoint inline tweaks (2026-10-28). *Sky-aware metering: the histogram pass binds `m_primaryConeRadius` (`AUTO_EXPOSURE_CONE_RADIUS_INPUT`, render resolution, scaled by `coneRadiusScaleX/Y`) and multiplies the weight of primary misses by `rtx.autoExposure.skyWeight` (default 0.25, 0 drops the sky).*
 - **`RtxOptions.md`** - not regenerated (`rtx.autoExposure.minExposure`, `rtx.autoExposure.meteringSigma`).
 
+
+## Workstream - Retained instances for API draws, legacy lane (fork - 2026-10-31)
+
+Static world placements are registered with the runtime once and replayed with one `DrawRetainedInstances`
+call per frame instead of one `DrawInstance` per placement per frame. The runtime keeps each entry's
+`ExternalDrawState`, replays a copy through `submitExternalDraw` until `externalDrawTryPreserve` reports it
+unchanged for `rtx.retained.pinAfterPreservedFrames` frames, then pins it: a frame only runs the two
+`preserveInstance` calls for a pinned entry. Pins drop on a description or visibility change, a texture
+cache generation change, draw-call translation invalidation, active object picking or a vanished
+replacement instance. Hidden entries are skipped and age out through the normal GC. Handles are host
+chosen, so the bridge needs no round trip. The frame's wetness becomes one runtime constant
+(`rtx.wet.globalWetness`, bit 23 of the packed wetness value flags a surface that uses it; the raindrop
+scale shrinks to 7 bits), so the wetness ramp never touches an instance description.
+
+**Remix Plus V2 (268fb5b24) ships retained instances with a scene owned direct lane; this workstream is a
+legacy-lane subset and is NOT worth picking onto V2; drop it on rebase.** Mod code written against the V2
+names ports to V2's API (host handles excepted).
+
+- **`src/dxvk/rtx_render/rtx_fork_retained.h` / `.cpp`** - fork-owned, new. *Command builders (API thread), `retainedApply` and `retainedDraw` (CS thread), the entry table, `RetainedSceneAccess`, `rtx.retained.pinAfterPreservedFrames` and `rtx.retained.logFrameInterval`, the `[Retained]` log line.*
+- **`src/dxvk/rtx_render/rtx_fork_submit.cpp`**, **`rtx_fork_hooks.h`** - fork-owned. *`externalDrawTryPreserve` reports whether it handled its draw (`resetExternalDrawPreserveReport` / `externalDrawWasPreserved`), `externalPreserveEnabled`.*
+- **`src/dxvk/rtx_render/rtx_remix_api.cpp`** - inline, ~45 LOC. *`queueRetainedCommands` and the five `remixapi_*Retained*` entries after `remixapi_DrawInstance` (they use the TU private `s_mutex`, `flushPendingMeshes`, `convert::toRtDrawState` and `convert::tomat4` like `DrawInstance`), their registration after `interf.GetGameValue`, the interface size assert 328 -> 368.*
+- **`src/dxvk/rtx_render/rtx_scene_manager.h`** - inline, 2 LOC. *`struct RetainedSceneAccess;` in the `fork_hooks` forward block and its friend declaration (the keep-alive needs `preserveInstance`, `m_instanceManager`, `m_drawCallTracker`, `m_textureCacheGenerationValidForPreserve`).*
+- **`public/include/remix/remix_c.h`** - inline. *`REMIXAPI_RETAINED_UPDATE_*`, `remixapi_RetainedInstanceUpdate`, the five `PFN_remixapi_*Retained*` typedefs, the five fields appended to `remixapi_Interface`, `REMIXAPI_VERSION_PATCH` 7 and its history paragraph.*
+- **`public/include/remix/remix.h`** - inline, 1 LOC. *`sizeof(remixapi_Interface)` assert 328 -> 368.*
+- **`src/dxvk/meson.build`** - inline. *The two fork files.*
+- **`bridge/src/util/util_commands.h`** - inline. *Five `RemixApi_*Retained*` commands after `RemixApi_SetupCamera` (later `Bridge_*` values shift: client and server deployed together).*
+- **`bridge/src/client/remix_api.cpp`** - inline. *`sendInstanceInfo` (the `DrawInstance` pNext loop, shared), the five stubs (fire and forget, creates in messages of 512 items), the slot assignments.*
+- **`bridge/src/server/main.cpp`** - inline. *`pullUint64`, `InstanceExtensions` and `pullInstanceInfo` lifted out of the `DrawInstance` handler and shared, the five handlers.*
+- **`src/dxvk/rtx_render/rtx_fork_wetness.h` / `.cpp`** - fork-owned. *`rtx.wet.globalWetness` and its constant fill.*
+- **`src/dxvk/shaders/rtx/pass/raytrace_args.h`** - inline, 1 field. *`wetGlobalWetness` in the fork wetness block.*
+- **`src/dxvk/shaders/rtx/concept/surface_material/rtx_fork_wetness.slangh`** - fork-owned. *7-bit raindrop scale, the global wetness flag and the lerp of the scalar from dry.*
+- **`src/dxvk/shaders/rtx/concept/surface_material/translucent_surface_material_interaction.slangh`**, **`surface_material.h`** - inline, 1 LOC each. *7-bit raindrop scale decode, the `wetnessParams2` comment.*
+- **`docs/RemixApi_gta4.md`**, **`documentation/RemixApiChangelog_gta4.md`**, **`RemixApiSurface_gta4.md`**, **`docs/RemixWetnessAPI_gta4.md`** - companions updated (0.1000.7).
+- **`RtxOptions.md`** - not regenerated (`rtx.retained.pinAfterPreservedFrames`, `rtx.retained.logFrameInterval`, `rtx.wet.globalWetness`).
+- Mod side (gta4-rtx): `renderer_api.cpp` `namespace retained` (placement table keyed by mesh hash, draw state and transform bits, the flush before the mod's injection quad, the per frame scan that hides what the game did not draw), `send_global_wetness`, the fingerprint without the wetness term plus the emissive scalars, drizzle and quarter hour it missed; `renderer.cpp` world branch sends the fully wet scalar with `WETNESS_FLAG_GLOBAL_WETNESS`; settings `api_static_retained`, `api_static_retained_hide_frames`.

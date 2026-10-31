@@ -56,6 +56,11 @@ namespace Commands {
     RemixApi_SetGameValue,
     RemixApi_GetGameValue,
     RemixApi_SetupCamera,
+    RemixApi_CreateRetainedInstances,
+    RemixApi_UpdateRetainedInstance,
+    RemixApi_UpdateRetainedInstances,
+    RemixApi_DestroyRetainedInstances,
+    RemixApi_DrawRetainedInstances,
 
     Bridge_SharedHeap_AddSeg,
     Bridge_SharedHeap_Alloc,
@@ -500,6 +505,11 @@ namespace Commands {
     case RemixApi_SetGameValue: return "RemixApi_SetGameValue";
     case RemixApi_GetGameValue: return "RemixApi_GetGameValue";
     case RemixApi_SetupCamera: return "RemixApi_SetupCamera";
+    case RemixApi_CreateRetainedInstances: return "RemixApi_CreateRetainedInstances";
+    case RemixApi_UpdateRetainedInstance: return "RemixApi_UpdateRetainedInstance";
+    case RemixApi_UpdateRetainedInstances: return "RemixApi_UpdateRetainedInstances";
+    case RemixApi_DestroyRetainedInstances: return "RemixApi_DestroyRetainedInstances";
+    case RemixApi_DrawRetainedInstances: return "RemixApi_DrawRetainedInstances";
 
     case Bridge_SharedHeap_AddSeg: return "SharedHeap_AddSeg";
     case Bridge_SharedHeap_Alloc: return "SharedHeap_Alloc";

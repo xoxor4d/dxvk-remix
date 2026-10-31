@@ -19,7 +19,8 @@ implementation, see
 | 0-4 | normal blend width (0..1 over 31) |
 | 5-9 | normal.z above which a surface is wet (0..1 over 31) |
 | 10-15 | wetness scalar, 0..4 over 63, remapped to -2..2 in the shader; 0 is fully wet, 1 dry |
-| 16-23 | raindrop scale, 0..10 over 255 |
+| 16-22 | raindrop scale, 0..10 over 127 |
+| 23 | global wetness: the scalar is the surface's fully wet value and the frame's `rtx.wet.globalWetness` takes it there from dry (`scalar = lerp(1, scalar, globalWetness)`). The mod sets the flag on world and ped surfaces and sends the frame's wetness once per frame, so a retained instance needs no update while it rains; vehicles keep their live scalar. The dry end is continuous: the roughness scaling starts at 1 and reaches the packed value at wetness 1. |
 | 24 | wetness variation (wet and less wet patches, streaks) |
 | 25 | raindrop impacts on world surfaces (rings in world XY) |
 | 26 | raindrops in texture space instead of world XY |
@@ -97,6 +98,7 @@ World units (GTA IV: meters). Remix menu: Game Setup -> Step 2: Parameter Tuning
 | `rtx.wet.rippleVariation` | 0.48 | Gusts: how much the ripples come and go in patches. |
 | `rtx.wet.rippleSpeed` | 2.5 | Ripple animation speed. |
 | `rtx.wet.raindropGroundScale` | 0.5 | Raindrop strength outside puddles. |
+| `rtx.wet.globalWetness` | 1.0 | Wetness of the frame, 0 dry to 1 wet, for the surfaces flagged with bit 23. The game sets it per frame through `SetConfigVariable`. |
 
 ## Cost
 

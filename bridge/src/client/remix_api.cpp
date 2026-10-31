@@ -20,6 +20,7 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+#include <algorithm>
 #include <cstddef>
 #include <cstring>
 #include <vector>
@@ -331,65 +332,141 @@ remixapi_ErrorCode REMIXAPI_CALL remixapi_DestroyMesh(remixapi_MeshHandle handle
   return REMIXAPI_ERROR_CODE_SUCCESS;
 }
 
+// An instance description and its pNext chain, the wire format of RemixApi_DrawInstance and the
+// retained instance commands (the server reads it back with pullInstanceInfo).
+static void sendInstanceInfo(ClientMessage& c, const remixapi_InstanceInfo& info) {
+  serializeAndSend<serialize::InstanceInfo>(c, info);
+
+  // For each valid pNext, we will send a true-valued bool to indicate that
+  // server must read another extension. If it reads false, it knows that it
+  // is done reading.
+  // send(c, Bool::True); -> CONTINUE
+  // send(c, Bool::False); -> STOP
+  const void* infoItr = &info;
+  while (auto* const pNext = getPNext(infoItr)) {
+    infoItr = pNext;
+    switch (getSType(pNext)) {
+      case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_OBJECT_PICKING_EXT:
+      {
+        auto* pObjectPicking = static_cast<const remixapi_InstanceInfoObjectPickingEXT* const>(infoItr);
+        send(c, Bool::True);
+        serializeAndSend<serialize::InstanceInfoObjectPicking>(c, *pObjectPicking);
+        break;
+      }
+      case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT:
+      {
+        auto* pBlend = static_cast<const remixapi_InstanceInfoBlendEXT* const>(infoItr);
+        send(c, Bool::True);
+        serializeAndSend<serialize::InstanceInfoBlend>(c, *pBlend);
+        break;
+      }
+      case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_D3D_OVERRIDES_EXT:
+      {
+        auto* pOverrides = static_cast<const remixapi_InstanceInfoD3DOverridesEXT* const>(infoItr);
+        send(c, Bool::True);
+        serializeAndSend<serialize::InstanceInfoD3DOverrides>(c, *pOverrides);
+        break;
+      }
+      case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT:
+      {
+        auto* pXforms = static_cast<const remixapi_InstanceInfoBoneTransformsEXT* const>(infoItr);
+        send(c, Bool::True);
+        serializeAndSend<serialize::InstanceInfoTransforms>(c, *pXforms);
+        break;
+      }
+      case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_PARTICLE_SYSTEM_EXT:
+      {
+        auto* pParticle = static_cast<const remixapi_InstanceInfoParticleSystemEXT* const>(infoItr);
+        send(c, Bool::True);
+        serializeAndSend<serialize::InstanceInfoParticleSystem>(c, *pParticle);
+        break;
+      }
+      default:
+      {
+        Logger::warn("[remixapi::sendInstanceInfo] Unknown sType. Skipping.");
+        break;
+      }
+    }
+  }
+  send(c, Bool::False);
+}
+
 remixapi_ErrorCode REMIXAPI_CALL remixapi_DrawInstance(const remixapi_InstanceInfo* info) {
   ASSERT_REMIXAPI_PFN_TYPE(remixapi_DrawInstance);
   {
     ClientMessage c(Commands::RemixApi_DrawInstance);
+    sendInstanceInfo(c, *info);
+  }
+  return REMIXAPI_ERROR_CODE_SUCCESS;
+}
 
-    serializeAndSend<serialize::InstanceInfo>(c, *info);
-
-    // For each valid pNext, we will send a true-valued bool to indicate that
-    // server must read another extension. If it reads false, it knows that it
-    // is done reading.
-    // send(c, Bool::True); -> CONTINUE
-    // send(c, Bool::False); -> STOP
-    const void* infoItr = info;
-    while (auto* const pNext = getPNext(infoItr)) {
-      infoItr = pNext;
-      switch (getSType(pNext)) {
-        case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_OBJECT_PICKING_EXT:
-        {
-          auto* pObjectPicking = static_cast<const remixapi_InstanceInfoObjectPickingEXT* const>(infoItr);
-          send(c, Bool::True);
-          serializeAndSend<serialize::InstanceInfoObjectPicking>(c, *pObjectPicking);
-          break;
-        }
-        case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT:
-        {
-          auto* pBlend = static_cast<const remixapi_InstanceInfoBlendEXT* const>(infoItr);
-          send(c, Bool::True);
-          serializeAndSend<serialize::InstanceInfoBlend>(c, *pBlend);
-          break;
-        }
-        case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_D3D_OVERRIDES_EXT:
-        {
-          auto* pOverrides = static_cast<const remixapi_InstanceInfoD3DOverridesEXT* const>(infoItr);
-          send(c, Bool::True);
-          serializeAndSend<serialize::InstanceInfoD3DOverrides>(c, *pOverrides);
-          break;
-        }
-        case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT:
-        {
-          auto* pXforms = static_cast<const remixapi_InstanceInfoBoneTransformsEXT* const>(infoItr);
-          send(c, Bool::True);
-          serializeAndSend<serialize::InstanceInfoTransforms>(c, *pXforms);
-          break;
-        }
-        case REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_PARTICLE_SYSTEM_EXT:
-        {
-          auto* pParticle = static_cast<const remixapi_InstanceInfoParticleSystemEXT* const>(infoItr);
-          send(c, Bool::True);
-          serializeAndSend<serialize::InstanceInfoParticleSystem>(c, *pParticle);
-          break;
-        }
-        default:
-        {
-          Logger::warn("[remixapi_DrawInstance] Unknown sType. Skipping.");
-          break;
-        }
-      }
+// Retained instances: fire and forget like DrawInstance, the runtime validates the batch.
+remixapi_ErrorCode REMIXAPI_CALL remixapi_CreateRetainedInstances(const remixapi_InstanceInfo* infos, const uint64_t* handles, uint32_t count) {
+  ASSERT_REMIXAPI_PFN_TYPE(remixapi_CreateRetainedInstances);
+  if (!infos || !handles || count == 0) {
+    return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+  }
+  // one message per chunk keeps a batch's data items bounded
+  constexpr uint32_t kChunk = 512;
+  for (uint32_t first = 0; first < count; first += kChunk) {
+    const uint32_t n = std::min(kChunk, count - first);
+    ClientMessage c(Commands::RemixApi_CreateRetainedInstances);
+    c.send_data(n);
+    for (uint32_t i = first; i < first + n; i++) {
+      send(c, handles[i]);
+      sendInstanceInfo(c, infos[i]);
     }
-    send(c, Bool::False);
+  }
+  return REMIXAPI_ERROR_CODE_SUCCESS;
+}
+
+remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateRetainedInstance(uint64_t handle, const remixapi_InstanceInfo* info) {
+  ASSERT_REMIXAPI_PFN_TYPE(remixapi_UpdateRetainedInstance);
+  if (handle == 0 || !info) {
+    return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+  }
+  {
+    ClientMessage c(Commands::RemixApi_UpdateRetainedInstance);
+    send(c, handle);
+    sendInstanceInfo(c, *info);
+  }
+  return REMIXAPI_ERROR_CODE_SUCCESS;
+}
+
+remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateRetainedInstances(const remixapi_RetainedInstanceUpdate* updates, uint32_t count) {
+  ASSERT_REMIXAPI_PFN_TYPE(remixapi_UpdateRetainedInstances);
+  if (!updates || count == 0) {
+    return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+  }
+  {
+    ClientMessage c(Commands::RemixApi_UpdateRetainedInstances);
+    c.send_data(count);
+    c.send_data(count * sizeof(remixapi_RetainedInstanceUpdate), updates);
+  }
+  return REMIXAPI_ERROR_CODE_SUCCESS;
+}
+
+remixapi_ErrorCode REMIXAPI_CALL remixapi_DestroyRetainedInstances(const uint64_t* handles, uint32_t count) {
+  ASSERT_REMIXAPI_PFN_TYPE(remixapi_DestroyRetainedInstances);
+  if (!handles || count == 0) {
+    return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+  }
+  {
+    ClientMessage c(Commands::RemixApi_DestroyRetainedInstances);
+    c.send_data(count);
+    c.send_data(count * sizeof(uint64_t), handles);
+  }
+  return REMIXAPI_ERROR_CODE_SUCCESS;
+}
+
+remixapi_ErrorCode REMIXAPI_CALL remixapi_DrawRetainedInstances(const float* sceneOrigin) {
+  ASSERT_REMIXAPI_PFN_TYPE(remixapi_DrawRetainedInstances);
+  {
+    ClientMessage c(Commands::RemixApi_DrawRetainedInstances);
+    send(c, sceneOrigin ? Bool::True : Bool::False);
+    if (sceneOrigin) {
+      c.send_data(3 * sizeof(float), sceneOrigin);
+    }
   }
   return REMIXAPI_ERROR_CODE_SUCCESS;
 }
@@ -636,6 +713,11 @@ extern "C" {
       interf.UpdateLightDefinition        = remixapi_UpdateLightDefinition;
       interf.SetGameValue                 = remixapi_SetGameValue;
       interf.GetGameValue                 = remixapi_GetGameValue;
+      interf.CreateRetainedInstances      = remixapi_CreateRetainedInstances;
+      interf.UpdateRetainedInstance       = remixapi_UpdateRetainedInstance;
+      interf.UpdateRetainedInstances      = remixapi_UpdateRetainedInstances;
+      interf.DestroyRetainedInstances     = remixapi_DestroyRetainedInstances;
+      interf.DrawRetainedInstances        = remixapi_DrawRetainedInstances;
       // interf.dxvk_GetExternalSwapchain = remixapi_dxvk_GetExternalSwapchain;
       // interf.dxvk_GetVkImage = remixapi_dxvk_GetVkImage;
       // interf.dxvk_CopyRenderingOutput = remixapi_dxvk_CopyRenderingOutput;

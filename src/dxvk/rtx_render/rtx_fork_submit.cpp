@@ -213,11 +213,15 @@ namespace fork_hooks {
                  "Remix API instances unchanged since the last frame (same mesh, transform, material, bones and categories) "
                  "keep their instance instead of running the per draw scene processing again, like unchanged D3D9 draws.");
     };
+
+    // whether the last externalDrawTryPreserve handled its draw, read by the retained instance replay. Render thread only.
+    bool s_lastExternalDrawPreserved = false;
   }
 
   bool externalDrawTryPreserve(SceneManager& scene, const Rc<DxvkContext>& ctx, ExternalDrawState& state,
                                const std::shared_ptr<const std::vector<RasterGeometry>>& submeshes,
                                ReplacementInstance& ri) {
+    s_lastExternalDrawPreserved = false;
     if (!RtxOptions::enablePreservePath() || !ExternalDrawOptions::preserveUnchangedExternalDraws()) {
       return false;
     }
@@ -268,7 +272,20 @@ namespace fork_hooks {
       });
     ri.recalculateBoundingBox(state.drawCall.getTransformData().objectToWorld, &submesh.boundingBox);
     ri.frameLastSeen = frame;
+    s_lastExternalDrawPreserved = true;
     return true;
+  }
+
+  void resetExternalDrawPreserveReport() {
+    s_lastExternalDrawPreserved = false;
+  }
+
+  bool externalDrawWasPreserved() {
+    return s_lastExternalDrawPreserved;
+  }
+
+  bool externalPreserveEnabled() {
+    return ExternalDrawOptions::preserveUnchangedExternalDraws();
   }
 
   // ---------------------------------------------------------------------------

@@ -57,6 +57,38 @@ Hub section "`SetupCamera`", after "...to specify position/forward/up/right + FO
 
 The bridge forwards both forms (32-bit clients included).
 
+## Instances: retained instances
+
+New hub section after "Instances (per-frame draw)". Remix Plus V2 ships retained instances with a scene
+owned lane; this branch carries a legacy-lane subset with the same names, so host code written against
+it ports to V2 (host chosen handles excepted).
+
+A static object is described once and replayed by the runtime every frame, instead of one `DrawInstance`
+per placement per frame. The runtime keeps each entry's description, runs it through the regular external
+draw path until the preserve path reports it unchanged for `rtx.retained.pinAfterPreservedFrames` (2)
+frames, then pins it: a frame only keeps a pinned instance alive. A description change, a visibility
+change, a texture cache clear, an option that invalidates draw translation or active object picking drops
+the pin and the entry takes the full path again.
+
+| Function | Purpose |
+| :-- | :-- |
+| `CreateRetainedInstances(infos, handles, count)` | Registers `count` draws (`remixapi_InstanceInfo` with its usual pNext chain) under host chosen handles: nonzero, unique per live entry. Nothing is created unless every item is valid. |
+| `UpdateRetainedInstance(handle, info)` | Replaces the whole description (mesh, categories, blend, D3D overrides, bones). Keeps the visibility. |
+| `UpdateRetainedInstances(updates, count)` | `remixapi_RetainedInstanceUpdate` per item: `REMIXAPI_RETAINED_UPDATE_VISIBILITY` shows or hides the entry (hidden is sticky and costs nothing per frame), `REMIXAPI_RETAINED_UPDATE_TRANSFORM` moves it (a whole-record change on this branch). |
+| `DestroyRetainedInstances(handles, count)` | Forgets the entries; their instances age out through the normal garbage collection. Destroy a retained instance before its mesh. |
+| `DrawRetainedInstances(sceneOrigin)` | Once per frame, draws every live visible entry. `sceneOrigin` must be `NULL` (no origin rebase on this branch). Issue it before the frame's injection point (for the GTA IV mod: before the orthographic quad that triggers it), a draw after it lands in the next frame, and only in frames whose camera was set up from the world view: the replay uses the frame's camera like any other draw. |
+
+Commands apply in command stream order relative to the other API calls, so an entry created or shown
+before the frame's `DrawRetainedInstances` is drawn in that frame, and a `DestroyRetainedInstances` issued
+before `DestroyMesh` runs before it. Errors: `REMIX_DEVICE_WAS_NOT_REGISTERED`, `INVALID_ARGUMENTS` (null
+pointers, zero count, a zero handle, a wrong `sType`, unknown flags, a non-null origin); conditions the
+runtime only sees later (duplicate create, unknown handle, mesh destroyed under a live entry) are logged
+once, since the bridge forwards these calls without a response.
+
+The bridge forwards all five (32-bit clients included); a batch is one message per 512 items. The
+`[Retained]` log line (`rtx.retained.logFrameInterval`) counts entries, visible, pinned, preserved, full
+replays and dropped entries.
+
 ## Convention namespaces: `rtx.water.*`
 
 Row to add to the "Convention namespaces" table:

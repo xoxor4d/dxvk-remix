@@ -254,6 +254,8 @@ dxvk_src = files([
   'rtx_render/rtx_fork_overlay.cpp',
   'rtx_render/rtx_fork_rcas.cpp',
   'rtx_render/rtx_fork_rcas.h',
+  'rtx_render/rtx_fork_retained.cpp',
+  'rtx_render/rtx_fork_retained.h',
   'rtx_render/rtx_fork_post_processing.cpp',
   'rtx_render/rtx_fork_post_processing.h',
   'rtx_render/rtx_fork_skinning.cpp',

@@ -44,6 +44,7 @@ namespace dxvk {
     constants.wetSlopeFeather = std::max(slopeFeather(), 0.1f);
     constants.wetRippleVariation = std::clamp(rippleVariation(), 0.0f, 1.0f);
     constants.wetOcclusionFeather = std::max(occlusionFeather(), 0.0f);
+    constants.wetGlobalWetness = std::clamp(globalWetness(), 0.0f, 1.0f);
 
     ForkRainMap::prepare(ctx, constants);
   }

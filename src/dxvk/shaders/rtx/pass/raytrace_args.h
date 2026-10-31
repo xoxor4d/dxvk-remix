@@ -488,6 +488,7 @@ struct RaytraceArgs {
   float wetMapTexel;
   float wetMapTraceTop;
   float wetMapTraceBottom;
+  float wetGlobalWetness;
 
   // Fork: rtx.cardNormals.upWeight for CardNormals surfaces (surface_interaction.slangh).
   float cardNormalsUpWeight;

@@ -4,6 +4,29 @@ Companion of [`RemixApiChangelog.md`](RemixApiChangelog.md), which stays at its 
 state on this branch. Same format; these entries sit on top of Remix Plus's `[0.1000.1]`.
 Merge them into the hub changelog when the branch is rebased.
 
+## [0.1000.7]
+
+Retained instances (2026-10-31). A legacy-lane subset of Remix Plus V2's retained instances with the
+same names; not worth picking onto V2.
+
+### Added
+- `remixapi_RetainedInstanceUpdate`, `REMIXAPI_RETAINED_UPDATE_TRANSFORM` and
+  `REMIXAPI_RETAINED_UPDATE_VISIBILITY`.
+- `CreateRetainedInstances`, `UpdateRetainedInstance`, `UpdateRetainedInstances`,
+  `DestroyRetainedInstances` and `DrawRetainedInstances`, appended to `remixapi_Interface`
+  after `GetGameValue`. Handles are host chosen (nonzero, unique per live entry); V2 assigns
+  them in the runtime.
+- Bridge commands for all five.
+- `rtx.retained.pinAfterPreservedFrames`, `rtx.retained.logFrameInterval`.
+- `rtx.wet.globalWetness` and bit 23 of the packed wetness value (global wetness flag), see
+  `docs/RemixWetnessAPI_gta4.md`: the frame's wetness is one runtime constant, so a retained
+  instance needs no update while it rains.
+
+### Changed
+- `REMIXAPI_VERSION` is now `0.1000.7` (was `0.1000.6`). `sizeof(remixapi_Interface)` grows
+  from 328 to 368 on x64. Additive, older callers never read the new slots.
+- The raindrop scale of the packed wetness value has 7 bits instead of 8 (0..10 over 127).
+
 ## [0.1000.6]
 
 CardNormals instance category (2026-10-26).

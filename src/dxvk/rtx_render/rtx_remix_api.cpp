@@ -59,6 +59,7 @@
 #include "../../util/xxHash/xxhash.h"
 
 #include "rtx_fork_hooks.h"
+#include "rtx_fork_retained.h"
 
 #include <windows.h>
 
@@ -1584,6 +1585,105 @@ namespace {
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 
+  // Retained instances (fork): the table and the replay live in rtx_fork_retained.cpp. These
+  // entries validate and convert outside s_mutex like remixapi_DrawInstance and queue the batch
+  // in command stream order, so it applies at the next DrawRetainedInstances.
+  remixapi_ErrorCode queueRetainedCommands(dxvk::D3D9DeviceEx* remixDevice, std::vector<dxvk::fork_hooks::RetainedCommand>&& commands) {
+    std::lock_guard lock { s_mutex };
+    remixDevice->EmitCs<false>([cCommands = std::move(commands)](dxvk::DxvkContext*) mutable {
+      dxvk::fork_hooks::retainedApply(cCommands);
+    });
+    return REMIXAPI_ERROR_CODE_SUCCESS;
+  }
+
+  remixapi_ErrorCode REMIXAPI_CALL remixapi_CreateRetainedInstances(
+    const remixapi_InstanceInfo* infos,
+    const uint64_t* handles,
+    uint32_t count) {
+    dxvk::D3D9DeviceEx* remixDevice = tryAsDxvk();
+    if (!remixDevice) {
+      return REMIXAPI_ERROR_CODE_REMIX_DEVICE_WAS_NOT_REGISTERED;
+    }
+    ScopedCpuProfileZone();
+    flushPendingMeshes(remixDevice);
+
+    std::vector<dxvk::fork_hooks::RetainedCommand> commands;
+    if (!dxvk::fork_hooks::retainedBuildCreates(infos, handles, count, &convert::toRtDrawState, commands)) {
+      return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+    }
+    return queueRetainedCommands(remixDevice, std::move(commands));
+  }
+
+  remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateRetainedInstance(
+    uint64_t handle,
+    const remixapi_InstanceInfo* info) {
+    dxvk::D3D9DeviceEx* remixDevice = tryAsDxvk();
+    if (!remixDevice) {
+      return REMIXAPI_ERROR_CODE_REMIX_DEVICE_WAS_NOT_REGISTERED;
+    }
+    ScopedCpuProfileZone();
+    flushPendingMeshes(remixDevice);
+
+    std::vector<dxvk::fork_hooks::RetainedCommand> commands;
+    if (!dxvk::fork_hooks::retainedBuildDescribe(handle, info, &convert::toRtDrawState, commands)) {
+      return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+    }
+    return queueRetainedCommands(remixDevice, std::move(commands));
+  }
+
+  remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateRetainedInstances(
+    const remixapi_RetainedInstanceUpdate* updates,
+    uint32_t count) {
+    dxvk::D3D9DeviceEx* remixDevice = tryAsDxvk();
+    if (!remixDevice) {
+      return REMIXAPI_ERROR_CODE_REMIX_DEVICE_WAS_NOT_REGISTERED;
+    }
+    ScopedCpuProfileZone();
+
+    std::vector<dxvk::fork_hooks::RetainedCommand> commands;
+    if (!dxvk::fork_hooks::retainedBuildUpdates(updates, count, &convert::tomat4, commands)) {
+      return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+    }
+    return queueRetainedCommands(remixDevice, std::move(commands));
+  }
+
+  remixapi_ErrorCode REMIXAPI_CALL remixapi_DestroyRetainedInstances(
+    const uint64_t* handles,
+    uint32_t count) {
+    dxvk::D3D9DeviceEx* remixDevice = tryAsDxvk();
+    if (!remixDevice) {
+      return REMIXAPI_ERROR_CODE_REMIX_DEVICE_WAS_NOT_REGISTERED;
+    }
+    ScopedCpuProfileZone();
+
+    std::vector<dxvk::fork_hooks::RetainedCommand> commands;
+    if (!dxvk::fork_hooks::retainedBuildDestroys(handles, count, commands)) {
+      return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+    }
+    return queueRetainedCommands(remixDevice, std::move(commands));
+  }
+
+  remixapi_ErrorCode REMIXAPI_CALL remixapi_DrawRetainedInstances(
+    const float* sceneOrigin) {
+    dxvk::D3D9DeviceEx* remixDevice = tryAsDxvk();
+    if (!remixDevice) {
+      return REMIXAPI_ERROR_CODE_REMIX_DEVICE_WAS_NOT_REGISTERED;
+    }
+    if (sceneOrigin != nullptr) {
+      return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+    }
+    ScopedCpuProfileZone();
+
+    dxvk::fork_hooks::notifyBeginScene();
+    flushPendingMeshes(remixDevice);
+
+    std::lock_guard lock { s_mutex };
+    remixDevice->EmitCs<false>([](dxvk::DxvkContext* dxvkCtx) {
+      dxvk::fork_hooks::retainedDraw(static_cast<dxvk::RtxContext*>(dxvkCtx));
+    });
+    return REMIXAPI_ERROR_CODE_SUCCESS;
+  }
+
   remixapi_ErrorCode REMIXAPI_CALL remixapi_CreateLight(
     const remixapi_LightInfo* info,
     remixapi_LightHandle* out_handle) {
@@ -2771,10 +2871,15 @@ extern "C"
       interf.GetVramStats = remixapi_GetVramStats;
       interf.RequestTextureVramFree = remixapi_RequestTextureVramFree;
       interf.GetGameValue = remixapi_GetGameValue;
+      interf.CreateRetainedInstances = remixapi_CreateRetainedInstances;
+      interf.UpdateRetainedInstance = remixapi_UpdateRetainedInstance;
+      interf.UpdateRetainedInstances = remixapi_UpdateRetainedInstances;
+      interf.DestroyRetainedInstances = remixapi_DestroyRetainedInstances;
+      interf.DrawRetainedInstances = remixapi_DrawRetainedInstances;
       // Fork-added vtable slots (extern-C exported; delegated to fork hook)
       dxvk::fork_hooks::remixApiVtableInit(interf);
     }
-    static_assert(sizeof(interf) == 328, "Add/remove function registration");
+    static_assert(sizeof(interf) == 368, "Add/remove function registration");
 
     *out_result = interf;
     return REMIXAPI_ERROR_CODE_SUCCESS;

@@ -130,6 +130,7 @@ namespace fork_hooks {
   bool externalDrawTryPreserve(SceneManager& scene, const Rc<DxvkContext>& ctx, ExternalDrawState& state,
                                const std::shared_ptr<const std::vector<RasterGeometry>>& submeshes,
                                ReplacementInstance& replacementInstance);
+  struct RetainedSceneAccess;
 }
 
 // Scene manager is a super manager, it's the interface between rendering and world state
@@ -151,6 +152,9 @@ class SceneManager : public CommonDeviceObject, public ResourceCache {
   // m_pReplacer and m_textureCacheGenerationValidForPreserve.
   friend bool fork_hooks::externalDrawTryPreserve(SceneManager&, const Rc<DxvkContext>&, ExternalDrawState&,
     const std::shared_ptr<const std::vector<RasterGeometry>>&, ReplacementInstance&);
+  // Fork touchpoint: the keep-alive of pinned retained instances (rtx_fork_retained.cpp) needs
+  // preserveInstance, m_instanceManager, m_drawCallTracker and m_textureCacheGenerationValidForPreserve.
+  friend struct fork_hooks::RetainedSceneAccess;
 
 public:
   SceneManager(SceneManager const&) = delete;
