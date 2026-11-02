@@ -811,19 +811,14 @@ extern "C" {
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
     }
 
-    DeviceBridge::ResponseTransaction responseTransaction;
-
-    UID currentUID = 0;
+    // no server response: a write that waited for one stalled the caller until the server had processed every
+    // command queued before it, which for a per frame write is the whole frame
     {
       ClientMessage c(Commands::RemixApi_SetGameValue);
-      currentUID = c.get_uid();
       send(c, key);
       send(c, value);
     }
-    WAIT_FOR_SERVER_RESPONSE("remixapi_SetGameValue", REMIXAPI_ERROR_CODE_GENERAL_FAILURE, currentUID);
-    const remixapi_ErrorCode result = static_cast<remixapi_ErrorCode>(DeviceBridge::get_data());
-    DeviceBridge::pop_front();
-    return result;
+    return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 
   DLLEXPORT remixapi_ErrorCode __stdcall remixapi_GetGameValue(

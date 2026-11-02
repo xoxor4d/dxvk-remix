@@ -3494,15 +3494,14 @@ void ProcessDeviceCommandQueue() {
         const uint32_t value_size = DeviceBridge::getReaderChannel().data->pull(&value_ptr);
         std::string value_str((const char*) value_ptr, value_size);
 
-        remixapi_ErrorCode result = REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
         if (remixapi::g_remix.SetGameValue) {
-          result = remixapi::g_remix.SetGameValue(key_str.c_str(), value_str.c_str());
+          const remixapi_ErrorCode result = remixapi::g_remix.SetGameValue(key_str.c_str(), value_str.c_str());
+          if (result != REMIXAPI_ERROR_CODE_SUCCESS) {
+            Logger::warn(format_string("[RemixApi_SetGameValue] SetGameValue('%s') failed with %d.", key_str.c_str(), static_cast<int>(result)));
+          }
         } else {
           Logger::err("[RemixApi_SetGameValue] SetGameValue function pointer is null in g_remix.");
         }
-
-        ServerMessage c(Commands::Bridge_Response, currentUID);
-        c.send_data(static_cast<uint32_t>(result));
         break;
       }
 
