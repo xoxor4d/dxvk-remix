@@ -41,6 +41,7 @@
 #include "rtx_global_volumetrics.h"
 #include "rtx_scene_manager.h"
 #include "rtx_sharc.h"
+#include "rtx_sparse_rendering.h"
 
 namespace dxvk {
   RtxOptions* RtxOptions::s_instance = nullptr;
@@ -504,28 +505,27 @@ namespace dxvk {
       postFx.enable.setDeferred(false);
     };
 
-    auto enableNrcPreset = [&](NeuralRadianceCache::QualityPreset nrcPreset) {
-      // A graphics preset selects a quality level, not an indirect backend, so an explicit SHARC
-      // selection survives it and takes the matching cache tier instead.
-      if (RtxOptions::integrateIndirectMode() == IntegrateIndirectMode::Sharc) {
-        RtxSharc::QualityPreset sharcPreset = RtxSharc::QualityPreset::Medium;
-        if (nrcPreset == NeuralRadianceCache::QualityPreset::Ultra) {
-          sharcPreset = RtxSharc::QualityPreset::Ultra;
-        } else if (nrcPreset == NeuralRadianceCache::QualityPreset::High) {
-          sharcPreset = RtxSharc::QualityPreset::High;
-        }
-        device->getCommon()->metaSharc().setQualityPreset(sharcPreset);
-        return;
+    auto indirectPreset = [&](IntegrateIndirectMode mode,
+                              NeuralRadianceCache::QualityPreset nrcPreset,
+                              RtxSharc::QualityPreset sharcPreset) {
+      // Both cache tiers are set so switching the backend by hand lands on the matching tier.
+      common->metaSharc().setQualityPreset(sharcPreset);
+      common->metaNeuralRadianceCache().setQualityPreset(nrcPreset);
+
+      if (mode == IntegrateIndirectMode::NeuralRadianceCache && !NeuralRadianceCache::checkIsSupported(device)) {
+        mode = IntegrateIndirectMode::Sharc;
       }
-      NeuralRadianceCache& nrc = device->getCommon()->metaNeuralRadianceCache();
+      if (mode == IntegrateIndirectMode::Sharc && !RtxSharc::checkIsSupported(device)) {
+        mode = IntegrateIndirectMode::ReSTIRGI;
+      }
       // TODO[REMIX-4105] trying to use NRC for a frame when it isn't supported will cause a crash, so this needs to be setImmediately.
       // Should refactor this to use a separate global for the final state, and indicate user preference with the option. 
-      if (nrc.checkIsSupported(device)) {
-        RtxOptions::integrateIndirectMode.setImmediately(IntegrateIndirectMode::NeuralRadianceCache);
-        nrc.setQualityPreset(nrcPreset);
-      } else {
-        RtxOptions::integrateIndirectMode.setImmediately(IntegrateIndirectMode::ReSTIRGI);
-      }
+      RtxOptions::integrateIndirectMode.setImmediately(mode);
+    };
+
+    auto sparseRenderingPreset = [&](bool enable, float samplingRate) {
+      SparseRendering::Options::enableSparseRendering.setDeferred(enable);
+      SparseRendering::Options::samplingRate.setDeferred(samplingRate);
     };
 
     assert(graphicsPreset() != GraphicsPreset::Auto);
@@ -557,7 +557,8 @@ namespace dxvk {
       postFx.enable.setDeferred(true);
 
       volumetrics.setQualityLevel(RtxGlobalVolumetrics::Ultra);
-      enableNrcPreset(NeuralRadianceCache::QualityPreset::Ultra);
+      indirectPreset(IntegrateIndirectMode::NeuralRadianceCache, NeuralRadianceCache::QualityPreset::Ultra, RtxSharc::QualityPreset::High);
+      sparseRenderingPreset(false, 1.0f);
 
     } else if (graphicsPreset() == GraphicsPreset::High) {
       pathMinBounces.setDeferred(0);
@@ -578,7 +579,8 @@ namespace dxvk {
       russianRoulette1stBounceMinContinueProbability.setDeferred(0.6f);
 
       volumetrics.setQualityLevel(RtxGlobalVolumetrics::High);
-      enableNrcPreset(NeuralRadianceCache::QualityPreset::High);
+      indirectPreset(IntegrateIndirectMode::Sharc, NeuralRadianceCache::QualityPreset::High, RtxSharc::QualityPreset::High);
+      sparseRenderingPreset(true, 0.85f);
 
     } else if (graphicsPreset() == GraphicsPreset::Medium) {
       DxvkDLFG::litePreset.setDeferred(true);
@@ -589,7 +591,8 @@ namespace dxvk {
       russianRoulette1stBounceMinContinueProbability.setDeferred(0.4f);
 
       volumetrics.setQualityLevel(RtxGlobalVolumetrics::Medium);
-      enableNrcPreset(NeuralRadianceCache::QualityPreset::Medium);
+      indirectPreset(IntegrateIndirectMode::Sharc, NeuralRadianceCache::QualityPreset::Medium, RtxSharc::QualityPreset::Medium);
+      sparseRenderingPreset(true, 0.7f);
     } else if (graphicsPreset() == GraphicsPreset::Low) {
       DxvkDLFG::litePreset.setDeferred(true);
 
@@ -599,8 +602,8 @@ namespace dxvk {
       russianRoulette1stBounceMinContinueProbability.setDeferred(0.4f);
 
       volumetrics.setQualityLevel(RtxGlobalVolumetrics::Low);
-      enableNrcPreset(NeuralRadianceCache::QualityPreset::Medium);
-      
+      indirectPreset(IntegrateIndirectMode::Sharc, NeuralRadianceCache::QualityPreset::Medium, RtxSharc::QualityPreset::Medium);
+      sparseRenderingPreset(true, 0.65f);
     }
 
     // Ensure we are using auto DLSS profile since we will be relying on quality downgrades for Medium/Low settings

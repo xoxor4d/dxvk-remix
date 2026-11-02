@@ -827,3 +827,16 @@ names ports to V2's API (host handles excepted).
 - **`docs/RemixApi_gta4.md`**, **`documentation/RemixApiChangelog_gta4.md`**, **`RemixApiSurface_gta4.md`**, **`docs/RemixWetnessAPI_gta4.md`** - companions updated (0.1000.7).
 - **`RtxOptions.md`** - not regenerated (`rtx.retained.pinAfterPreservedFrames`, `rtx.retained.logFrameInterval`, `rtx.wet.globalWetness`).
 - Mod side (gta4-rtx): `renderer_api.cpp` `namespace retained` (placement table keyed by mesh hash, draw state and transform bits, the flush before the mod's injection quad, the per frame scan that hides what the game did not draw), `send_global_wetness`, the fingerprint without the wetness term plus the emissive scalars, drizzle and quarter hour it missed; `renderer.cpp` world branch sends the fully wet scalar with `WETNESS_FLAG_GLOBAL_WETNESS`; settings `api_static_retained`, `api_static_retained_hide_frames`.
+
+
+## Workstream - Graphics presets default to SHARC and sparse rendering (fork - 2026-11-02)
+
+The graphics presets pick the indirect backend as well as its quality tier. Ultra keeps NRC (tier Ultra);
+High, Medium and Low select SHARC. Every preset writes both cache tiers so a user switching the backend by
+hand lands on the matching one: `rtx.sharc.qualityPreset` High under Ultra and High, Medium under Medium
+and Low; the NRC tiers are unchanged (Ultra / High / Medium / Medium). High, Medium and Low enable
+`rtx.sparseRendering.enableSparseRendering` with `rtx.sparseRendering.samplingRate` 0.85 / 0.7 / 0.65;
+Ultra disables it. Sparse rendering keeps its own gates (Ray Reconstruction on, not ReSTIR GI). Custom
+still writes nothing. An unsupported NRC falls back to SHARC, an unsupported SHARC to ReSTIR GI.
+
+- **`src/dxvk/rtx_render/rtx_options.cpp`** - inline tweak in `updateGraphicsPresets`. *`enableNrcPreset` becomes `indirectPreset(mode, nrcTier, sharcTier)` plus a `sparseRenderingPreset(enable, rate)` helper; the four preset branches call both. Includes `rtx_sparse_rendering.h`.*
