@@ -840,3 +840,26 @@ Ultra disables it. Sparse rendering keeps its own gates (Ray Reconstruction on, 
 still writes nothing. An unsupported NRC falls back to SHARC, an unsupported SHARC to ReSTIR GI.
 
 - **`src/dxvk/rtx_render/rtx_options.cpp`** - inline tweak in `updateGraphicsPresets`. *`enableNrcPreset` becomes `indirectPreset(mode, nrcTier, sharcTier)` plus a `sparseRenderingPreset(enable, rate)` helper; the four preset branches call both. Includes `rtx_sparse_rendering.h`.*
+
+
+## Workstream - Auto preset tops out at High, particle light per preset (fork - 2026-11-02)
+
+The automatic graphics preset never picks Ultra: Blackwell and newer resolve to High like Ada, and Ultra
+is a manual choice. The user menu's Particle Light row (None / Low / High = unordered resolve off / on /
+on plus emissive particles) moves from Low to High under the High preset and from None to Low under
+Medium; Low stays at None.
+
+- **`src/dxvk/rtx_render/rtx_options.cpp`** - inline tweak in `updateGraphicsPresets`. *Blackwell branch of the Auto selection sets `GraphicsPreset::High`; the High branch sets `enableUnorderedEmissiveParticlesInIndirectRays` true; the Medium branch sets `enableUnorderedResolveInIndirectRays` true after `lowGraphicsPresetCommonSettings()`.*
+
+
+## Workstream - User menu: DLSS 3D-Guided Neural Generation and HDR display sliders (fork - 2026-11-02)
+
+The General tab gets the DLSS 3D-Guided Neural Generation panel (the developer menu's
+`DxvkNeuralUplift::showImguiSettings`) as a collapsing header below Frame Generation Settings, closed by
+default. The Graphics tab gets an "HDR Display Settings" section with the peak, paper white and UI nits
+sliders above Post Effect Settings, drawn only while HDR10 output is active (`RtxForkHdrOutput::active()`,
+the same gate the tonemapping panel uses for its sliders: an HDR capable operator, `rtx.hdr.enabled` and
+Windows HDR on when the swap chain was created).
+
+- **`src/dxvk/rtx_render/rtx_fork_tonemap.cpp`**, **`rtx_fork_hooks.h`** - fork-owned. *`showHdrNitSliders` shared by `showHdrOutputSettings` and the new `showUserHdrDisplaySettings(subItemWidth, subItemIndent)`.*
+- **`src/dxvk/imgui/rtx_user_menu.cpp`** - inline tweaks. *`showUserGeneralSettings`: the collapsing header block after the Frame Generation Settings `if`, before Latency Reduction; `showUserRenderingSettings`: the `fork_hooks::showUserHdrDisplaySettings` call before the Post Effect Settings separator.*

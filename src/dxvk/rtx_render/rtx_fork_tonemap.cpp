@@ -22,6 +22,10 @@
 #include "../../util/log/log.h"
 #include "../../util/util_string.h"
 
+namespace ImGui {
+  void TextSeparator(const char* text, float pre_width = 10.0f);
+}
+
 #include <algorithm>
 #include <atomic>
 
@@ -128,6 +132,12 @@ namespace dxvk {
     // dropdown label for the Psycho operator is `PsychoV17_Beta`.
     static const char* k_operatorItems = "None\0Hill ACES\0Narkowicz ACES\0Hable Filmic\0AgX\0Lottes\0PsychoV17_Beta\0Gran Turismo 7\0Neutwo\0Alt (HDR10)\0\0";
 
+    static void showHdrNitSliders() {
+      RemixGui::DragFloat("Peak Brightness", &RtxForkHdrOutput::peakNitsObject(),       1.0f, 80.0f, 10000.0f, "%.0f nits", ImGuiSliderFlags_AlwaysClamp);
+      RemixGui::DragFloat("Paper White",     &RtxForkHdrOutput::paperWhiteNitsObject(), 1.0f, 80.0f,  1000.0f, "%.0f nits", ImGuiSliderFlags_AlwaysClamp);
+      RemixGui::DragFloat("UI Brightness",   &RtxForkHdrOutput::uiNitsObject(),         1.0f, 80.0f,  1000.0f, "%.0f nits", ImGuiSliderFlags_AlwaysClamp);
+    }
+
     // Shared by the HDR capable operators, at the bottom of their panels.
     void showHdrOutputSettings() {
       ImGui::Separator();
@@ -140,12 +150,25 @@ namespace dxvk {
       }
 
       if (RtxForkHdrOutput::active()) {
-        RemixGui::DragFloat("Peak Brightness", &RtxForkHdrOutput::peakNitsObject(),       1.0f, 80.0f, 10000.0f, "%.0f nits", ImGuiSliderFlags_AlwaysClamp);
-        RemixGui::DragFloat("Paper White",     &RtxForkHdrOutput::paperWhiteNitsObject(), 1.0f, 80.0f,  1000.0f, "%.0f nits", ImGuiSliderFlags_AlwaysClamp);
-        RemixGui::DragFloat("UI Brightness",   &RtxForkHdrOutput::uiNitsObject(),         1.0f, 80.0f,  1000.0f, "%.0f nits", ImGuiSliderFlags_AlwaysClamp);
+        showHdrNitSliders();
       } else {
         ImGui::TextWrapped("HDR10 output is inactive: Windows HDR was off for this display when the game created its swap chain, or it is not allowed above.");
       }
+    }
+
+    void showUserHdrDisplaySettings(int subItemWidth, int subItemIndent) {
+      if (!RtxForkHdrOutput::active()) {
+        return;
+      }
+
+      ImGui::Dummy(ImVec2(0.0f, 3.0f));
+      ImGui::TextSeparator("HDR Display Settings");
+
+      ImGui::PushItemWidth(static_cast<float>(subItemWidth));
+      ImGui::Indent(static_cast<float>(subItemIndent));
+      showHdrNitSliders();
+      ImGui::Unindent(static_cast<float>(subItemIndent));
+      ImGui::PopItemWidth();
     }
 
     // Shared slider rendering for per-operator parameter panels.

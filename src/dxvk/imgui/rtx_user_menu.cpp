@@ -499,6 +499,21 @@ namespace dxvk {
       // NV-DXVK end
     }
 
+    // NV-DXVK start: DLSS 3D-Guided Neural Generation, collapsed by default
+    {
+      ImGui::Dummy(ImVec2(0.0f, 3.0f));
+      if (RemixGui::CollapsingHeader("DLSS 3D-Guided Neural Generation [Experimental]", ImGuiTreeNodeFlags_CollapsingHeader)) {
+        ImGui::PushItemWidth(static_cast<float>(subItemWidth));
+        ImGui::Indent(static_cast<float>(subItemIndent));
+        ImGui::PushID("DLSS 3D-Guided Neural Generation");
+        common->metaNeuralUplift().showImguiSettings();
+        ImGui::PopID();
+        ImGui::Unindent(static_cast<float>(subItemIndent));
+        ImGui::PopItemWidth();
+      }
+    }
+    // NV-DXVK end
+
     if (reflexInitialized) {
       ImGui::Dummy(ImVec2(0.0f, 3.0f));
       ImGui::TextSeparator("Latency Reduction Settings");
@@ -594,6 +609,10 @@ namespace dxvk {
       ImGui::EndDisabled();
       ImGui::Unindent(static_cast<float>(subItemIndent));
     }
+
+    // NV-DXVK start: fork HDR display sliders, shown only while HDR10 output is active
+    fork_hooks::showUserHdrDisplaySettings(subItemWidth, subItemIndent);
+    // NV-DXVK end
 
     // Post Effect Settings
 

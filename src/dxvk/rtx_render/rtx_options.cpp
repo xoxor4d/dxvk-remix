@@ -435,9 +435,9 @@ namespace dxvk {
           Logger::info("NVIDIA Ada architecture detected, setting default graphics settings to High");
           preferredDefault = GraphicsPreset::High;
         } else {
-          // Blackwell and beyond
-          Logger::info("NVIDIA Blackwell architecture detected, setting default graphics settings to Ultra");
-          preferredDefault = GraphicsPreset::Ultra;
+          // Blackwell and beyond. Ultra is never chosen automatically; it is a manual pick.
+          Logger::info("NVIDIA Blackwell architecture detected, setting default graphics settings to High");
+          preferredDefault = GraphicsPreset::High;
         }
       } else {
         // Default to low if we don't know the hardware
@@ -564,7 +564,7 @@ namespace dxvk {
       pathMinBounces.setDeferred(0);
       pathMaxBounces.setDeferred(2);
       enableTransmissionApproximationInIndirectRays.setDeferred(true);
-      enableUnorderedEmissiveParticlesInIndirectRays.setDeferred(false);
+      enableUnorderedEmissiveParticlesInIndirectRays.setDeferred(true);
       denoiseDirectAndIndirectLightingSeparately.setDeferred(false);
       enableUnorderedResolveInIndirectRays.setDeferred(true);
       NeeCachePass::enable.setDeferred(isRayReconstruction);
@@ -586,6 +586,7 @@ namespace dxvk {
       DxvkDLFG::litePreset.setDeferred(true);
 
       lowGraphicsPresetCommonSettings();
+      enableUnorderedResolveInIndirectRays.setDeferred(true);
 
       russianRouletteMaxContinueProbability.setDeferred(0.7f);
       russianRoulette1stBounceMinContinueProbability.setDeferred(0.4f);

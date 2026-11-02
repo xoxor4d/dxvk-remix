@@ -559,6 +559,11 @@ namespace dxvk {
     // Implementation in rtx_fork_tonemap.cpp.
     void showHdrOutputSettings();
 
+    // Renders an "HDR Display Settings" section with the peak, paper white and UI nits sliders for the
+    // user menu's Graphics tab. Draws nothing while HDR10 output is inactive.
+    // Implementation in rtx_fork_tonemap.cpp.
+    void showUserHdrDisplaySettings(int subItemWidth, int subItemIndent);
+
 
     // --- FSR 3.1 upscaling, RCAS sharpening and frame generation -------------
     //
