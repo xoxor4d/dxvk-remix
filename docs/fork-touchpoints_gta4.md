@@ -863,3 +863,14 @@ Windows HDR on when the swap chain was created).
 
 - **`src/dxvk/rtx_render/rtx_fork_tonemap.cpp`**, **`rtx_fork_hooks.h`** - fork-owned. *`showHdrNitSliders` shared by `showHdrOutputSettings` and the new `showUserHdrDisplaySettings(subItemWidth, subItemIndent)`.*
 - **`src/dxvk/imgui/rtx_user_menu.cpp`** - inline tweaks. *`showUserGeneralSettings`: the collapsing header block after the Frame Generation Settings `if`, before Latency Reduction; `showUserRenderingSettings`: the `fork_hooks::showUserHdrDisplaySettings` call before the Post Effect Settings separator.*
+
+
+## Workstream - Remix API stays bound to the first live device (fork - 2026-11-03)
+
+The server registered every device the client created with the Remix API, so the last one won. The
+Rockstar Social Club overlay (SDK 2.4.0.296) creates a throwaway device on its own window after the
+game's and destroys it 100 ms later; the API kept that dead device and the next `CreateMaterial`
+crashed the server. The API is now bound once, to the first device that is created, and the binding is
+cleared when that device is destroyed so a later real device can take over.
+
+- **`bridge/src/server/main.cpp`** - inline. *`registerRemixApiDevice` helper used by the `IDirect3D9Ex_CreateDevice` and `IDirect3D9Ex_CreateDeviceEx` handlers; `IDirect3DDevice9Ex_Destroy` clears `remixapi::g_device` when it is the destroyed device.*

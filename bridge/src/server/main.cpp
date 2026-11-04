@@ -409,6 +409,19 @@ static bool dumpLeakedObjects() {
   return anyLeaked;
 }
 
+// Overlays create and drop throwaway devices after the game's; the API stays bound to the first live device.
+static void registerRemixApiDevice(IDirect3DDevice9Ex* pD3DDevice) {
+  if (!GlobalOptions::getExposeRemixApi()) {
+    return;
+  }
+  if (remixapi::g_device != nullptr) {
+    Logger::info("Remix API already bound to an earlier device, not re-registering.");
+    return;
+  }
+  remixapi::g_device = pD3DDevice;
+  remixapi::g_remix.dxvk_RegisterD3D9Device(remixapi::g_device);
+}
+
 void ProcessDeviceCommandQueue() {
   // Loop until the client sends terminate instruction
   bool done = false;
@@ -475,10 +488,7 @@ void ProcessDeviceCommandQueue() {
         } else {
           Logger::info("Server side D3D9 DeviceEx created successfully!");
           gpD3DDevices[pHandle] = pD3DDevice;
-          if(GlobalOptions::getExposeRemixApi()) {
-            remixapi::g_device = pD3DDevice;
-            remixapi::g_remix.dxvk_RegisterD3D9Device(remixapi::g_device);
-          }
+          registerRemixApiDevice(pD3DDevice);
         }
 
         // Send response back to the client
@@ -510,10 +520,7 @@ void ProcessDeviceCommandQueue() {
         } else {
           Logger::info("Server side D3D9 Device created successfully!");
           gpD3DDevices[pHandle] = (IDirect3DDevice9Ex*) pD3DDevice;
-          if(GlobalOptions::getExposeRemixApi()) {
-            remixapi::g_device = (IDirect3DDevice9Ex*) pD3DDevice;
-            remixapi::g_remix.dxvk_RegisterD3D9Device(remixapi::g_device);
-          }
+          registerRemixApiDevice((IDirect3DDevice9Ex*) pD3DDevice);
         }
 
         // Send response back to the client
@@ -646,6 +653,9 @@ void ProcessDeviceCommandQueue() {
       case IDirect3DDevice9Ex_Destroy:
       {
         GET_RES(pD3DDevice, gpD3DDevices);
+        if (pD3DDevice == remixapi::g_device) {
+          remixapi::g_device = nullptr;
+        }
         safeDestroy(pD3DDevice, pD3DDeviceHandle);
         gpD3DDevices.erase(pD3DDeviceHandle);
         break;
