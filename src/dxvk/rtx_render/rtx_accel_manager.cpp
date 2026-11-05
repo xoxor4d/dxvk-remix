@@ -927,6 +927,7 @@ namespace dxvk {
         blasRangesToBuild.push_back(&blasEntry->buildRanges[0]);
 
         copyAccelerationStructureBuildGeometryInfo(buildInfo, selectedBlas->buildInfo);
+        selectedBlas->hasOmmAttachments = boundOpacityMicromapHash != kEmptyHash;
       }
 
       for (RtInstance* rtInstance : uniqueBlasEntry.instances) {
@@ -1252,7 +1253,7 @@ namespace dxvk {
 
       // Must ensure that if we are updating an existing blas, rather than rebuilding, the blas is compatible with our new build info
       // Cannot update a blas that contains OMM instances, this leads to sporadic device lost errors
-      if (!bucket->hasOmmInstances && selectedBlas &&
+      if (!bucket->hasOmmInstances && selectedBlas && !selectedBlas->hasOmmAttachments &&
           selectedBlas->topologyHash == newTopologyHash &&
           validateUpdateMode(selectedBlas->buildInfo, buildInfo) &&
           selectedBlas->primitiveCounts == bucket->primitiveCounts) {
@@ -1328,6 +1329,7 @@ namespace dxvk {
 
         copyAccelerationStructureBuildGeometryInfo(buildInfo, selectedBlas->buildInfo);
         selectedBlas->primitiveCounts = bucket->primitiveCounts;
+        selectedBlas->hasOmmAttachments = bucket->hasOmmInstances;
 
         // Allocate a scratch buffer slice
         const VkDeviceSize scratchSize = buildInfo.mode == VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR
