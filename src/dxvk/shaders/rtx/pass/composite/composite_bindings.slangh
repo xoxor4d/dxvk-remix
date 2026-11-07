@@ -93,6 +93,12 @@ Sampler3D<float4> VolumeSunRadianceY;
 layout(binding = COMPOSITE_VOLUME_SUN_RADIANCE_CO_CG_INPUT)
 Sampler3D<float2> VolumeSunRadianceCoCg;
 
+// Fork: the sky shoreline water fades into at the horizon (forkBlendWaterIntoHorizon)
+layout(binding = COMPOSITE_ATMOSPHERE_SKY_VIEW_INPUT)
+Texture2D<float4> CompositeSkyViewLut;
+layout(binding = COMPOSITE_ATMOSPHERE_SKY_VIEW_SAMPLER)
+SamplerState CompositeSkyViewSampler;
+
 layout(rgba32ui, binding = COMPOSITE_ALPHA_GBUFFER_INPUT)
 Texture2D<uint4> AlphaBlendGBuffer;
 

@@ -737,6 +737,41 @@ void applyAerialPerspective(
   }
 }
 
+// Fork: shoreline water meets the sky at the horizon. The haze over the water covers only the air up to the
+// water, while the sky just above the horizon carries the whole grazing column, so the far edge of a sea drew a
+// line where the two met. Between waterHorizonFadeStart and waterHorizonFadeEnd of distance the water and its haze
+// fade to the sky of the same view direction, scaled as evalSkyRadiance scales it for the sky pixels. Distance, not
+// elevation: how far below the horizon a given stretch of sea appears depends on the camera's height above it.
+void forkBlendWaterIntoHorizon(
+  GeometryFlags geometryFlags, vec3 viewDirection, float viewDistance,
+  inout vec3 radianceOutput, inout vec3 inScatterOutput)
+{
+  const AtmosphereArgs args = cb.atmosphereArgs;
+  if (!geometryFlags.isWaterShoreline || !(args.waterHorizonFadeEnd > 0.0f))
+  {
+    return;
+  }
+
+  const vec3 viewDirYUp = normalize(worldToAtmosphereYUp(viewDirection, args.isZUp != 0u, args.flipUpAxis != 0u));
+  if (viewDirYUp.y >= 0.0f)
+  {
+    return;
+  }
+
+  const float weight = smoothstep(
+    args.waterHorizonFadeStart, max(args.waterHorizonFadeEnd, args.waterHorizonFadeStart + 1e-4f), viewDistance);
+  if (weight <= 0.0f)
+  {
+    return;
+  }
+
+  const vec3 sky = sampleSkyViewLutForRay(viewDirYUp, CompositeSkyViewLut, CompositeSkyViewSampler)
+    * smoothstep(-0.09f, 0.0f, args.sunDirection.y);
+
+  radianceOutput = lerp(radianceOutput, sky, weight);
+  inScatterOutput *= 1.0f - weight;
+}
+
 // ============================================================================
 // Cloud composite (fork — 2026-09-05, world-space cloud migration Stage 4b)
 // ============================================================================
@@ -1155,6 +1190,7 @@ vec4 compositeResult(
     radianceOutput, alphaBlendOutput, alphaBlendSurfaceValid, alphaBlendHitDistance,
     foregroundRadiance, separateForeground ? foreground.w : 0.0f,
     geometryFlags.performedAnyPSR());
+  forkBlendWaterIntoHorizon(geometryFlags, primaryRayDirections.worldDirection, viewDistance, radianceOutput, aerialInScatter);
   radianceOutput += foregroundRadiance;
 
   // Fork: the froxel volume is the air between the camera and whatever the pixel shows, so its in-scatter goes in

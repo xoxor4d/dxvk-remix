@@ -83,6 +83,8 @@ public:
   Resources::Resource getTransmittanceLut() const { return m_transmittanceLut; }
   Resources::Resource getMultiscatteringLut() const { return m_multiscatteringLut; }
   Resources::Resource getSkyViewLut() const { return m_skyViewLut; }
+  // U-wrapping sampler for the azimuth-major LUTs. Created by bindResources, null before.
+  const Rc<DxvkSampler>& getSkyViewSampler() const { return m_skyViewSampler; }
 
   // 32^3 RGBA16F camera-fitted froxel volume: atmospheric in-scatter toward the camera in RGB, mean
   // transmittance in A. Rebuilt every frame because it is fitted to the frustum.
@@ -557,6 +559,17 @@ public:
                "the Mie anisotropy of Hillaire EGSR 2020 Table 1. Raise it toward mieAnisotropy for a stronger "
                "sunward haze wash on distant geometry.",
                args.minValue = -1.0f, args.maxValue = 1.0f);
+    RTX_OPTION_ARGS("rtx.atmosphere", float, waterHorizonFadeStartMeters, 0.0f,
+               "Distance in meters from the camera at which shoreline water (the water shoreline translucent "
+               "modifier) starts fading into the sky. The haze over the water covers only the air up to the water, "
+               "while the sky just above the horizon carries the whole grazing column, so the far edge of a sea "
+               "reads as a line where the two meet. Between this distance and "
+               "rtx.atmosphere.waterHorizonFadeEndMeters the water blends toward the sky of its own view direction.",
+               args.minValue = 0.0f);
+    RTX_OPTION_ARGS("rtx.atmosphere", float, waterHorizonFadeEndMeters, 0.0f,
+               "Distance in meters at which shoreline water has fully faded into the sky. Set it a little short of "
+               "how far the sea plane extends so its edge meets the sky without a line. 0 disables the fade.",
+               args.minValue = 0.0f);
     RTX_OPTION("rtx.atmosphere", float, sunShadowSoftnessDeg, 0.0f,
                "Decoupled sun shadow softness, as the distant light's angular half-angle in degrees. "
                "0 = physical (use sunSize / 2, so shadow softness tracks the visible disc). When > 0 it "

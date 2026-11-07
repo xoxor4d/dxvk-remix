@@ -579,6 +579,8 @@ namespace {
     // back unchanged when the gain moved.
     args.moonDiskExposureEv          = 0.0f;
     args.pixelAngleRad               = 0.0f;
+    args.waterHorizonFadeStart       = 0.0f;
+    args.waterHorizonFadeEnd         = 0.0f;
     args.milkyWayEnabled             = 0.0f;
     args.milkyWayDensityBoost        = 0.0f;
     args.milkyWayBackgroundBrightness = 0.0f;
@@ -1454,6 +1456,8 @@ AtmosphereArgs RtxAtmosphere::getAtmosphereArgs() const {
       RtxAtmosphere::aerialPerspectiveDepthRangeMeters() * worldUnitsPerMeter;
     args.aerialPerspectiveMieAnisotropyMax =
       std::min(std::max(RtxAtmosphere::aerialPerspectiveMieAnisotropyMax(), -1.0f), 1.0f);
+    args.waterHorizonFadeStart = std::max(RtxAtmosphere::waterHorizonFadeStartMeters(), 0.0f) * worldUnitsPerMeter;
+    args.waterHorizonFadeEnd = std::max(RtxAtmosphere::waterHorizonFadeEndMeters(), 0.0f) * worldUnitsPerMeter;
     // Near-field exclusion, applied per pixel by the composite. Deliberately independent of the
     // volume's own near bound below: that one is where the froxel grid hands off (physics), this one
     // is where the volume is allowed to start affecting a surface (artifact control). Collapsing the

@@ -120,6 +120,8 @@ namespace dxvk {
         SAMPLER3D(COMPOSITE_VOLUME_SKY_RADIANCE_INPUT)
         SAMPLER3D(COMPOSITE_VOLUME_SUN_RADIANCE_Y_INPUT)
         SAMPLER3D(COMPOSITE_VOLUME_SUN_RADIANCE_CO_CG_INPUT)
+        TEXTURE2D(COMPOSITE_ATMOSPHERE_SKY_VIEW_INPUT)
+        SAMPLER(COMPOSITE_ATMOSPHERE_SKY_VIEW_SAMPLER)
         TEXTURE2D(COMPOSITE_ALPHA_GBUFFER_INPUT)
         TEXTURE2D(COMPOSITE_ACTIVE_PIXEL_MASK_INPUT)
         TEXTURE2D(COMPOSITE_ACTIVE_LOCAL_PIXEL_COORDS_INPUT)
@@ -433,6 +435,16 @@ namespace dxvk {
       ctx->bindResourceView(COMPOSITE_ATMOSPHERE_AERIAL_PERSPECTIVE_LOCAL_INPUT,
         aerialPerspectiveActive && aerialPerspectiveLocalLut.isValid()
           ? aerialPerspectiveLocalLut.view : nullptr, nullptr);
+    }
+
+    // Fork: sky-view LUT for the water horizon blend, read only while waterHorizonFadeEnd is
+    // non-zero, which the atmosphere leaves at 0 outside Numos.
+    {
+      const Resources::Resource skyViewLut = atmosphere.getSkyViewLut();
+      const Rc<DxvkSampler>& skyViewSampler = atmosphere.getSkyViewSampler();
+      ctx->bindResourceView(COMPOSITE_ATMOSPHERE_SKY_VIEW_INPUT, skyViewLut.isValid() ? skyViewLut.view : nullptr, nullptr);
+      ctx->bindResourceSampler(COMPOSITE_ATMOSPHERE_SKY_VIEW_SAMPLER,
+        skyViewSampler.ptr() != nullptr ? skyViewSampler : linearSampler);
     }
 
     // Cloud composite (fork — 2026-09-05, world-space cloud migration Stage 4b). Binds the SAME

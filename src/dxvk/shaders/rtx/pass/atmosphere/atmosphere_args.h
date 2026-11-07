@@ -861,4 +861,14 @@ struct AtmosphereArgs {
   uint  nightLightSelect;
   float moonDiskExposureEv;
 
+  // ----- Water horizon (fork, GTA IV) -----
+  //
+  // One whole 16-byte row. rtx.atmosphere.waterHorizonFadeStartMeters / EndMeters in world units: the
+  // distance range over which shoreline water fades into the sky (forkBlendWaterIntoHorizon). An end of 0
+  // is off. Composite-only, so both are zeroed in the LUT cache key.
+  float waterHorizonFadeStart;
+  float waterHorizonFadeEnd;
+  uint  padWaterHorizon0;
+  uint  padWaterHorizon1;
+
 };

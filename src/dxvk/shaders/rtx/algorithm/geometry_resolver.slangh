@@ -120,6 +120,7 @@ GeometryResolverState geometryResolverStateCreateEmpty(u16vec2 pixelCoordinate)
   geometryResolverState.decalEncountered = false;
   geometryResolverState.useAlternateDisocclusionThreshold = false;
   geometryResolverState.pomOpaqueSurfaceEncountered = false;
+  geometryResolverState.isWaterShorelineSurface = false;
 
   return geometryResolverState;
 }
@@ -1817,6 +1818,10 @@ void geometryResolverVertex(
     geometryResolverState.pomOpaqueSurfaceEncountered,
     isRaytracedRenderTarget,
     false, true);
+
+  geometryResolverState.isWaterShorelineSurface = rayInteractionHasHit(rayInteraction) &&
+    rayInteraction.materialType == surfaceMaterialTypeTranslucent &&
+    forkIsWaterShorelineMaterial(uint(rayInteraction.surfaceIndex));
   
   if (cb.startInMediumMaterialIndex != SURFACE_INDEX_INVALID)
   {
@@ -3069,6 +3074,7 @@ void geometryResolver(ivec2 pixelCoordinate) {
   geometryFlags.performPSTR = geometryResolverState.performPSTR;
   geometryFlags.performPSRR = geometryResolverState.performPSRR;
   geometryFlags.pomOpaqueSurfaceEncountered = geometryResolverState.pomOpaqueSurfaceEncountered;
+  geometryFlags.isWaterShoreline = geometryResolverState.isWaterShorelineSurface;
 
   // Output miss data for the secondary surface if it is not present
   // Note: Known to not be the selected surface in this case, hence why false is passed for this.

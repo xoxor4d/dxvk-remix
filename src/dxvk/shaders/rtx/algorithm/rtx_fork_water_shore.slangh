@@ -4,6 +4,11 @@
 // AnimatedWater translucents: fades the water out where the opaque surface
 // below it is shallow or an opaque object is right behind it. See docs/RemixWaterAPI_gta4.md.
 
+bool forkIsWaterShorelineMaterial(uint materialIndex)
+{
+  return (translucentSurfaceMaterialCreate(surfaceMaterials[materialIndex]).d3dModifierFlags & D3D_TRANSLUCENT_MODIFIER_WATER_SHORELINE) != 0;
+}
+
 // Water whose volume absorbs completely: a transmission ray leaving the scene inside it sees nothing.
 bool forkIsOpaqueWaterMedium(uint mediumMaterialIndex)
 {

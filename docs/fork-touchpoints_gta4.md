@@ -874,3 +874,23 @@ crashed the server. The API is now bound once, to the first device that is creat
 cleared when that device is destroyed so a later real device can take over.
 
 - **`bridge/src/server/main.cpp`** - inline. *`registerRemixApiDevice` helper used by the `IDirect3D9Ex_CreateDevice` and `IDirect3D9Ex_CreateDeviceEx` handlers; `IDirect3DDevice9Ex_Destroy` clears `remixapi::g_device` when it is the destroyed device.*
+
+## Workstream - Shoreline water fades into the sky at the horizon (fork - 2026-11-07)
+
+With the distance haze on, the far edge of the sea drew a hard line against the sky. The water is hazed for the
+air up to its own distance, while the sky pixels just above the horizon show the sky-view LUT, the whole
+grazing column. `rtx.atmosphere.waterHorizonFadeStartMeters` / `EndMeters` (end 0 = off) fade water whose
+translucent material carries the shoreline modifier, together with its haze, toward the sky-view LUT of its own
+view direction over that distance range. Distance rather than elevation, because how far below the horizon a
+stretch of sea appears depends on the camera's height: an elevation band caught nearby waves with the camera low
+and missed the sea's far edge with the camera high. The LUT gets the same night fade `evalSkyRadiance` applies;
+airglow, stars and moons are not part of the target.
+
+- **`src/dxvk/shaders/rtx/utility/geometry_flags.slangh`** - fork-touchpoint inline tweak. *`isWaterShoreline` on G-buffer flag bit 10.*
+- **`src/dxvk/shaders/rtx/algorithm/geometry_resolver_state.slangh`** - fork-touchpoint inline tweak. *`isWaterShorelineSurface` on resolver state flag bit 10.*
+- **`src/dxvk/shaders/rtx/algorithm/geometry_resolver.slangh`** - fork-touchpoint inline tweak. *State initialised to false; set after `resolveVertex` in `geometryResolverVertex` from the hit's translucent material; written to the G-buffer flags with the primary surface output.*
+- **`src/dxvk/shaders/rtx/algorithm/rtx_fork_water_shore.slangh`** - fork-owned file. *`forkIsWaterShorelineMaterial`.*
+- **`src/dxvk/shaders/rtx/pass/composite/composite.comp.slang`** - inline. *`forkBlendWaterIntoHorizon`, called in `compositeResult` after `applyCloudComposite`, before the foreground and the haze in-scatter are added.*
+- **`src/dxvk/shaders/rtx/pass/composite/composite_binding_indices.h` / `composite_bindings.slangh`, `src/dxvk/rtx_render/rtx_composite.cpp`** - fork-touchpoint inline tweak. *`CompositeSkyViewLut` / `CompositeSkyViewSampler` on slots 74-75, in the `CompositeShader` list and bound after the aerial perspective block.*
+- **`src/dxvk/shaders/rtx/pass/atmosphere/atmosphere_args.h`** - Remix Plus file, appended row. *`waterHorizonFadeStart` / `waterHorizonFadeEnd` (world units) + 2 pads, zeroed in `normalizeForSkyLutCache`.*
+- **`src/dxvk/rtx_render/rtx_atmosphere.h` / `.cpp` / `rtx_atmosphere_ui.cpp`** - fork-owned files. *Options, `getSkyViewSampler()`, CB fill, "Water Horizon Fade Start / End" sliders in the Haze tab.*

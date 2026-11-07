@@ -77,6 +77,8 @@
 #define COMPOSITE_VOLUME_SKY_RADIANCE_INPUT                        71
 #define COMPOSITE_VOLUME_SUN_RADIANCE_Y_INPUT                      72
 #define COMPOSITE_VOLUME_SUN_RADIANCE_CO_CG_INPUT                  73
+#define COMPOSITE_ATMOSPHERE_SKY_VIEW_INPUT                        74
+#define COMPOSITE_ATMOSPHERE_SKY_VIEW_SAMPLER                      75
 
 // Inputs/Outputs
 

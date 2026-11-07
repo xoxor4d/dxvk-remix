@@ -1458,6 +1458,17 @@ void RtxAtmosphere::showHazeSettings() {
       ImGui::TreePop();
     }
 
+    RemixGui::DragFloat("Water Horizon Fade Start", &RtxAtmosphere::waterHorizonFadeStartMetersObject(),
+      10.0f, 0.0f, 100000.0f, "%.0f m", sliderFlags);
+    RemixGui::SetTooltipToLastWidgetOnHover(
+      "Distance at which shoreline water starts fading into the sky, so the far edge of a sea meets the "
+      "sky without a line. Nearer water is untouched.");
+    RemixGui::DragFloat("Water Horizon Fade End", &RtxAtmosphere::waterHorizonFadeEndMetersObject(),
+      10.0f, 0.0f, 100000.0f, "%.0f m", sliderFlags);
+    RemixGui::SetTooltipToLastWidgetOnHover(
+      "Distance at which shoreline water has fully become sky. Set it a little short of how far the sea "
+      "extends. 0 = off.");
+
     if (ImGui::TreeNode("Quality & scattering limits")) {
       RemixGui::DragInt("Resolution",
         &RtxAtmosphere::aerialPerspectiveLutResolutionObject(),
