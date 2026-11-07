@@ -380,7 +380,6 @@ dxvk_src = files([
   'rtx_render/rtx_sharc.cpp',
   'rtx_render/rtx_sharc.h',
   'rtx_render/rtx_skipping_writer.h',
-  'rtx_render/rtx_sky_utils.h',
   'rtx_render/rtx_sparse_unique_cache.h',
   'rtx_render/rtx_staging.h',
   'rtx_render/rtx_staging.cpp',
