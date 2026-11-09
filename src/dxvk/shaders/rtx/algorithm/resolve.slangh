@@ -37,7 +37,7 @@
 #include "rtx/algorithm/volume_lighting.slangh"
 #include "rtx/algorithm/rtx_fork_water_shore.slangh"
 #include "rtx/algorithm/rtx_fork_transmission_origin.slangh"
-#include "rtx/algorithm/rtx_fork_lod_fade.slangh"
+#include "rtx/algorithm/rtx_fork_candidates.slangh"
 
 #ifndef GBUFFER_FEATURE_OBJECT_PICKING
 #define GBUFFER_FEATURE_OBJECT_PICKING 1

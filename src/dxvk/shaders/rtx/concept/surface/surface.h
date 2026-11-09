@@ -472,6 +472,13 @@ struct Surface
     set { data13.z = (data13.z & ~(0xFF << 19)) | ((255u - uint32_t(newValue & 0xFF)) << 19); }
   }
 
+  // Fork: alpha tested at the ray query candidate (rtx_fork_hair_cards.slangh)
+  property bool candidateAlphaTest
+  {
+    get { return packedFlagGet(data13.z, 1 << 15); }
+    set { data13.z = newValue ? packedFlagSet(data13.z, 1 << 15) : packedFlagUnset(data13.z, 1 << 15); }
+  }
+
   property bool isEye
   {
     get { return packedFlagGet(data13.z, 1 << 14); }

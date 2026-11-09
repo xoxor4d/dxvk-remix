@@ -1214,9 +1214,11 @@ namespace dxvk {
 
     instance.setFrameLastUpdated(m_device->getCurrentFrameId());
 
-    // Fork: the LOD fade opacity is not part of the material identity, so it keeps moving on the preserve path
+    // Fork: the LOD fade opacity is not part of the material identity, so it keeps moving on the preserve path; the hair
+    // card mark is reapplied so the frame knows one is in the scene
     if (pInput != nullptr) {
       fork_hooks::applyLodFade(pInput->getMaterialData(), instance.surface);
+      fork_hooks::applyHairCardCandidate(pInput->testCategoryFlags(InstanceCategories::HairCards), instance.isOpaque(), instance.surface);
     }
 
     // One-shot cleanup for the first preserve frame after a dynamic update; isPreservePath is

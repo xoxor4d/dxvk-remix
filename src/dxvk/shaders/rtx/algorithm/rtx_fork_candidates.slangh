@@ -1,0 +1,26 @@
+#pragma once
+
+// rtx_fork_candidates.slangh - fork-owned. What the ray queries of resolve_expanded.slangh decide at a non-opaque
+// candidate: a skipped LOD fade surface (rtx_fork_lod_fade.slangh) and a cut out hair card texel
+// (rtx_fork_hair_cards.slangh) are not committed, so the traversal goes on behind them with nothing re-traced and a
+// surface right behind (a lod on its parent's facade, the scalp under a hair cap) wins. Every other candidate is
+// committed as RAY_FLAG_FORCE_OPAQUE would have; the flag is dropped only while one of the two is in the scene.
+// Included by resolve.slangh after the ray and surface concepts.
+
+#include "rtx/algorithm/rtx_fork_lod_fade.slangh"
+#include "rtx/algorithm/rtx_fork_hair_cards.slangh"
+
+uint forkCandidateRayFlags(uint flags)
+{
+  return (cb.lodFadeActive | cb.hairCardCandidateActive) != 0u ? (flags & ~uint(RAY_FLAG_FORCE_OPAQUE)) : flags;
+}
+
+bool forkCandidateSkipped(Ray ray, RayHitInfo candidate)
+{
+  const Surface surface = surfaces[calculateSurfaceIndex(candidate)];
+  if (forkIsSurfaceFadedOut(surface))
+  {
+    return true;
+  }
+  return surface.candidateAlphaTest && forkHairCardCandidateCutOut(ray, candidate, surface);
+}

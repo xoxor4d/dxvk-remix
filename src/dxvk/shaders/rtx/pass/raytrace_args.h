@@ -497,6 +497,9 @@ struct RaytraceArgs {
   uint lodFadeDebugForceOpacity;
   uint lodFadeActive;
 
+  // Fork: rtx.hairCards.* candidate alpha test, filled by rtx_fork_hair_cards.cpp.
+  uint hairCardCandidateActive;
+
   // NOTE: Add structs to the top section of RaytraceArgs, not the bottom.
   // NOTE: bool does not work in debug builds, use uint instead.
 };

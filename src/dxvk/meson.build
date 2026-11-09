@@ -272,6 +272,8 @@ dxvk_src = files([
   'rtx_render/rtx_fork_wetness.h',
   'rtx_render/rtx_fork_lod_fade.cpp',
   'rtx_render/rtx_fork_lod_fade.h',
+  'rtx_render/rtx_fork_hair_cards.cpp',
+  'rtx_render/rtx_fork_hair_cards.h',
   'rtx_render/rtx_game_capturer.cpp',
   'rtx_render/rtx_game_capturer.h',
   'rtx_render/rtx_game_capturer_utils.h',

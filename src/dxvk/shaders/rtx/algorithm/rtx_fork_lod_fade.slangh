@@ -2,10 +2,10 @@
 
 // rtx_fork_lod_fade.slangh - fork-owned. LOD cross fade (rtx.lodFade.*): a surface whose fade opacity is below 255 is
 // skipped wherever the pixel's blue noise sample is at or above it. The fading instance is non-opaque, so ray queries
-// see it as a candidate and leave a skipped surface uncommitted (forkLodFadeCandidateSkipped, visibility rays alike);
+// see it as a candidate and leave a skipped surface uncommitted (rtx_fork_candidates.slangh, visibility rays alike);
 // the TraceRay path re-traces past it like past a clip plane, a skipped hit handed to a surface on the same plane
 // (forkLodFadeFindCoplanarHit). See docs/RemixLodFadeAPI_gta4.md.
-// Included by resolve.slangh after the ray and surface concepts.
+// Included by rtx_fork_candidates.slangh.
 
 #include "rtx/utility/noise.slangh"
 
@@ -26,20 +26,6 @@ bool forkIsSurfaceFadedOut(Surface surface)
 {
   const uint opacity = forkLodFadeOpacity(surface);
   return opacity != 255u && forkLodFadeThreshold() >= opacity;
-}
-
-// Primary and indirect ray queries (resolve_expanded.slangh) drop RAY_FLAG_FORCE_OPAQUE while something fades, so a
-// fading instance comes up as a candidate and a skipped surface is simply not committed: the traversal goes on behind
-// it with nothing re-traced, and where a lod lies on its parent's facade the opaque parent wins the tie. Every other
-// non-opaque candidate is committed as the flag would have.
-uint forkLodFadeRayFlags(uint flags)
-{
-  return cb.lodFadeActive != 0u ? (flags & ~uint(RAY_FLAG_FORCE_OPAQUE)) : flags;
-}
-
-bool forkLodFadeCandidateSkipped(RayHitInfo candidate)
-{
-  return forkIsSurfaceFadedOut(surfaces[calculateSurfaceIndex(candidate)]);
 }
 
 // TraceRay path. The two sides of a cross fade share planes (a lod on its parent's facade), and the offset that pushes a

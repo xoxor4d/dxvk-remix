@@ -785,6 +785,18 @@ namespace dxvk {
     // refreshes it while the instance is preserved. Implementation in rtx_fork_lod_fade.cpp.
     bool applyLodFade(const LegacyMaterialData& drawMaterialData, RtSurface& surface);
 
+    // Fills the rtx.hairCards.* constants. Implementation in rtx_fork_hair_cards.cpp.
+    void fillHairCardShaderParams(RaytraceArgs& constants);
+
+    // Checkbox after "Hair Cards Roughness Scale" in the opaque material block of Game Setup -> Parameter Tuning.
+    // Implementation in rtx_fork_hair_cards.cpp.
+    void showHairCardSettings();
+
+    // Marks the surface of an alpha tested hair card for the alpha test at the ray query candidate and notes that one
+    // is in the scene this frame (the ray queries then drop the force-opaque flag). Called wherever applyLodFade is.
+    // Implementation in rtx_fork_hair_cards.cpp.
+    void applyHairCardCandidate(bool isHairCard, bool opaqueMaterial, RtSurface& surface);
+
   } // namespace fork_hooks
 
 } // namespace dxvk

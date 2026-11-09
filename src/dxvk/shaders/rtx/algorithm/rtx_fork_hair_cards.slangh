@@ -1,0 +1,24 @@
+#pragma once
+
+// rtx_fork_hair_cards.slangh - fork-owned. Hair cards (rtx.hairCardTextures, rtx.hairCards.*) are alpha tested at the
+// ray query candidate: a cut out texel is never committed and the traversal goes on behind the card. Resolving the
+// test after the hit re-traces from an origin pushed through the card by the self intersection offset, and the scalp
+// under a hair cap lies within that offset, so such a ray started inside the head. The alpha test is the one
+// resolveVertex runs on a committed hit (opacity 1 or 0 for an alpha tested surface with blending disabled), so a
+// committed hair card resolves as opaque. Included by rtx_fork_candidates.slangh.
+
+bool forkHairCardCandidateCutOut(Ray ray, RayHitInfo candidate, Surface surface)
+{
+  const RayInteraction rayInteraction = rayInteractionCreate(ray, candidate);
+  if (rayInteraction.materialType != surfaceMaterialTypeOpaque)
+  {
+    return false;
+  }
+
+  SurfaceInteraction surfaceInteraction = surfaceInteractionCreate<SurfaceIgnoreTangents>(surface, rayInteraction, ray);
+  const OpaqueSurfaceMaterial opaqueSurfaceMaterial = opaqueSurfaceMaterialCreate(surfaceMaterials[rayInteraction.surfaceIndex], true);
+  const OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteraction =
+    opaqueSurfaceMaterialInteractionCreate(opaqueSurfaceMaterial, surface, surfaceInteraction, rayInteraction);
+
+  return opaqueSurfaceMaterialInteraction.opacity <= cb.resolveTransparencyThreshold;
+}

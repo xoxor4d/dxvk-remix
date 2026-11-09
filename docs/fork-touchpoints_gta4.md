@@ -910,11 +910,11 @@ removed again. See [`RemixLodFadeAPI_gta4.md`](RemixLodFadeAPI_gta4.md).
 from an offset origin. That showed sky through dithered meshes lying on their parent and thin seams along cell
 boundaries: the resolve state keeps the ray direction in half precision, so a position rebuilt there drifts along the
 ray by up to 5e-4 of the hit distance, the coplanar slab missed the parent and the offset origin started behind both
-surfaces. The fix is the candidate test in `RESOLVE_RAY_QUERY` (`forkLodFadeRayFlags`, `forkLodFadeCandidateSkipped`,
-`cb.lodFadeActive`) with the `resolveVertex` path under `#ifdef RT_TRACE_RAY` only. The world space cell hash was
+surfaces. The fix is the candidate test in `RESOLVE_RAY_QUERY` (`forkCandidateRayFlags`, `forkCandidateSkipped` in
+`rtx_fork_candidates.slangh`, `cb.lodFadeActive`) with the `resolveVertex` path under `#ifdef RT_TRACE_RAY` only. The world space cell hash was
 replaced by the per pixel blue noise sample the same day.
 
-- **`src/dxvk/rtx_render/rtx_fork_lod_fade.cpp` / `.h`**, **`src/dxvk/shaders/rtx/algorithm/rtx_fork_lod_fade.slangh`** - fork-owned files. *Options, CB fill, UI, `fork_hooks::applyLodFade`; `forkLodFadeThreshold`, `forkIsSurfaceFadedOut`, `forkLodFadeRayFlags`, `forkLodFadeCandidateSkipped`, `forkLodFadeFindCoplanarHit` (TraceRay path: ray query over the slab around a skipped hit, sized from the self intersection offset at the hit, every triangle a candidate: the nearest surface the path keeps).*
+- **`src/dxvk/rtx_render/rtx_fork_lod_fade.cpp` / `.h`**, **`src/dxvk/shaders/rtx/algorithm/rtx_fork_lod_fade.slangh`** - fork-owned files. *Options, CB fill, UI, `fork_hooks::applyLodFade`; `forkLodFadeThreshold`, `forkIsSurfaceFadedOut`, `forkLodFadeFindCoplanarHit` (TraceRay path: ray query over the slab around a skipped hit, sized from the self intersection offset at the hit, every triangle a candidate: the nearest surface the path keeps).*
 - **`src/dxvk/rtx_render/rtx_fork_hooks.h`** - fork-owned. *`fillLodFadeShaderParams`, `showLodFadeSettings`, `applyLodFade`.*
 - **`src/dxvk/meson.build`** - inline. *The two `rtx_fork_lod_fade` files after `rtx_fork_wetness`.*
 - **`src/dxvk/rtx_render/rtx_materials.h`** - fork-touchpoint inline tweaks. *`REMIX_MODIFIER_FROM_D3D_LOD_FADE = 1 << 9` and `REMIX_MODIFIER_FROM_D3D_LOD_FADE_OPACITY_SHIFT`; `RtSurface::lodFadeOpacity` packed into bits 19-26 of `textureFlags` in `writeGPUData`.*
@@ -922,8 +922,9 @@ replaced by the per pixel blue noise sample the same day.
 - **`src/dxvk/rtx_render/rtx_instance_manager.cpp`** - hook. *`InstanceManager::onInstanceUpdated`: `fork_hooks::applyLodFade` after the geometry / instance flags chain ("All other fully opaques go to the primary TLAS as opaque"), ORing `VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR`; includes `rtx_fork_hooks.h`.*
 - **`src/dxvk/rtx_render/rtx_scene_manager.cpp`** - hook, 3 LOC. *`SceneManager::preserveInstance`: `fork_hooks::applyLodFade` from `pInput` after `setFrameLastUpdated`, so the opacity keeps moving on the preserve path (external, replacement and retained keep-alive).*
 - **`src/dxvk/rtx_render/rtx_materials.cpp`** - inline, 1 LOC. *`LegacyMaterialData::computeIdentityHash` masks the opacity byte out of `remixModifierFromD3D`; the fade bit stays, so a fade starting or ending still takes the dynamic path once (the instance flags change).*
-- **`src/dxvk/shaders/rtx/algorithm/resolve_expanded.slangh`** - fork-touchpoint inline tweak. *`RESOLVE_RAY_QUERY`: the ray flags pass through `forkLodFadeRayFlags` and the `Proceed` loop commits every non-opaque triangle candidate except a skipped LOD fade surface (`forkLodFadeCandidateSkipped`).*
-- **`src/dxvk/shaders/rtx/algorithm/resolve.slangh`** - fork-touchpoint inline tweaks. *Includes `rtx_fork_lod_fade.slangh`; in `resolveVertex`, under `#ifdef RT_TRACE_RAY` (the state's half precision direction would make a second test disagree with the ray query's candidate test at cell boundaries), a skipped hit is taken over by a surface on the same plane (`forkLodFadeFindCoplanarHit`), else the ray moves on through the triangle like past a clipped surface (`rayOffsetSurfaceOriginHelper`); `forkIsSurfaceFadedOut` next to `isSurfaceClipped` in `resolveVertexUnorderedParticles` and `resolveVertexUnordered`.*
+- **`src/dxvk/shaders/rtx/algorithm/rtx_fork_candidates.slangh`** - fork-owned file. *`forkCandidateRayFlags` (drops `RAY_FLAG_FORCE_OPAQUE` while a fade or a hair card is in the scene), `forkCandidateSkipped` (a faded out surface or a cut out hair card texel, see the hair card workstream below).*
+- **`src/dxvk/shaders/rtx/algorithm/resolve_expanded.slangh`** - fork-touchpoint inline tweak. *`RESOLVE_RAY_QUERY`: the ray flags pass through `forkCandidateRayFlags` and the `Proceed` loop commits every non-opaque triangle candidate except a skipped one (`forkCandidateSkipped`, with the current segment's ray).*
+- **`src/dxvk/shaders/rtx/algorithm/resolve.slangh`** - fork-touchpoint inline tweaks. *Includes `rtx_fork_candidates.slangh`; in `resolveVertex`, under `#ifdef RT_TRACE_RAY` (the state's half precision direction would make a second test disagree with the ray query's candidate test at cell boundaries), a skipped hit is taken over by a surface on the same plane (`forkLodFadeFindCoplanarHit`), else the ray moves on through the triangle like past a clipped surface (`rayOffsetSurfaceOriginHelper`); `forkIsSurfaceFadedOut` next to `isSurfaceClipped` in `resolveVertexUnorderedParticles` and `resolveVertexUnordered`.*
 - **`src/dxvk/shaders/rtx/algorithm/visibility.slangh`** - fork-touchpoint inline tweak. *`forkIsSurfaceFadedOut` right after the surface load in `handleVisibilityVertex`, before `surfaceInteractionCreate`.*
 - **`src/dxvk/shaders/rtx/pass/raytrace_args.h`** - fork-touchpoint inline tweak. *`lodFadeDebugForceOpacity`, `lodFadeActive` (something faded this frame) appended after `cardNormalsUpWeight`.*
 - **`src/dxvk/rtx_render/rtx_context.cpp`** - hook. *`fork_hooks::fillLodFadeShaderParams(constants)` after `fillWetnessShaderParams`.*
@@ -931,3 +932,27 @@ replaced by the per pixel blue noise sample the same day.
 
 New options: `rtx.lodFade.enable`, `rtx.lodFade.debugForceOpacity` (fades every surface by one opacity, 255 = off; a
 uniform branch in `forkLodFadeOpacity`).
+
+## Workstream - Hair card candidate alpha test (fork - 2026-11-09)
+
+An alpha tested surface is resolved after the hit: a cut out texel sends the ray on from an origin pushed through
+the triangle by the self intersection offset. The scalp under GTA IV's hair cap lies within that offset along the
+cap's cut out rim, so the re-trace started inside the head and the rim showed its back faces (thinner with opacity
+micromaps built, which cull the fully transparent micro triangles in hardware, never gone). Hair cards
+(`rtx.hairCardTextures`, the `HairCards` instance category) are now alpha tested at the ray query candidate with the
+same material evaluation: a cut out texel is never committed and the head behind it is the hit. Alpha tested
+geometry is non-opaque in the BLAS already, so no instance flag changes; while a hair card is in the scene the ray
+queries drop `RAY_FLAG_FORCE_OPAQUE` the way they do while something fades.
+
+- **`src/dxvk/rtx_render/rtx_fork_hair_cards.cpp` / `.h`**, **`src/dxvk/shaders/rtx/algorithm/rtx_fork_hair_cards.slangh`** - fork-owned files. *Option, CB fill, UI, `fork_hooks::applyHairCardCandidate`; `forkHairCardCandidateCutOut` (the opaque material's opacity at the candidate against `resolveTransparencyThreshold`).*
+- **`src/dxvk/rtx_render/rtx_fork_hooks.h`** - fork-owned. *`fillHairCardShaderParams`, `showHairCardSettings`, `applyHairCardCandidate`.*
+- **`src/dxvk/meson.build`** - inline. *The two `rtx_fork_hair_cards` files after `rtx_fork_lod_fade`.*
+- **`src/dxvk/rtx_render/rtx_materials.h`** - fork-touchpoint inline tweaks. *`RtSurface::candidateAlphaTest`, bit 15 of `textureFlags` in `writeGPUData`.*
+- **`src/dxvk/shaders/rtx/concept/surface/surface.h`** - fork-touchpoint inline tweak. *`candidateAlphaTest` property on `data13.z` bit 15, after `lodFadeOpacity`.*
+- **`src/dxvk/rtx_render/rtx_instance_manager.cpp`** - hook, 1 LOC. *`fork_hooks::applyHairCardCandidate` right after the `applyLodFade` hook.*
+- **`src/dxvk/rtx_render/rtx_scene_manager.cpp`** - hook, 1 LOC. *`SceneManager::preserveInstance`: `applyHairCardCandidate` next to `applyLodFade`, so the frame knows a hair card is in the scene while its instance is preserved.*
+- **`src/dxvk/shaders/rtx/pass/raytrace_args.h`** - fork-touchpoint inline tweak. *`hairCardCandidateActive` after `lodFadeActive`.*
+- **`src/dxvk/rtx_render/rtx_context.cpp`** - hook, 1 LOC. *`fork_hooks::fillHairCardShaderParams(constants)` after `fillLodFadeShaderParams`.*
+- **`src/dxvk/imgui/dxvk_imgui.cpp`** - hook, 1 LOC. *`fork_hooks::showHairCardSettings` after the "Hair Cards Roughness Scale" slider.*
+
+New option: `rtx.hairCards.candidateAlphaTest` (default on).

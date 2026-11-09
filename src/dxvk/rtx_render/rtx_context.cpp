@@ -1451,6 +1451,7 @@ namespace dxvk {
     fork_hooks::fillWaterShaderParams(constants);
     fork_hooks::fillWetnessShaderParams(*this, constants);
     fork_hooks::fillLodFadeShaderParams(constants);
+    fork_hooks::fillHairCardShaderParams(constants);
     ViewDistanceOptions::fillShaderParams(constants.viewDistanceArgs, RtxOptions::getMeterToWorldUnitScale());
     constants.alphaBlendSurfacePackMult = RtxOptions::getMeterToWorldUnitScale();
 

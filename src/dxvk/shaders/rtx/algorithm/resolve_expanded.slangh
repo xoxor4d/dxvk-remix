@@ -150,18 +150,22 @@ void TraceRayCustom<payload_t : IBasePayloadState>(
       /* (to minimize any discrepancy). */                                                              \
       rayQuery.TraceRayInline(                                                            \
         topLevelAS,                                                                       \
-        forkLodFadeRayFlags(flags), uint(payload.rayMask),                                \
+        forkCandidateRayFlags(flags), uint(payload.rayMask),                              \
         currentRay                                                                        \
       );                                                                                  \
                                                                                           \
       while (rayQuery.Proceed())                                                          \
       {                                                                                   \
-        /* Fork: a skipped LOD fade surface is not committed (rtx_fork_lod_fade.slangh) */\
+        /* Fork: a skipped candidate is not committed (rtx_fork_candidates.slangh) */     \
         if (rayQuery.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)                    \
         {                                                                                 \
-          RayHitInfo lodFadeCandidate;                                                    \
-          RAY_HIT_INFO_CREATE_RAY_QUERY_CANDIDATE(lodFadeCandidate, rayQuery)             \
-          if (!forkLodFadeCandidateSkipped(lodFadeCandidate))                             \
+          Ray candidateRay = ray;                                                         \
+          candidateRay.origin = currentRay.Origin;                                        \
+          candidateRay.direction = currentRay.Direction;                                  \
+          candidateRay.coneRadius = payload.coneRadius;                                   \
+          RayHitInfo candidate;                                                           \
+          RAY_HIT_INFO_CREATE_RAY_QUERY_CANDIDATE(candidate, rayQuery)                    \
+          if (!forkCandidateSkipped(candidateRay, candidate))                             \
           {                                                                               \
             rayQuery.CommitNonOpaqueTriangleHit();                                        \
           }                                                                               \

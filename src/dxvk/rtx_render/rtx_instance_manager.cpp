@@ -1285,6 +1285,9 @@ namespace dxvk {
       currentInstance.m_vkInstance.flags |= VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR;
     }
 
+    // Fork: an alpha tested hair card is alpha tested at the ray query candidate (its geometry is non-opaque already)
+    fork_hooks::applyHairCardCandidate(drawCall.testCategoryFlags(InstanceCategories::HairCards), currentInstance.isOpaque(), currentInstance.surface);
+
     // Enable backface culling for Portals to avoid additional hits to the back of Portals
     if (currentInstance.m_materialType == MaterialDataType::RayPortal) {
       currentInstance.m_vkInstance.flags &= ~VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;

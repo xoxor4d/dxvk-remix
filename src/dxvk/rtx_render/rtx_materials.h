@@ -297,7 +297,8 @@ struct RtSurface {
     textureFlags |= ((static_cast<uint32_t>(textureAlphaOperation)  & 0x7) << 11);
 
     textureFlags |= eyeParams ? (1 << 14) : 0;
-    // textureFlags bits 15-16 unused
+    textureFlags |= candidateAlphaTest ? (1 << 15) : 0;
+    // textureFlags bit 16 unused
 
     static_assert(static_cast<uint32_t>(TexGenMode::Count) <= 4);
     textureFlags |= ((static_cast<uint32_t>(texgenMode) & 0x3) << 17);
@@ -367,6 +368,7 @@ struct RtSurface {
   bool skipSurfaceInteractionSpritesheetAdjustment = false;
   bool useCardNormals = false;
   uint8_t lodFadeOpacity = 255; // fork: dithered LOD cross fade, 255 = not fading (rtx_fork_lod_fade.cpp)
+  bool candidateAlphaTest = false; // fork: hair card alpha tested at the ray query candidate (rtx_fork_hair_cards.cpp)
 
   RtTextureArgSource textureColorArg1Source = RtTextureArgSource::Texture;
   RtTextureArgSource textureColorArg2Source = RtTextureArgSource::None;
