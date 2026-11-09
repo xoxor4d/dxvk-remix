@@ -94,11 +94,6 @@
 // the same texture.
 #define BINDING_ATMOSPHERE_SKY_VIEW_SAMPLER 214
 
-// Rain map (fork, 2026-10-18). RGBA32F top-down height field of the static geometry around the camera,
-// traced each frame by rtx_fork_rain_map.cpp: x cover height (world Z), y depression (m), z slope, w valid.
-// Read by the per draw wetness model (rtx_fork_wetness.slangh) with AtmosphereSkyViewSampler.
-#define BINDING_FORK_RAIN_MAP 220
-
 // Secondary-ray cloud LUT (fork — 2026-06-10, perf; full-sphere fork — 2026-09-05, world-space
 // cloud migration Stage 2). 256x256 RGBA16F dome (was 256x128, upper hemisphere only) keyed
 // (azimuth, signed elevation = l*l*sign(l) * (pi/2)) holding the full Nubis cloud march
@@ -109,9 +104,11 @@
 // sky-view sampler (REPEAT-U handles the azimuth seam).
 #define BINDING_ATMOSPHERE_CLOUD_SECONDARY_LUT 215
 
-// 216: retired (legacy view-pass placement-map slot, removed 2026-07-16 — the
-// placement map itself lives on as an NVDF-occupancy bake input, bound at the
-// bake passes' own slots; do not reuse without a collision audit)
+// Rain map (fork, 2026-10-18). RGBA32F top-down height field of the static geometry around the camera,
+// traced each frame by rtx_fork_rain_map.cpp: x cover height (world Z), y depression (m), z slope, w valid.
+// Read by the per draw wetness model (rtx_fork_wetness.slangh) with AtmosphereSkyViewSampler.
+// 220 is INTEGRATE_INSTRUMENTATION of the integrate indirect pass, so the slot has to stay inside the fork range.
+#define BINDING_FORK_RAIN_MAP 216
 
 // Cloud depth companion (fork — 2026-09-05, world-space cloud migration Stage 4a). RG32F
 // screen-space RT at the SAME extent as BINDING_ATMOSPHERE_CLOUD_RENDER_RT (allocated and resized

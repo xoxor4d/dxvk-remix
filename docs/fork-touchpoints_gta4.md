@@ -436,7 +436,7 @@ camera every frame (two compute passes, `pass/fork_rain_map/rain_map_trace.comp.
 `rain_map_relief.comp.slang`): cover height, depression, slope. The rain shadow reads it instead of tracing a ray
 per pixel (moving objects never dry the road); the per pixel ray stays for quality 1 and beyond the map.
 
-- **`src/dxvk/shaders/rtx/pass/common_binding_indices.h`** - fork-touchpoint inline tweak. *`BINDING_FORK_RAIN_MAP` (220) and its `TEXTURE2D` line at the end of the common binding macro.*
+- **`src/dxvk/shaders/rtx/pass/common_binding_indices.h`** - fork-touchpoint inline tweak. *`BINDING_FORK_RAIN_MAP` (216, the retired placement map slot; 220 is `INTEGRATE_INSTRUMENTATION`) and its `TEXTURE2D` line at the end of the common binding macro.*
 - **`src/dxvk/shaders/rtx/pass/common_bindings.slangh`** - fork-touchpoint inline tweak. *`ForkRainMap` declaration after `AtmosphereSkyViewSampler`.*
 - **`src/dxvk/rtx_render/rtx_context.cpp`** - fork-touchpoint hooks. *`bindCommonRayTracingResources` binds `fork_hooks::rainMapView`; `injectRTX` calls `fork_hooks::dispatchRainMap` before `dispatchPathTracing`; `fillWetnessShaderParams` takes the context.*
 - **`src/dxvk/shaders/rtx/utility/debug_view_indices.h`**, **`src/dxvk/rtx_render/rtx_debug_view.cpp`** - fork-touchpoint inline tweaks. *Debug views 890 (rain map) and 891 (puddles).*
