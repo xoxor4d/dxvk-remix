@@ -1,0 +1,94 @@
+#pragma once
+
+// rtx_fork_lod_fade.slangh - fork-owned. Dithered LOD cross fade (rtx.lodFade.*): a surface whose fade opacity is
+// below 255 is skipped wherever a hash of the hit position is at or above it. Primary and indirect rays re-trace past
+// it like past a clip plane, visibility rays see it as a non-opaque candidate. The opaque side of a cross fade carries
+// the partner flag: a kept cell of the fading side on the same plane takes its hit over. See docs/RemixLodFadeAPI_gta4.md.
+// Included by resolve.slangh after the ray and surface concepts.
+
+#include "rtx/utility/noise.slangh"
+
+uint forkLodFadeOpacity(Surface surface)
+{
+  return cb.lodFadeDebugForceOpacity != 255u ? cb.lodFadeDebugForceOpacity : surface.lodFadeOpacity;
+}
+
+// The lattice is shifted by half a cell: a flat surface at a round height would otherwise sit on a cell boundary, and the
+// float error of the hit position would flip its cells along iso-distance rings that flicker with the camera jitter.
+bool forkLodFadeCellSkipped(uint opacity, vec3 position)
+{
+  const ivec3 cell = ivec3(floor(position / cb.lodFadeCellSize + 0.5f));
+  uint hash = uintHash(uint3(cell));
+
+  if (cb.lodFadeAnimated != 0u)
+  {
+    hash = uintHash(hash ^ cb.frameIdx);
+  }
+
+  return (hash & 0xFFu) >= opacity;
+}
+
+bool forkIsSurfaceFadedOut(Surface surface, vec3 position)
+{
+  const uint opacity = forkLodFadeOpacity(surface);
+  return opacity != 255u && forkLodFadeCellSkipped(opacity, position);
+}
+
+// The two sides of a cross fade share planes (a lod on its parent's facade), and which of two surfaces on one plane
+// the traversal returns first is a matter of float ulps, so the owner of a cell is decided by a search of the slab
+// around the hit with every triangle as a candidate. preferFading takes the nearest fading surface with a kept cell
+// (the hit is the opaque partner), else the nearest surface that is not a skipped cell (the hit is a skipped cell).
+// Candidates are judged at the position of the hit they may replace, so both sides of a cross fade see the same cell.
+// True when rayHitInfo now holds that candidate (its distance is from ray.origin like the hit it replaces).
+bool forkLodFadeFindCoplanarHit(Ray ray, uint8_t rayMask, inout RayHitInfo rayHitInfo, bool preferFading)
+{
+  const float halfWidth = max(rayHitInfo.hitDistance * 1e-4f, 1e-4f);
+  const vec3 position = ray.origin + ray.direction * rayHitInfo.hitDistance;
+
+  RayDesc slab;
+  slab.Origin = ray.origin + ray.direction * (rayHitInfo.hitDistance - halfWidth);
+  slab.TMin = 0.0f;
+  slab.Direction = ray.direction;
+  slab.TMax = 2.0f * halfWidth;
+
+  const uint flags = RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES;
+  RayQuery<RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES> rayQuery;
+  rayQuery.TraceRayInline(topLevelAS, flags, uint(rayMask), slab);
+
+  while (rayQuery.Proceed())
+  {
+    if (rayQuery.CandidateType() != CANDIDATE_NON_OPAQUE_TRIANGLE)
+    {
+      continue;
+    }
+
+    RayHitInfo candidate;
+    RAY_HIT_INFO_CREATE_RAY_QUERY_CANDIDATE(candidate, rayQuery)
+
+    if (candidate.customIndex == rayHitInfo.customIndex && candidate.geometryIndex == rayHitInfo.geometryIndex &&
+        candidate.primitiveIndex == rayHitInfo.primitiveIndex)
+    {
+      continue;
+    }
+
+    const Surface surface = surfaces[calculateSurfaceIndex(candidate)];
+    const uint opacity = forkLodFadeOpacity(surface);
+    const bool fading = opacity != 255u;
+    if ((preferFading && !fading) || (fading && forkLodFadeCellSkipped(opacity, position)))
+    {
+      continue;
+    }
+
+    rayQuery.CommitNonOpaqueTriangleHit();
+  }
+
+  if (rayQuery.CommittedStatus() != COMMITTED_TRIANGLE_HIT)
+  {
+    return false;
+  }
+
+  RAY_HIT_INFO_CREATE_RAY_QUERY_COMMITTED(committed, rayQuery)
+  committed.hitDistance += rayHitInfo.hitDistance - halfWidth;
+  rayHitInfo = committed;
+  return true;
+}

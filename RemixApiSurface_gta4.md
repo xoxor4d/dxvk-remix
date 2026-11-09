@@ -12,9 +12,10 @@ fields of `remixapi_MaterialInfoOpaqueEXT`; neither is this branch's.)
 
 | Macro | Value |
 | :-- | :-- |
-| `REMIXAPI_VERSION_PATCH` | `7` |
+| `REMIXAPI_VERSION_PATCH` | `9` |
 | `REMIXAPI_RETAINED_UPDATE_TRANSFORM` | `0x1u` |
 | `REMIXAPI_RETAINED_UPDATE_VISIBILITY` | `0x2u` |
+| `REMIXAPI_RETAINED_UPDATE_LOD_FADE` | `0x4u` |
 
 ## `remixapi_StructType`
 
@@ -81,7 +82,7 @@ replacements authored against D3D9 captures apply. Several meshes may share it. 
 
 ### `remixapi_RetainedInstanceUpdate`
 
-One item of UpdateRetainedInstances: the handle, and the transform and visibility the flags select.
+One item of UpdateRetainedInstances: the handle, and the transform, visibility and LOD fade opacity the flags select.
 
 | Type | Field | Notes |
 | :-- | :-- | :-- |
@@ -89,6 +90,7 @@ One item of UpdateRetainedInstances: the handle, and the transform and visibilit
 | `remixapi_Transform` | `transform` | valid with REMIXAPI_RETAINED_UPDATE_TRANSFORM |
 | `uint32_t` | `flags` | REMIXAPI_RETAINED_UPDATE_* |
 | `remixapi_Bool` | `visible` | valid with REMIXAPI_RETAINED_UPDATE_VISIBILITY |
+| `uint32_t` | `lodFadeState` | valid with REMIXAPI_RETAINED_UPDATE_LOD_FADE (0.1000.9, `lodFadeOpacity` in 0.1000.8): bits 0-7 the LOD fade opacity of the entry's D3D overrides (bits 24-31 of the modifier word), bit 8 `REMIXAPI_LOD_FADE_STATE_PARTNER` the partner bit (bit 10). 255 = opaque, no partner |
 
 ## `remixapi_Interface`
 

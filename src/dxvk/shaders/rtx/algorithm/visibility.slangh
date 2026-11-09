@@ -62,7 +62,13 @@ vec3 handleVisibilityVertex<let VisibilityMode : uint>(Ray ray, RayHitInfo rayHi
     }
   }
 
-  Surface surface = surfaces[uint(rayInteraction.surfaceIndex)]; 
+  Surface surface = surfaces[uint(rayInteraction.surfaceIndex)];
+
+  // Fork: a dithered away LOD fade cell is skipped before the vertex data is read
+  if (forkIsSurfaceFadedOut(surface, ray.origin + ray.direction * rayInteraction.hitDistance))
+  {
+    return vec3(1.0f);
+  }
 
   // Since during visibility testing, we dont need all the data, we can just explicitly
   //   initialize these values and  help the compiler generate more optimal code paths.

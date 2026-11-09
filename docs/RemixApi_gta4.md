@@ -74,7 +74,7 @@ the pin and the entry takes the full path again.
 | :-- | :-- |
 | `CreateRetainedInstances(infos, handles, count)` | Registers `count` draws (`remixapi_InstanceInfo` with its usual pNext chain) under host chosen handles: nonzero, unique per live entry. Nothing is created unless every item is valid. |
 | `UpdateRetainedInstance(handle, info)` | Replaces the whole description (mesh, categories, blend, D3D overrides, bones). Keeps the visibility. |
-| `UpdateRetainedInstances(updates, count)` | `remixapi_RetainedInstanceUpdate` per item: `REMIXAPI_RETAINED_UPDATE_VISIBILITY` shows or hides the entry (hidden is sticky and costs nothing per frame), `REMIXAPI_RETAINED_UPDATE_TRANSFORM` moves it (a whole-record change on this branch). |
+| `UpdateRetainedInstances(updates, count)` | `remixapi_RetainedInstanceUpdate` per item: `REMIXAPI_RETAINED_UPDATE_VISIBILITY` shows or hides the entry (hidden is sticky and costs nothing per frame), `REMIXAPI_RETAINED_UPDATE_TRANSFORM` moves it (a whole-record change on this branch), `REMIXAPI_RETAINED_UPDATE_LOD_FADE` sets its LOD fade state (`lodFadeState`: bits 0-7 the opacity, 255 = not fading, bit 8 the partner bit) without a new description: the opacity and partner bit alone keep the pin, a fade starting or ending takes the full path once. |
 | `DestroyRetainedInstances(handles, count)` | Forgets the entries; their instances age out through the normal garbage collection. Destroy a retained instance before its mesh. |
 | `DrawRetainedInstances(sceneOrigin)` | Once per frame, draws every live visible entry. `sceneOrigin` must be `NULL` (no origin rebase on this branch). Issue it before the frame's injection point (for the GTA IV mod: before the orthographic quad that triggers it), a draw after it lands in the next frame, and only in frames whose camera was set up from the world view: the replay uses the frame's camera like any other draw. |
 
@@ -121,6 +121,14 @@ Row to add to the "Convention namespaces" table:
 | Namespace | Channel | Page |
 | :-- | :-- | :-- |
 | `rtx.wet.*` | `SetConfigVariable` | [`RemixWetnessAPI_gta4.md`](RemixWetnessAPI_gta4.md) |
+
+## Convention namespaces: `rtx.lodFade.*`
+
+Row to add to the "Convention namespaces" table:
+
+| Namespace | Channel | Page |
+| :-- | :-- | :-- |
+| `rtx.lodFade.*` | `SetConfigVariable` | [`RemixLodFadeAPI_gta4.md`](RemixLodFadeAPI_gta4.md) |
 
 ## Instances: `REMIXAPI_INSTANCE_CATEGORY_BIT_CARD_NORMALS`
 

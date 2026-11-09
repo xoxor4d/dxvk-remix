@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "rtx_context.h"
+#include "rtx_fork_hooks.h"
 #include "rtx_scene_manager.h"
 #include "rtx_instance_manager.h"
 #include "rtx_camera_manager.h"
@@ -1279,6 +1280,11 @@ namespace dxvk {
       currentInstance.m_geometryFlags = VK_GEOMETRY_OPAQUE_BIT_KHR;
     }
     
+    // Fork: a dithered LOD cross fade keeps its geometry flags (baked into the BLAS) and turns non-opaque per instance, like clip planes
+    if (fork_hooks::applyLodFade(drawCall.getMaterialData(), currentInstance.surface)) {
+      currentInstance.m_vkInstance.flags |= VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR;
+    }
+
     // Enable backface culling for Portals to avoid additional hits to the back of Portals
     if (currentInstance.m_materialType == MaterialDataType::RayPortal) {
       currentInstance.m_vkInstance.flags &= ~VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;

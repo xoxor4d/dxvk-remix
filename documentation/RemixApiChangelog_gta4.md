@@ -4,6 +4,37 @@ Companion of [`RemixApiChangelog.md`](RemixApiChangelog.md), which stays at its 
 state on this branch. Same format; these entries sit on top of Remix Plus's `[0.1000.1]`.
 Merge them into the hub changelog when the branch is rebased.
 
+## [0.1000.9]
+
+LOD fade partner (2026-11-08).
+
+### Added
+- `REMIX_MODIFIER_FROM_D3D_LOD_FADE_PARTNER` (bit 10 of the D3D overrides modifier word): the opaque side
+  of a cross fade while the other side fades. A hit on it goes to a kept cell of a fading surface on the
+  same plane, so the fading side wins where it keeps a cell whichever of the two the traversal returns
+  first. Not part of the material identity.
+- `REMIXAPI_LOD_FADE_STATE_PARTNER`: bit 8 of `remixapi_RetainedInstanceUpdate::lodFadeState`.
+
+### Changed
+- `remixapi_RetainedInstanceUpdate::lodFadeOpacity` is `lodFadeState`: bits 0-7 stay the opacity, bit 8 is
+  the partner bit. Same layout, the bridge needs no rebuild. `REMIXAPI_VERSION` is now `0.1000.9`.
+
+## [0.1000.8]
+
+LOD fade opacity of retained instances (2026-11-08).
+
+### Added
+- `REMIXAPI_RETAINED_UPDATE_LOD_FADE` and `remixapi_RetainedInstanceUpdate::lodFadeOpacity`: sets the
+  LOD fade opacity (bits 24-31 of the D3D overrides modifier word, 255 = not fading) of a retained
+  instance without a new description. The opacity alone keeps the entry pinned; a fade starting or
+  ending takes the full path once. See `docs/RemixLodFadeAPI_gta4.md`.
+
+### Changed
+- `REMIXAPI_VERSION` is now `0.1000.8` (was `0.1000.7`). `sizeof(remixapi_RetainedInstanceUpdate)`
+  grows by 4; the bridge copies the struct, so client and server are rebuilt together.
+- A LOD fade opacity no longer changes the material identity of a draw: a fading draw takes the
+  preserve path, the dynamic path runs once when the fade starts and once when it ends.
+
 ## [0.1000.7]
 
 Retained instances (2026-10-31). A legacy-lane subset of Remix Plus V2's retained instances with the

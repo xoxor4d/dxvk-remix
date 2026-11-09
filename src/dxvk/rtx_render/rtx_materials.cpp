@@ -87,7 +87,8 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
   data.blendWriteMask = static_cast<uint32_t>(blendMode.writeMask);
   data.remixHashFromD3D = remixHashFromD3D;
   data.remixTextureCategoryFlagsFromD3D = remixTextureCategoryFlagsFromD3D;
-  data.remixModifierFromD3D = remixModifierFromD3D;
+  // Fork: the LOD fade opacity and partner bit move every frame and live on the surface, so they do not break the preserve path
+  data.remixModifierFromD3D = remixModifierFromD3D & ~(REMIX_MODIFIER_FROM_D3D_LOD_FADE_PARTNER | (0xFFu << REMIX_MODIFIER_FROM_D3D_LOD_FADE_OPACITY_SHIFT));
   data.remixPackedFloat4_RS210FromD3D = remixPackedFloat4_RS210FromD3D;
   data.remixHashModifierFromD3D = remixHashModifierFromD3D;
   data.remixTempFloat01FromD3D = remixTempFloat01FromD3D;

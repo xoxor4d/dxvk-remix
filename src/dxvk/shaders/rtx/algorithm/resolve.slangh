@@ -37,6 +37,7 @@
 #include "rtx/algorithm/volume_lighting.slangh"
 #include "rtx/algorithm/rtx_fork_water_shore.slangh"
 #include "rtx/algorithm/rtx_fork_transmission_origin.slangh"
+#include "rtx/algorithm/rtx_fork_lod_fade.slangh"
 
 #ifndef GBUFFER_FEATURE_OBJECT_PICKING
 #define GBUFFER_FEATURE_OBJECT_PICKING 1
@@ -409,7 +410,35 @@ void resolveVertex<T: IBasePayloadState>(
   
   // Create a Surface and Surface Interaction from the hit
 
-  surface = surfaces[uint(rayInteraction.surfaceIndex)]; 
+  surface = surfaces[uint(rayInteraction.surfaceIndex)];
+
+  // Fork: dithered LOD cross fade. The opaque partner of a fading surface gives the hit to a kept cell of that surface
+  // on the same plane. A skipped cell is passed: a surface on the same plane takes the hit over, anything else is
+  // reached like past a clipped surface, with the ray pushed through the triangle by the usual offset (a larger step
+  // along the ray would skip geometry right behind the cell, a lod inside its parent)
+  bool lodFadeTakeOver = false;
+  if (surface.lodFadePartner)
+  {
+    lodFadeTakeOver = forkLodFadeFindCoplanarHit(ray, resolveVertexState.rayMask, rayHitInfo, true);
+  }
+  else if (resolveVertexState.continueResolving && forkIsSurfaceFadedOut(surface, ray.origin + ray.direction * rayInteraction.hitDistance))
+  {
+    lodFadeTakeOver = forkLodFadeFindCoplanarHit(ray, resolveVertexState.rayMask, rayHitInfo, false);
+    if (!lodFadeTakeOver)
+    {
+      surfaceInteraction = surfaceInteractionCreate<SurfaceGenerateTangents>(surface, rayInteraction, ray);
+      resolveVertexState.origin = rayOffsetSurfaceOriginHelper(surfaceInteraction, true);
+      return;
+    }
+  }
+
+  if (lodFadeTakeOver)
+  {
+    rayInteraction = rayInteractionCreate(ray, rayHitInfo);
+    resolveVertexState.segmentHitDistance = rayInteraction.hitDistance;
+    resolveVertexState.coneRadius = rayInteraction.coneRadius;
+    surface = surfaces[uint(rayInteraction.surfaceIndex)];
+  }
 
   surfaceInteraction = surfaceInteractionCreate<SurfaceGenerateTangents>(surface, rayInteraction, ray);
 
@@ -1038,7 +1067,8 @@ void resolveVertexUnorderedParticles<
       continue;
     }
 
-    if (!evalViewDistance(cb.viewDistanceArgs, cb.isZUp, cb.camera, surfaceInteraction.position) || isSurfaceClipped(surface, surfaceInteraction))
+    if (!evalViewDistance(cb.viewDistanceArgs, cb.isZUp, cb.camera, surfaceInteraction.position) || isSurfaceClipped(surface, surfaceInteraction) ||
+        forkIsSurfaceFadedOut(surface, surfaceInteraction.position))
     {
       continue;
     }
@@ -1407,7 +1437,8 @@ void resolveVertexUnordered<
 
     // Test the hit surface against view distance and ignored surface clipping
 
-    if (!evalViewDistance(cb.viewDistanceArgs, cb.isZUp, cb.camera, surfaceInteraction.position) || isSurfaceClipped(surface, surfaceInteraction))
+    if (!evalViewDistance(cb.viewDistanceArgs, cb.isZUp, cb.camera, surfaceInteraction.position) || isSurfaceClipped(surface, surfaceInteraction) ||
+        forkIsSurfaceFadedOut(surface, surfaceInteraction.position))
     {
       // Note: Iteration skipped, we unfortunately cannot break the loop here as the hits are processed
       // in an undefined order rather than from closest to furthest like they are in the usual resovle loop,

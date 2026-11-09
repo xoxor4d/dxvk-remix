@@ -9,6 +9,7 @@
 #include "rtx_context.h"
 #include "rtx_draw_call_tracker.h"
 #include "rtx_instance_manager.h"
+#include "rtx_materials.h"
 #include "rtx_option_manager.h"
 #include "rtx_options.h"
 #include "rtx_texture_manager.h"
@@ -146,12 +147,15 @@ namespace fork_hooks {
 
   bool retainedBuildUpdates(const remixapi_RetainedInstanceUpdate* updates, uint32_t count,
                             ConvertTransformFn convert, std::vector<RetainedCommand>& out) {
-    constexpr uint32_t kKnownFlags = REMIXAPI_RETAINED_UPDATE_TRANSFORM | REMIXAPI_RETAINED_UPDATE_VISIBILITY;
+    constexpr uint32_t kKnownFlags = REMIXAPI_RETAINED_UPDATE_TRANSFORM | REMIXAPI_RETAINED_UPDATE_VISIBILITY | REMIXAPI_RETAINED_UPDATE_LOD_FADE;
     if (updates == nullptr || count == 0) {
       return false;
     }
     for (uint32_t i = 0; i < count; i++) {
       if (updates[i].handle == 0 || updates[i].flags == 0 || (updates[i].flags & ~kKnownFlags) != 0) {
+        return false;
+      }
+      if ((updates[i].flags & REMIXAPI_RETAINED_UPDATE_LOD_FADE) && updates[i].lodFadeState > 0x1FFu) {
         return false;
       }
     }
@@ -170,6 +174,12 @@ namespace fork_hooks {
         command.type = RetainedCommand::Type::SetVisible;
         command.handle = update.handle;
         command.visible = update.visible != 0;
+      }
+      if (update.flags & REMIXAPI_RETAINED_UPDATE_LOD_FADE) {
+        RetainedCommand& command = out.emplace_back();
+        command.type = RetainedCommand::Type::SetLodFade;
+        command.handle = update.handle;
+        command.lodFadeState = static_cast<uint16_t>(update.lodFadeState);
       }
     }
     return true;
@@ -224,6 +234,26 @@ namespace fork_hooks {
         if (Entry* entry = findEntry(command.handle, "UpdateRetainedInstances")) {
           entry->visible = command.visible;
           if (!command.visible) {
+            unpin(*entry);
+          }
+        }
+        break;
+      case RetainedCommand::Type::SetLodFade:
+        if (Entry* entry = findEntry(command.handle, "UpdateRetainedInstances")) {
+          // the fade bit is part of the material identity and changes the instance flags, so it takes the full path
+          // once; the opacity byte and the partner bit alone are picked up by the keep-alive (SceneManager::preserveInstance)
+          uint32_t& modifiers = entry->state.drawCall.modifyMaterialData().remixModifierFromD3D;
+          const bool wasFading = (modifiers & REMIX_MODIFIER_FROM_D3D_LOD_FADE) != 0;
+          const uint32_t opacity = command.lodFadeState & 0xFFu;
+          const bool fading = opacity != 255;
+          modifiers &= ~(REMIX_MODIFIER_FROM_D3D_LOD_FADE | REMIX_MODIFIER_FROM_D3D_LOD_FADE_PARTNER | (0xFFu << REMIX_MODIFIER_FROM_D3D_LOD_FADE_OPACITY_SHIFT));
+          if (fading) {
+            modifiers |= REMIX_MODIFIER_FROM_D3D_LOD_FADE | (opacity << REMIX_MODIFIER_FROM_D3D_LOD_FADE_OPACITY_SHIFT);
+          }
+          if (command.lodFadeState & REMIXAPI_LOD_FADE_STATE_PARTNER) {
+            modifiers |= REMIX_MODIFIER_FROM_D3D_LOD_FADE_PARTNER;
+          }
+          if (fading != wasFading) {
             unpin(*entry);
           }
         }

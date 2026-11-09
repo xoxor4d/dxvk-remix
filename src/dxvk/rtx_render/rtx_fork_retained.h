@@ -32,13 +32,14 @@ class RtxContext;
 namespace fork_hooks {
 
   struct RetainedCommand {
-    enum class Type : uint8_t { Create, Describe, SetTransform, SetVisible, Destroy };
+    enum class Type : uint8_t { Create, Describe, SetTransform, SetVisible, SetLodFade, Destroy };
 
     Type type = Type::Create;
     uint64_t handle = 0;
     std::unique_ptr<ExternalDrawState> state;  // Create, Describe
     Matrix4 transform;                         // SetTransform
     bool visible = true;                       // SetVisible
+    uint16_t lodFadeState = 255;               // SetLodFade: remixapi_RetainedInstanceUpdate::lodFadeState
   };
 
   using ConvertInstanceFn = std::unique_ptr<ExternalDrawState> (*)(const remixapi_InstanceInfo&);

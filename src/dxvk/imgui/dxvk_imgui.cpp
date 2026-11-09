@@ -2930,6 +2930,12 @@ namespace dxvk {
         ImGui::Unindent();
       }
 
+      if (RemixGui::CollapsingHeader("LOD Cross Fade", collapsingHeaderClosedFlags)) {
+        ImGui::Indent();
+        fork_hooks::showLodFadeSettings();
+        ImGui::Unindent();
+      }
+
       if (RemixGui::CollapsingHeader("View Model", collapsingHeaderClosedFlags)) {
         ImGui::Indent();
         RemixGui::Checkbox("Enable View Model", &RtxOptions::ViewModel::enableObject());

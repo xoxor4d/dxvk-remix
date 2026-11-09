@@ -1214,6 +1214,11 @@ namespace dxvk {
 
     instance.setFrameLastUpdated(m_device->getCurrentFrameId());
 
+    // Fork: the LOD fade opacity is not part of the material identity, so it keeps moving on the preserve path
+    if (pInput != nullptr) {
+      fork_hooks::applyLodFade(pInput->getMaterialData(), instance.surface);
+    }
+
     // One-shot cleanup for the first preserve frame after a dynamic update; isPreservePath is
     // false on the dynamic path, so flipping it here doubles as the "first frame" signal.
     if (!instance.surface.isPreservePath) {
