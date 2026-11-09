@@ -4,6 +4,16 @@ Companion of [`RemixApiChangelog.md`](RemixApiChangelog.md), which stays at its 
 state on this branch. Same format; these entries sit on top of Remix Plus's `[0.1000.1]`.
 Merge them into the hub changelog when the branch is rebased.
 
+## [0.1000.10]
+
+LOD fade partner removed (2026-11-09).
+
+### Removed
+- `REMIX_MODIFIER_FROM_D3D_LOD_FADE_PARTNER` and `REMIXAPI_LOD_FADE_STATE_PARTNER`. Bit 10 of the modifier
+  word is free again; bits 8-31 of `remixapi_RetainedInstanceUpdate::lodFadeState` must be 0 (an update with
+  any of them set is rejected). The hand over of a partner hit to the fading side did not help the cross fades
+  it was made for. Same layout, the bridge needs no rebuild. `REMIXAPI_VERSION` is now `0.1000.10`.
+
 ## [0.1000.9]
 
 LOD fade partner (2026-11-08).

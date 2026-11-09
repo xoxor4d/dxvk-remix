@@ -772,17 +772,17 @@ namespace dxvk {
     // Implementation in rtx_fork_wetness.cpp.
     void showWetnessSettings();
 
-    // Fills the rtx.lodFade.* dither constants. Implementation in rtx_fork_lod_fade.cpp.
+    // Fills the rtx.lodFade.* constants. Implementation in rtx_fork_lod_fade.cpp.
     void fillLodFadeShaderParams(RaytraceArgs& constants);
 
     // Body of the "LOD Cross Fade" header under Game Setup -> Parameter Tuning (after Global Wetness).
     // Implementation in rtx_fork_lod_fade.cpp.
     void showLodFadeSettings();
 
-    // Sets the surface's LOD fade opacity and partner bit from the draw's modifier word. Returns true while the instance
-    // fades, it then needs VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR so visibility rays see its dither. The fade bit is
-    // part of the material identity (the dynamic path sets the flag), the opacity byte and the partner bit are not:
-    // SceneManager::preserveInstance refreshes them while the instance is preserved. Implementation in rtx_fork_lod_fade.cpp.
+    // Sets the surface's LOD fade opacity from the draw's modifier word. Returns true while the instance fades, it then
+    // needs VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR so visibility rays see its fade. The fade bit is part of the
+    // material identity (the dynamic path sets the flag), the opacity byte is not: SceneManager::preserveInstance
+    // refreshes it while the instance is preserved. Implementation in rtx_fork_lod_fade.cpp.
     bool applyLodFade(const LegacyMaterialData& drawMaterialData, RtSurface& surface);
 
   } // namespace fork_hooks

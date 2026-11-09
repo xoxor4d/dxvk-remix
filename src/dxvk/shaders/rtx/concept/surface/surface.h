@@ -472,13 +472,6 @@ struct Surface
     set { data13.z = (data13.z & ~(0xFF << 19)) | ((255u - uint32_t(newValue & 0xFF)) << 19); }
   }
 
-  // Fork: the opaque side of a cross fade while the other side fades, a kept cell of a fading surface on the same plane takes the hit over
-  property bool lodFadePartner
-  {
-    get { return packedFlagGet(data13.z, 1 << 27); }
-    set { data13.z = newValue ? packedFlagSet(data13.z, 1 << 27) : packedFlagUnset(data13.z, 1 << 27); }
-  }
-
   property bool isEye
   {
     get { return packedFlagGet(data13.z, 1 << 14); }

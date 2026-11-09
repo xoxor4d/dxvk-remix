@@ -493,10 +493,9 @@ struct RaytraceArgs {
   // Fork: rtx.cardNormals.upWeight for CardNormals surfaces (surface_interaction.slangh).
   float cardNormalsUpWeight;
 
-  // Fork: rtx.lodFade.* dithered LOD cross fade, filled by rtx_fork_lod_fade.cpp.
-  float lodFadeCellSize;
-  uint lodFadeAnimated;
+  // Fork: rtx.lodFade.* LOD cross fade, filled by rtx_fork_lod_fade.cpp.
   uint lodFadeDebugForceOpacity;
+  uint lodFadeActive;
 
   // NOTE: Add structs to the top section of RaytraceArgs, not the bottom.
   // NOTE: bool does not work in debug builds, use uint instead.

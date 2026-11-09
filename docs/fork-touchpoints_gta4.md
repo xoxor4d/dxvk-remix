@@ -814,7 +814,7 @@ names ports to V2's API (host handles excepted).
 - **`src/dxvk/rtx_render/rtx_fork_submit.cpp`**, **`rtx_fork_hooks.h`** - fork-owned. *`externalDrawTryPreserve` reports whether it handled its draw (`resetExternalDrawPreserveReport` / `externalDrawWasPreserved`), `externalPreserveEnabled`.*
 - **`src/dxvk/rtx_render/rtx_remix_api.cpp`** - inline, ~45 LOC. *`queueRetainedCommands` and the five `remixapi_*Retained*` entries after `remixapi_DrawInstance` (they use the TU private `s_mutex`, `flushPendingMeshes`, `convert::toRtDrawState` and `convert::tomat4` like `DrawInstance`), their registration after `interf.GetGameValue`, the interface size assert 328 -> 368.*
 - **`src/dxvk/rtx_render/rtx_scene_manager.h`** - inline, 2 LOC. *`struct RetainedSceneAccess;` in the `fork_hooks` forward block and its friend declaration (the keep-alive needs `preserveInstance`, `m_instanceManager`, `m_drawCallTracker`, `m_textureCacheGenerationValidForPreserve`).*
-- **`public/include/remix/remix_c.h`** - inline. *`REMIXAPI_RETAINED_UPDATE_*`, `remixapi_RetainedInstanceUpdate`, the five `PFN_remixapi_*Retained*` typedefs, the five fields appended to `remixapi_Interface`, `REMIXAPI_VERSION_PATCH` 7 and its history paragraph. 0.1000.8: `REMIXAPI_RETAINED_UPDATE_LOD_FADE` and `remixapi_RetainedInstanceUpdate::lodFadeOpacity` (`RetainedCommand::Type::SetLodFade` in `rtx_fork_retained.cpp` rewrites the entry's modifier word and unpins only when the fade bit flips; the bridge copies the struct by size, so it is rebuilt without a code change). 0.1000.9: the field is `lodFadeState`, bit 8 (`REMIXAPI_LOD_FADE_STATE_PARTNER`) sets `REMIX_MODIFIER_FROM_D3D_LOD_FADE_PARTNER`; same layout.*
+- **`public/include/remix/remix_c.h`** - inline. *`REMIXAPI_RETAINED_UPDATE_*`, `remixapi_RetainedInstanceUpdate`, the five `PFN_remixapi_*Retained*` typedefs, the five fields appended to `remixapi_Interface`, `REMIXAPI_VERSION_PATCH` 7 and its history paragraph. 0.1000.8: `REMIXAPI_RETAINED_UPDATE_LOD_FADE` and `remixapi_RetainedInstanceUpdate::lodFadeOpacity` (`RetainedCommand::Type::SetLodFade` in `rtx_fork_retained.cpp` rewrites the entry's modifier word and unpins only when the fade bit flips; the bridge copies the struct by size, so it is rebuilt without a code change). 0.1000.9: the field is `lodFadeState`; 0.1000.10 drops its partner bit again, bits 8-31 must be 0; same layout.*
 - **`public/include/remix/remix.h`** - inline, 1 LOC. *`sizeof(remixapi_Interface)` assert 328 -> 368.*
 - **`src/dxvk/meson.build`** - inline. *The two fork files.*
 - **`bridge/src/util/util_commands.h`** - inline. *Five `RemixApi_*Retained*` commands after `RemixApi_SetupCamera` (later `Bridge_*` values shift: client and server deployed together).*
@@ -899,25 +899,35 @@ airglow, stars and moons are not part of the target.
 
 GTA IV draws a mesh and its lod together while one fades in over the other (per entity alpha). Bit 9 of the
 per draw modifier word, `REMIX_MODIFIER_FROM_D3D_LOD_FADE`, marks such a draw and the word's top byte carries
-its opacity; bit 10, `REMIX_MODIFIER_FROM_D3D_LOD_FADE_PARTNER`, marks the opaque side of the cross fade. Both
-land on the instance's surface; rays skip a fading surface wherever a world space hash of the hit position is
-at or above its opacity, and a hit on a partner goes to a kept cell of a fading surface on the same plane
-(`rtx.lodFade.*`). The fading instance turns non-opaque per instance like clip planes, so visibility rays see
-the dither and the BLAS keeps its geometry flags. See [`RemixLodFadeAPI_gta4.md`](RemixLodFadeAPI_gta4.md).
+its opacity. It lands on the instance's surface; every ray of a pixel skips a fading surface when the pixel's blue
+noise sample (one per frame) is at or above its opacity (`rtx.lodFade.*`). The fading instance turns non-opaque per instance like
+clip planes and the BLAS keeps its geometry flags; while something fades the ray queries drop the force-opaque flag,
+so every ray sees the fading surface as a candidate and leaves a skipped surface uncommitted (the TraceRay path
+hands a skipped hit to a surface on the same plane instead). A partner bit (bit 10) and a shadow ray pair rule were tried on 2026-11-09 and
+removed again. See [`RemixLodFadeAPI_gta4.md`](RemixLodFadeAPI_gta4.md).
 
-- **`src/dxvk/rtx_render/rtx_fork_lod_fade.cpp` / `.h`**, **`src/dxvk/shaders/rtx/algorithm/rtx_fork_lod_fade.slangh`** - fork-owned files. *Options, CB fill, UI, `fork_hooks::applyLodFade`; `forkIsSurfaceFadedOut`, `forkLodFadeFindCoplanarHit` (ray query over the slab around a hit, every triangle a candidate: the nearest fading surface with a kept cell for a partner hit, the nearest surface that is not a skipped cell for a skipped hit).*
+*Keep on a rebase (2026-11-09):* the first version skipped a cell after the hit, in `resolveVertex`, by re-tracing
+from an offset origin. That showed sky through dithered meshes lying on their parent and thin seams along cell
+boundaries: the resolve state keeps the ray direction in half precision, so a position rebuilt there drifts along the
+ray by up to 5e-4 of the hit distance, the coplanar slab missed the parent and the offset origin started behind both
+surfaces. The fix is the candidate test in `RESOLVE_RAY_QUERY` (`forkLodFadeRayFlags`, `forkLodFadeCandidateSkipped`,
+`cb.lodFadeActive`) with the `resolveVertex` path under `#ifdef RT_TRACE_RAY` only. The world space cell hash was
+replaced by the per pixel blue noise sample the same day.
+
+- **`src/dxvk/rtx_render/rtx_fork_lod_fade.cpp` / `.h`**, **`src/dxvk/shaders/rtx/algorithm/rtx_fork_lod_fade.slangh`** - fork-owned files. *Options, CB fill, UI, `fork_hooks::applyLodFade`; `forkLodFadeThreshold`, `forkIsSurfaceFadedOut`, `forkLodFadeRayFlags`, `forkLodFadeCandidateSkipped`, `forkLodFadeFindCoplanarHit` (TraceRay path: ray query over the slab around a skipped hit, sized from the self intersection offset at the hit, every triangle a candidate: the nearest surface the path keeps).*
 - **`src/dxvk/rtx_render/rtx_fork_hooks.h`** - fork-owned. *`fillLodFadeShaderParams`, `showLodFadeSettings`, `applyLodFade`.*
 - **`src/dxvk/meson.build`** - inline. *The two `rtx_fork_lod_fade` files after `rtx_fork_wetness`.*
-- **`src/dxvk/rtx_render/rtx_materials.h`** - fork-touchpoint inline tweaks. *`REMIX_MODIFIER_FROM_D3D_LOD_FADE = 1 << 9`, `REMIX_MODIFIER_FROM_D3D_LOD_FADE_PARTNER = 1 << 10` and `REMIX_MODIFIER_FROM_D3D_LOD_FADE_OPACITY_SHIFT`; `RtSurface::lodFadeOpacity` packed into bits 19-26 and `RtSurface::lodFadePartner` into bit 27 of `textureFlags` in `writeGPUData`.*
-- **`src/dxvk/shaders/rtx/concept/surface/surface.h`** - fork-touchpoint inline tweak. *`lodFadeOpacity` property on `data13.z` bits 19-26 and `lodFadePartner` on bit 27, after `texcoordGenerationMode`.*
+- **`src/dxvk/rtx_render/rtx_materials.h`** - fork-touchpoint inline tweaks. *`REMIX_MODIFIER_FROM_D3D_LOD_FADE = 1 << 9` and `REMIX_MODIFIER_FROM_D3D_LOD_FADE_OPACITY_SHIFT`; `RtSurface::lodFadeOpacity` packed into bits 19-26 of `textureFlags` in `writeGPUData`.*
+- **`src/dxvk/shaders/rtx/concept/surface/surface.h`** - fork-touchpoint inline tweak. *`lodFadeOpacity` property on `data13.z` bits 19-26, after `texcoordGenerationMode`.*
 - **`src/dxvk/rtx_render/rtx_instance_manager.cpp`** - hook. *`InstanceManager::onInstanceUpdated`: `fork_hooks::applyLodFade` after the geometry / instance flags chain ("All other fully opaques go to the primary TLAS as opaque"), ORing `VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR`; includes `rtx_fork_hooks.h`.*
 - **`src/dxvk/rtx_render/rtx_scene_manager.cpp`** - hook, 3 LOC. *`SceneManager::preserveInstance`: `fork_hooks::applyLodFade` from `pInput` after `setFrameLastUpdated`, so the opacity keeps moving on the preserve path (external, replacement and retained keep-alive).*
-- **`src/dxvk/rtx_render/rtx_materials.cpp`** - inline, 1 LOC. *`LegacyMaterialData::computeIdentityHash` masks the opacity byte and the partner bit out of `remixModifierFromD3D`; the fade bit stays, so a fade starting or ending still takes the dynamic path once.*
-- **`src/dxvk/shaders/rtx/algorithm/resolve.slangh`** - fork-touchpoint inline tweaks. *Includes `rtx_fork_lod_fade.slangh`; in `resolveVertex` a hit on a partner surface is taken over by a kept cell of a fading surface on the same plane (`forkLodFadeFindCoplanarHit`), else the fade test runs on the hit position from the ray and a skipped hit is taken over by a surface on the same plane, else the ray moves on through the triangle like past a clipped surface (`rayOffsetSurfaceOriginHelper`); `forkIsSurfaceFadedOut` next to `isSurfaceClipped` in `resolveVertexUnorderedParticles` and `resolveVertexUnordered`.*
-- **`src/dxvk/shaders/rtx/algorithm/visibility.slangh`** - fork-touchpoint inline tweak. *`forkIsSurfaceFadedOut` on the hit position from the ray right after the surface load in `handleVisibilityVertex`, before `surfaceInteractionCreate`.*
-- **`src/dxvk/shaders/rtx/pass/raytrace_args.h`** - fork-touchpoint inline tweak. *`lodFadeCellSize`, `lodFadeAnimated`, `lodFadeDebugForceOpacity` appended after `cardNormalsUpWeight`.*
+- **`src/dxvk/rtx_render/rtx_materials.cpp`** - inline, 1 LOC. *`LegacyMaterialData::computeIdentityHash` masks the opacity byte out of `remixModifierFromD3D`; the fade bit stays, so a fade starting or ending still takes the dynamic path once (the instance flags change).*
+- **`src/dxvk/shaders/rtx/algorithm/resolve_expanded.slangh`** - fork-touchpoint inline tweak. *`RESOLVE_RAY_QUERY`: the ray flags pass through `forkLodFadeRayFlags` and the `Proceed` loop commits every non-opaque triangle candidate except a skipped LOD fade surface (`forkLodFadeCandidateSkipped`).*
+- **`src/dxvk/shaders/rtx/algorithm/resolve.slangh`** - fork-touchpoint inline tweaks. *Includes `rtx_fork_lod_fade.slangh`; in `resolveVertex`, under `#ifdef RT_TRACE_RAY` (the state's half precision direction would make a second test disagree with the ray query's candidate test at cell boundaries), a skipped hit is taken over by a surface on the same plane (`forkLodFadeFindCoplanarHit`), else the ray moves on through the triangle like past a clipped surface (`rayOffsetSurfaceOriginHelper`); `forkIsSurfaceFadedOut` next to `isSurfaceClipped` in `resolveVertexUnorderedParticles` and `resolveVertexUnordered`.*
+- **`src/dxvk/shaders/rtx/algorithm/visibility.slangh`** - fork-touchpoint inline tweak. *`forkIsSurfaceFadedOut` right after the surface load in `handleVisibilityVertex`, before `surfaceInteractionCreate`.*
+- **`src/dxvk/shaders/rtx/pass/raytrace_args.h`** - fork-touchpoint inline tweak. *`lodFadeDebugForceOpacity`, `lodFadeActive` (something faded this frame) appended after `cardNormalsUpWeight`.*
 - **`src/dxvk/rtx_render/rtx_context.cpp`** - hook. *`fork_hooks::fillLodFadeShaderParams(constants)` after `fillWetnessShaderParams`.*
 - **`src/dxvk/imgui/dxvk_imgui.cpp`** - hook. *"LOD Cross Fade" collapsing header calling `fork_hooks::showLodFadeSettings` after "Global Wetness".*
 
-New options: `rtx.lodFade.enable`, `rtx.lodFade.cellSize`, `rtx.lodFade.animated`, `rtx.lodFade.debugForceOpacity`
-(dithers every surface by one opacity, 255 = off; a uniform branch in `forkIsSurfaceFadedOut`).
+New options: `rtx.lodFade.enable`, `rtx.lodFade.debugForceOpacity` (fades every surface by one opacity, 255 = off; a
+uniform branch in `forkLodFadeOpacity`).

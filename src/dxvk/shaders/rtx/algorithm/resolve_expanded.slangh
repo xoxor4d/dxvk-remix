@@ -150,12 +150,22 @@ void TraceRayCustom<payload_t : IBasePayloadState>(
       /* (to minimize any discrepancy). */                                                              \
       rayQuery.TraceRayInline(                                                            \
         topLevelAS,                                                                       \
-        flags, uint(payload.rayMask),                                                     \
+        forkLodFadeRayFlags(flags), uint(payload.rayMask),                                \
         currentRay                                                                        \
       );                                                                                  \
                                                                                           \
       while (rayQuery.Proceed())                                                          \
       {                                                                                   \
+        /* Fork: a skipped LOD fade surface is not committed (rtx_fork_lod_fade.slangh) */\
+        if (rayQuery.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)                    \
+        {                                                                                 \
+          RayHitInfo lodFadeCandidate;                                                    \
+          RAY_HIT_INFO_CREATE_RAY_QUERY_CANDIDATE(lodFadeCandidate, rayQuery)             \
+          if (!forkLodFadeCandidateSkipped(lodFadeCandidate))                             \
+          {                                                                               \
+            rayQuery.CommitNonOpaqueTriangleHit();                                        \
+          }                                                                               \
+        }                                                                                 \
       };                                                                                  \
                                                                                           \
       /* Construct hit info from the hit */                                               \

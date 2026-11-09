@@ -155,7 +155,7 @@ namespace fork_hooks {
       if (updates[i].handle == 0 || updates[i].flags == 0 || (updates[i].flags & ~kKnownFlags) != 0) {
         return false;
       }
-      if ((updates[i].flags & REMIXAPI_RETAINED_UPDATE_LOD_FADE) && updates[i].lodFadeState > 0x1FFu) {
+      if ((updates[i].flags & REMIXAPI_RETAINED_UPDATE_LOD_FADE) && updates[i].lodFadeState > 0xFFu) {
         return false;
       }
     }
@@ -241,17 +241,14 @@ namespace fork_hooks {
       case RetainedCommand::Type::SetLodFade:
         if (Entry* entry = findEntry(command.handle, "UpdateRetainedInstances")) {
           // the fade bit is part of the material identity and changes the instance flags, so it takes the full path
-          // once; the opacity byte and the partner bit alone are picked up by the keep-alive (SceneManager::preserveInstance)
+          // once; the opacity byte alone is picked up by the keep-alive (SceneManager::preserveInstance)
           uint32_t& modifiers = entry->state.drawCall.modifyMaterialData().remixModifierFromD3D;
           const bool wasFading = (modifiers & REMIX_MODIFIER_FROM_D3D_LOD_FADE) != 0;
           const uint32_t opacity = command.lodFadeState & 0xFFu;
           const bool fading = opacity != 255;
-          modifiers &= ~(REMIX_MODIFIER_FROM_D3D_LOD_FADE | REMIX_MODIFIER_FROM_D3D_LOD_FADE_PARTNER | (0xFFu << REMIX_MODIFIER_FROM_D3D_LOD_FADE_OPACITY_SHIFT));
+          modifiers &= ~(REMIX_MODIFIER_FROM_D3D_LOD_FADE | (0xFFu << REMIX_MODIFIER_FROM_D3D_LOD_FADE_OPACITY_SHIFT));
           if (fading) {
             modifiers |= REMIX_MODIFIER_FROM_D3D_LOD_FADE | (opacity << REMIX_MODIFIER_FROM_D3D_LOD_FADE_OPACITY_SHIFT);
-          }
-          if (command.lodFadeState & REMIXAPI_LOD_FADE_STATE_PARTNER) {
-            modifiers |= REMIX_MODIFIER_FROM_D3D_LOD_FADE_PARTNER;
           }
           if (fading != wasFading) {
             unpin(*entry);

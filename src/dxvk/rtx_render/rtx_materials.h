@@ -96,12 +96,9 @@ enum REMIX_MODIFIER_FROM_D3D : std::uint16_t {
   REMIX_MODIFIER_FROM_D3D_TRANSLUCENT_WORLDPOS_AS_TEXUV = 1 << 7,
   REMIX_MODIFIER_FROM_D3D_TRANSLUCENT_FADE_NORMAL_UNTIL_DIST = 1 << 8,
   REMIX_MODIFIER_FROM_D3D_LOD_FADE = 1 << 9,
-  REMIX_MODIFIER_FROM_D3D_LOD_FADE_PARTNER = 1 << 10,
 };
 
-// With REMIX_MODIFIER_FROM_D3D_LOD_FADE set, the top byte of the modifier word is the draw's fade opacity. LOD_FADE_PARTNER
-// marks the opaque side of a cross fade while the other side fades: a kept cell of a fading surface on the same plane
-// takes the hit over (rtx_fork_lod_fade.cpp).
+// With REMIX_MODIFIER_FROM_D3D_LOD_FADE set, the top byte of the modifier word is the draw's fade opacity (rtx_fork_lod_fade.cpp).
 constexpr uint32_t REMIX_MODIFIER_FROM_D3D_LOD_FADE_OPACITY_SHIFT = 24;
 
 // Note: "Temporary" hacks to get RtxOptions data from this header file as we cannot include rtx_options directly
@@ -306,8 +303,7 @@ struct RtSurface {
     textureFlags |= ((static_cast<uint32_t>(texgenMode) & 0x3) << 17);
     // stored inverted, zeroed surface data reads as not fading
     textureFlags |= static_cast<uint32_t>(255u - lodFadeOpacity) << 19;
-    textureFlags |= lodFadePartner ? (1u << 27) : 0u;
-    // textureFlags bits 28-30 unused
+    // textureFlags bits 27-30 unused
 
     writeGPUHelper(data, offset, textureFlags);
 
@@ -371,7 +367,6 @@ struct RtSurface {
   bool skipSurfaceInteractionSpritesheetAdjustment = false;
   bool useCardNormals = false;
   uint8_t lodFadeOpacity = 255; // fork: dithered LOD cross fade, 255 = not fading (rtx_fork_lod_fade.cpp)
-  bool lodFadePartner = false;  // fork: the opaque side of a cross fade while the other side fades
 
   RtTextureArgSource textureColorArg1Source = RtTextureArgSource::Texture;
   RtTextureArgSource textureColorArg2Source = RtTextureArgSource::None;

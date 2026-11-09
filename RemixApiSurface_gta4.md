@@ -12,7 +12,7 @@ fields of `remixapi_MaterialInfoOpaqueEXT`; neither is this branch's.)
 
 | Macro | Value |
 | :-- | :-- |
-| `REMIXAPI_VERSION_PATCH` | `9` |
+| `REMIXAPI_VERSION_PATCH` | `10` |
 | `REMIXAPI_RETAINED_UPDATE_TRANSFORM` | `0x1u` |
 | `REMIXAPI_RETAINED_UPDATE_VISIBILITY` | `0x2u` |
 | `REMIXAPI_RETAINED_UPDATE_LOD_FADE` | `0x4u` |
@@ -90,7 +90,7 @@ One item of UpdateRetainedInstances: the handle, and the transform, visibility a
 | `remixapi_Transform` | `transform` | valid with REMIXAPI_RETAINED_UPDATE_TRANSFORM |
 | `uint32_t` | `flags` | REMIXAPI_RETAINED_UPDATE_* |
 | `remixapi_Bool` | `visible` | valid with REMIXAPI_RETAINED_UPDATE_VISIBILITY |
-| `uint32_t` | `lodFadeState` | valid with REMIXAPI_RETAINED_UPDATE_LOD_FADE (0.1000.9, `lodFadeOpacity` in 0.1000.8): bits 0-7 the LOD fade opacity of the entry's D3D overrides (bits 24-31 of the modifier word), bit 8 `REMIXAPI_LOD_FADE_STATE_PARTNER` the partner bit (bit 10). 255 = opaque, no partner |
+| `uint32_t` | `lodFadeState` | valid with REMIXAPI_RETAINED_UPDATE_LOD_FADE (0.1000.9, `lodFadeOpacity` in 0.1000.8): bits 0-7 the LOD fade opacity of the entry's D3D overrides (bits 24-31 of the modifier word), 255 = opaque. Bits 8-31 must be 0 (0.1000.10 dropped the partner bit of 0.1000.9) |
 
 ## `remixapi_Interface`
 

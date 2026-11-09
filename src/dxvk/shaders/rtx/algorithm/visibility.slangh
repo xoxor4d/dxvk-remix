@@ -64,8 +64,8 @@ vec3 handleVisibilityVertex<let VisibilityMode : uint>(Ray ray, RayHitInfo rayHi
 
   Surface surface = surfaces[uint(rayInteraction.surfaceIndex)];
 
-  // Fork: a dithered away LOD fade cell is skipped before the vertex data is read
-  if (forkIsSurfaceFadedOut(surface, ray.origin + ray.direction * rayInteraction.hitDistance))
+  // Fork: a faded out LOD fade surface is skipped before the vertex data is read
+  if (forkIsSurfaceFadedOut(surface))
   {
     return vec3(1.0f);
   }

@@ -1,9 +1,10 @@
 #pragma once
 
-// rtx_fork_lod_fade.slangh - fork-owned. Dithered LOD cross fade (rtx.lodFade.*): a surface whose fade opacity is
-// below 255 is skipped wherever a hash of the hit position is at or above it. Primary and indirect rays re-trace past
-// it like past a clip plane, visibility rays see it as a non-opaque candidate. The opaque side of a cross fade carries
-// the partner flag: a kept cell of the fading side on the same plane takes its hit over. See docs/RemixLodFadeAPI_gta4.md.
+// rtx_fork_lod_fade.slangh - fork-owned. LOD cross fade (rtx.lodFade.*): a surface whose fade opacity is below 255 is
+// skipped wherever the pixel's blue noise sample is at or above it. The fading instance is non-opaque, so ray queries
+// see it as a candidate and leave a skipped surface uncommitted (forkLodFadeCandidateSkipped, visibility rays alike);
+// the TraceRay path re-traces past it like past a clip plane, a skipped hit handed to a surface on the same plane
+// (forkLodFadeFindCoplanarHit). See docs/RemixLodFadeAPI_gta4.md.
 // Included by resolve.slangh after the ray and surface concepts.
 
 #include "rtx/utility/noise.slangh"
@@ -13,43 +14,51 @@ uint forkLodFadeOpacity(Surface surface)
   return cb.lodFadeDebugForceOpacity != 255u ? cb.lodFadeDebugForceOpacity : surface.lodFadeOpacity;
 }
 
-// The lattice is shifted by half a cell: a flat surface at a round height would otherwise sit on a cell boundary, and the
-// float error of the hit position would flip its cells along iso-distance rings that flicker with the camera jitter.
-bool forkLodFadeCellSkipped(uint opacity, vec3 position)
+// One sample per pixel and frame, the same for every ray of the path (primary, bounces and visibility rays all run in
+// the pixel's thread), so a path sees one side of a cross fade and temporal accumulation blends the two.
+uint forkLodFadeThreshold()
 {
-  const ivec3 cell = ivec3(floor(position / cb.lodFadeCellSize + 0.5f));
-  uint hash = uintHash(uint3(cell));
-
-  if (cb.lodFadeAnimated != 0u)
-  {
-    hash = uintHash(hash ^ cb.frameIdx);
-  }
-
-  return (hash & 0xFFu) >= opacity;
+  RNG rng = createRNGAnywhere(cb.frameIdx, 777);
+  return uint(getNextSampleBlueNoise(rng) * 256.0f);
 }
 
-bool forkIsSurfaceFadedOut(Surface surface, vec3 position)
+bool forkIsSurfaceFadedOut(Surface surface)
 {
   const uint opacity = forkLodFadeOpacity(surface);
-  return opacity != 255u && forkLodFadeCellSkipped(opacity, position);
+  return opacity != 255u && forkLodFadeThreshold() >= opacity;
 }
 
-// The two sides of a cross fade share planes (a lod on its parent's facade), and which of two surfaces on one plane
-// the traversal returns first is a matter of float ulps, so the owner of a cell is decided by a search of the slab
-// around the hit with every triangle as a candidate. preferFading takes the nearest fading surface with a kept cell
-// (the hit is the opaque partner), else the nearest surface that is not a skipped cell (the hit is a skipped cell).
-// Candidates are judged at the position of the hit they may replace, so both sides of a cross fade see the same cell.
-// True when rayHitInfo now holds that candidate (its distance is from ray.origin like the hit it replaces).
-bool forkLodFadeFindCoplanarHit(Ray ray, uint8_t rayMask, inout RayHitInfo rayHitInfo, bool preferFading)
+// Primary and indirect ray queries (resolve_expanded.slangh) drop RAY_FLAG_FORCE_OPAQUE while something fades, so a
+// fading instance comes up as a candidate and a skipped surface is simply not committed: the traversal goes on behind
+// it with nothing re-traced, and where a lod lies on its parent's facade the opaque parent wins the tie. Every other
+// non-opaque candidate is committed as the flag would have.
+uint forkLodFadeRayFlags(uint flags)
 {
-  const float halfWidth = max(rayHitInfo.hitDistance * 1e-4f, 1e-4f);
-  const vec3 position = ray.origin + ray.direction * rayHitInfo.hitDistance;
+  return cb.lodFadeActive != 0u ? (flags & ~uint(RAY_FLAG_FORCE_OPAQUE)) : flags;
+}
+
+bool forkLodFadeCandidateSkipped(RayHitInfo candidate)
+{
+  return forkIsSurfaceFadedOut(surfaces[calculateSurfaceIndex(candidate)]);
+}
+
+// TraceRay path. The two sides of a cross fade share planes (a lod on its parent's facade), and the offset that pushes a
+// ray past a skipped surface may push it past a surface right behind as well, so a skipped hit is handed to the nearest
+// surface in the slab around it that the path keeps, with every triangle as a candidate. The slab is sized from that
+// offset: the renderer's own measure of the float error at the hit, so a coplanar surface is inside it however close
+// the camera, and it reaches as far along the ray as the offset moves the ray through surfaces parallel to the hit one.
+// True when rayHitInfo now holds that candidate (its distance is from ray.origin like the hit it replaces).
+bool forkLodFadeFindCoplanarHit(Ray ray, SurfaceInteraction surfaceInteraction, uint8_t rayMask, inout RayHitInfo rayHitInfo)
+{
+  const float offsetDistance = length(calculateRayOffset(surfaceInteraction.positionError, surfaceInteraction.geometryNormal));
+  const float halfWidth = max(offsetDistance, rayHitInfo.hitDistance * 1e-4f);
+  const float reach = offsetDistance / max(abs(dot(surfaceInteraction.geometryNormal, ray.direction)), 0.05f);
 
   RayDesc slab;
   slab.Origin = ray.origin + ray.direction * (rayHitInfo.hitDistance - halfWidth);
   slab.TMin = 0.0f;
   slab.Direction = ray.direction;
-  slab.TMax = 2.0f * halfWidth;
+  slab.TMax = reach + 2.0f * halfWidth;
 
   const uint flags = RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES;
   RayQuery<RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES> rayQuery;
@@ -71,10 +80,7 @@ bool forkLodFadeFindCoplanarHit(Ray ray, uint8_t rayMask, inout RayHitInfo rayHi
       continue;
     }
 
-    const Surface surface = surfaces[calculateSurfaceIndex(candidate)];
-    const uint opacity = forkLodFadeOpacity(surface);
-    const bool fading = opacity != 255u;
-    if ((preferFading && !fading) || (fading && forkLodFadeCellSkipped(opacity, position)))
+    if (forkIsSurfaceFadedOut(surfaces[calculateSurfaceIndex(candidate)]))
     {
       continue;
     }
