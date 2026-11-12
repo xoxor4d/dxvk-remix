@@ -46,6 +46,7 @@
 // other chains (integrators, visibility) leave this undefined and compile the sky term out.
 #define RESOLVE_SKY_LIT_PARTICLES 1
 #include "rtx/algorithm/resolve.slangh"
+#include "rtx/algorithm/rtx_fork_water_shore_decal.slangh"
 #include "rtx/algorithm/volume_lighting.slangh"
 #include "rtx/pass/post_fx/post_fx_motion_blur_geometry_flags.slangh"
 #include "rtx/algorithm/nee_cache_light.slangh"
@@ -2504,6 +2505,13 @@ void geometryPSRResolverVertex(
     numUnorderedInteractions, 
     geometryPSRResolverState.decalEncountered, decalMemory, decalEmissiveRadiance, surfaceIndex);
 
+  if (forkWaterShoreGatherFirstHitDecal(
+        ivec2(geometryPSRResolverState.pixelCoordinate), geometryPSRResolverState.isTransmissionPSR,
+        geometryPSRResolverState.bounceIteration, unorderedRayMask, decalMemory, decalEmissiveRadiance))
+  {
+    geometryPSRResolverState.decalEncountered = true;
+  }
+
   // Note: Add to the number of unordered interactions in the debug view based on the number of unordered interactions in resolving.
   if (GBUFFER_FEATURE_DEBUG_VIEW && (cb.debugView == DEBUG_VIEW_PRIMARY_UNORDERED_INTERACTIONS || cb.debugView == DEBUG_VIEW_PRIMARY_RAY_AND_UNORDERED_INTERACTIONS))
   {
@@ -3217,6 +3225,12 @@ void geometryResolverApplyUnorderedDecalsPass(ivec2 pixelCoordinate) {
   }
 
   const GeometryFlags geometryFlags = geometryFlagsReadFromGBuffer(pixelCoordinate, SharedFlags);
+
+  if (forkWaterShoreDefersFirstHitDecal(geometryFlags))
+  {
+    return;
+  }
+
   // Match the jittered primary ray used to populate the GBuffer. Non-serialized
   // view directions are reconstructed from this ray during GBuffer decode.
   const Ray primaryRay = rayCreatePrimaryFromPixel(cb.camera, pixelCoordinate);

@@ -95,6 +95,18 @@ a sea floor. No helper mesh below the water is needed. (Upstream also
 doubled the sky reflection on such pixels; the fork stores the PSR miss
 radiance the same way as a hit.)
 
+### Decals in front of the water
+
+A decal hovering over the ground (wet sand over a beach) rises through
+shallow water, so along the shore the water is the first hit behind it.
+With Separate Unordered Approximations on, such a decal would be blended
+into the water as a translucent diffuse layer and the ground under the
+water would show without it. For water carrying the shoreline modifier
+(not AnimatedWater alone) the decal is applied to the surface the
+transmission finds behind the water instead. Needs the shore fade enabled
+and primary surface transmission replacement (PSTR) on; decals meant to
+lie on such water are no longer drawn on it.
+
 ## Options
 
 All distances are in world units. The defaults are tuned for GTA IV (1 unit = 1 m).

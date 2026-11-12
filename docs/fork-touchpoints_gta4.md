@@ -956,3 +956,18 @@ queries drop `RAY_FLAG_FORCE_OPAQUE` the way they do while something fades.
 - **`src/dxvk/imgui/dxvk_imgui.cpp`** - hook, 1 LOC. *`fork_hooks::showHairCardSettings` after the "Hair Cards Roughness Scale" slider.*
 
 New option: `rtx.hairCards.candidateAlphaTest` (default on).
+
+## Workstream - Decals in front of shoreline water (fork - 2026-11-12)
+
+A decal hovering over the ground rises through shallow water at the shore. With separate unordered approximations
+the first hit behind it is then the water, the deferred decal pass blended it into the water as a translucent
+diffuse layer (`rtx.translucentDecalAlbedoFactor`) and the transmission PSR, which only gathers decals between the
+water and the ground, left the ground bare: a band as wide as the decal hovers high (NVIDIAGameWorks/rtx-remix
+issue 1112; upstream `854c385ed` bounds the ray behind a translucent hit and does not cover a decal in front of it).
+For a first hit on water with the shoreline modifier, while `rtx.water.shoreFadeEnable` is on and PSTR takes the
+pixel, the decal pass leaves the pixel alone and the first transmission PSR bounce gathers the decal along the
+camera ray up to the water and blends it into the surface it resolves. A decal found there replaces one found
+between the water and that surface.
+
+- **`src/dxvk/shaders/rtx/algorithm/rtx_fork_water_shore_decal.slangh`** - fork-owned file. *`forkWaterShoreDefersFirstHitDecal`, `forkWaterShoreGatherFirstHitDecal`.*
+- **`src/dxvk/shaders/rtx/algorithm/geometry_resolver.slangh`** - fork-touchpoint hooks. *Includes the fork header after `resolve.slangh`; `geometryPSRResolverVertex` calls `forkWaterShoreGatherFirstHitDecal` after its unordered resolve; `geometryResolverApplyUnorderedDecalsPass` returns on `forkWaterShoreDefersFirstHitDecal` after reading the G-buffer flags.*

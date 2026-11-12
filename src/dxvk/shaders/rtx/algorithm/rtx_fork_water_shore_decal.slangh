@@ -1,0 +1,80 @@
+#pragma once
+
+// rtx_fork_water_shore_decal.slangh - fork-owned. A decal hovering over the ground rises through shallow
+// shoreline water, so the first hit behind it is the water and the deferred decal pass would blend it into
+// the water. The decal goes to the surface the transmission PSR finds behind the water instead.
+
+bool forkWaterShoreDefersFirstHitDecal(GeometryFlags geometryFlags)
+{
+  return cb.waterShoreFadeEnable != 0 && geometryFlags.isWaterShoreline && geometryFlags.performPSTR;
+}
+
+// Gathers the decal between the camera and a shoreline water first hit for the first transmission PSR bounce.
+// Returns false and leaves the outputs alone when there is none.
+bool forkWaterShoreGatherFirstHitDecal(
+  ivec2 pixelCoordinate,
+  bool isTransmissionPSR,
+  uint bounceIteration,
+  uint unorderedRayMask,
+  inout uint4 decalMemory,
+  inout vec3 decalEmissiveRadiance)
+{
+  if (!isTransmissionPSR || bounceIteration != 1 ||
+      !cb.enableSeparateUnorderedApproximations || !cb.enableDecalMaterialBlending)
+  {
+    return false;
+  }
+
+  const GeometryFlags geometryFlags = geometryFlagsReadFromGBuffer(pixelCoordinate, SharedFlags);
+
+  if (!forkWaterShoreDefersFirstHitDecal(geometryFlags) || geometryFlags.portalSpace != PORTAL_SPACE_NONE)
+  {
+    return false;
+  }
+
+  // Still the first hit's: the transmission PSR writes its own distance once its surface is resolved.
+  const float firstHitDistance = PrimaryHitDistance[pixelCoordinate];
+
+  if (!(firstHitDistance > 0.0f))
+  {
+    return false;
+  }
+
+  Ray firstHitRay = rayCreatePrimaryFromPixel(cb.camera, pixelCoordinate);
+  firstHitRay.spreadAngle = cb.screenSpacePixelSpreadHalfAngle;
+  firstHitRay.tMax = firstHitDistance;
+
+  uint numUnorderedInteractions = 0;
+  bool firstHitDecalEncountered = false;
+  uint4 firstHitDecalMemory = 0;
+  vec3 firstHitDecalEmissiveRadiance = vec3(0.0f);
+  vec3 radianceAttenuation = vec3(1.0f);
+  vec3 emissiveRadiance = vec3(0.0f);
+  int surfaceIndex = -1;
+
+  resolveVertexUnordered<
+    RAY_FLAG_CULL_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES,
+    true,
+    false>(
+    resolveModeSeparateUnorderedApproximations | resolveModeDecalMaterialBlending,
+    firstHitRay,
+    unorderedRayMask,
+    PORTAL_SPACE_NONE,
+    false,
+    u16vec2(65535, 65535),
+    getIdentityQuaternion(),
+    0.0f, 1.0f,
+    radianceAttenuation, emissiveRadiance,
+    numUnorderedInteractions,
+    firstHitDecalEncountered, firstHitDecalMemory, firstHitDecalEmissiveRadiance, surfaceIndex);
+
+  if (!firstHitDecalEncountered)
+  {
+    return false;
+  }
+
+  decalMemory = firstHitDecalMemory;
+  decalEmissiveRadiance = firstHitDecalEmissiveRadiance;
+
+  return true;
+}
