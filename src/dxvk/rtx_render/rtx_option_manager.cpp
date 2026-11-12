@@ -201,24 +201,24 @@ namespace dxvk {
       numResolves++;
 
       // If callbacks didn't generate any dirtied options, bail
+      // The API thread marks options dirty under the update mutex (remixapi_SetConfigVariable), so the map is only
+      // read and cleared under it. An API write that arrives after this check stays dirty and resolves next frame.
+      lock.lock();
       if (dirtyOptions.empty()) {
         break;
       }
-    }
 
+      // Don't let dirty options persist across frames when the callbacks keep dirtying them
+      if (numResolves >= maxResolves) {
 #if RTX_OPTION_DEBUG_LOGGING
-    const bool unresolvedChanges = numResolves == maxResolves && !getDirtyOptionMap().empty();
-    if (unresolvedChanges) {
-      auto& dirtyOptions = getDirtyOptionMap();
-      Logger::warn(str::format("Dirty RtxOptions remaining after ", maxResolves, " passes, suggesting cyclic dependency."));
-      for (auto& rtxOption : dirtyOptions) {
-        Logger::warn(str::format("- Abandoned resolve of option ", rtxOption.second->m_name));
+        Logger::warn(str::format("Dirty RtxOptions remaining after ", maxResolves, " passes, suggesting cyclic dependency."));
+        for (auto& rtxOption : dirtyOptions) {
+          Logger::warn(str::format("- Abandoned resolve of option ", rtxOption.second->m_name));
+        }
+#endif
+        dirtyOptions.clear();
       }
     }
-#endif
-
-    // Don't let dirty options persist across frames
-    getDirtyOptionMap().clear();
   }
 
   void RtxOptionManager::clearDrawcallTranslationInvalid() {

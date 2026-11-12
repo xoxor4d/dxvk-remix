@@ -545,6 +545,15 @@ initializer list and can't be lifted into a separate TU.
 
 ---
 
+## src/dxvk/rtx_render/rtx_option_manager.cpp
+
+**Category:** index-only
+
+- **Inline tweak** at `RtxOptionManager::applyPendingValues` (end of the resolve loop) — ~10 LOC changed.
+  *The dirty-option map is only read and cleared under `RtxOptionImpl::getUpdateMutex()`: the API thread marks options dirty under that mutex in `remixapi_SetConfigVariable`. The "still dirty?" check re-takes the lock (as upstream does since), and the unconditional unlocked `getDirtyOptionMap().clear()` after the loop is replaced by a locked clear that only runs when the resolve passes are used up. An API write that arrives after the last check stays dirty and resolves next frame instead of being dropped.*
+
+---
+
 ## src/dxvk/rtx_render/rtx_options.h
 
 **Pre-refactor fork footprint:** +32 / -0 LOC (audit 2026-04-18)
