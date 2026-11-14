@@ -157,15 +157,20 @@ namespace dxvk {
     void externalDrawReleaseReplacementInstance(ReplacementInstance& replacementInstance);
 
     // Called from SceneManager::submitExternalDraw once the ReplacementInstance
-    // is known. An external draw unchanged since its last dynamic update (one
-    // submesh, same identity, no replacement appeared, nothing invalidated)
-    // takes the preserve path D3D9 draws take: the instance is refreshed, the
-    // dynamic per-draw work (draw call cache, instance update, surface
-    // material) is skipped. Returns true when the draw was handled. Friend of
-    // SceneManager. Implemented in rtx_fork_submit.cpp.
+    // is known. An external draw unchanged since its last dynamic update (same
+    // identity, same replacement bucket or one submesh without a replacement,
+    // nothing invalidated) takes the preserve path D3D9 draws take: the
+    // instances are refreshed, the dynamic per-draw work (draw call cache,
+    // instance update, surface material) is skipped. Returns true when the
+    // draw was handled. Friend of SceneManager. Implemented in rtx_fork_submit.cpp.
     bool externalDrawTryPreserve(SceneManager& scene, const Rc<DxvkContext>& ctx, ExternalDrawState& state,
                                  const std::shared_ptr<const std::vector<RasterGeometry>>& submeshes,
                                  ReplacementInstance& replacementInstance);
+
+    // Whether every mesh prim of the RI (one per mesh of its replacement bucket,
+    // or the single prim of an unreplaced draw) has a live instance whose BLAS
+    // was not rebuilt this frame. Implemented in rtx_fork_submit.cpp.
+    bool replacementInstancePreservable(const ReplacementInstance& replacementInstance, uint32_t frame);
 
     // Whether the last externalDrawTryPreserve handled its draw: the retained instance
     // replay (rtx_fork_retained.cpp) resets the report before a draw and reads it after.

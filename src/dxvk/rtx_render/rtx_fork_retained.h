@@ -5,9 +5,10 @@
 // DestroyRetainedInstances) and replays the whole table with one DrawRetainedInstances
 // call per frame. The replay runs every visible entry through
 // SceneManager::submitExternalDraw until the preserve path reports it unchanged for a
-// few frames; the entry is then pinned and a frame only keeps its instance alive (the
-// two preserveInstance calls), until a change to the entry or a global signal (texture
-// cache generation, option invalidation, object picking) drops the pin.
+// few frames; the entry is then pinned and a frame only keeps its instances alive (the
+// two preserveInstance calls for each, one per mesh of a USD replacement), until a change
+// to the entry or a global signal (texture cache generation, option invalidation, the mesh
+// replacement toggle, object picking) drops the pin.
 //
 // Handles are chosen by the host. Commands apply in call order at the next
 // DrawRetainedInstances. Hidden entries are skipped; their instances age out through

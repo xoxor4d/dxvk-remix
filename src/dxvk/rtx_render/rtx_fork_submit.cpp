@@ -201,11 +201,12 @@ namespace fork_hooks {
   // identity (dirty flags clear) is the same draw as last frame. The D3D9 path
   // then refreshes the instance instead of re-running processDrawCallState;
   // external draws always ran the dynamic path. The conditions mirror
-  // SceneManager::submitDrawState's usePreservePath. The refresh is what
-  // preserveReplacementInstance does minus the BlasEntry input copy: that
-  // re-points billboard / beam creation at this frame's vertex memory, which
-  // D3D9 draws need because theirs gets recycled; an api mesh's geometry is
-  // owned by the replacer and does not move.
+  // SceneManager::submitDrawState's usePreservePath, a USD mesh replacement
+  // included: the RI has to hold the bucket the lookup returns now. The refresh
+  // is what preserveReplacementInstance does minus the BlasEntry input copy:
+  // that re-points billboard / beam creation at this frame's vertex memory,
+  // which D3D9 draws need because theirs gets recycled; the geometry of an api
+  // mesh and of a replacement is owned by the replacer and does not move.
   // ---------------------------------------------------------------------------
   namespace {
     struct ExternalDrawOptions {
@@ -218,14 +219,33 @@ namespace fork_hooks {
     bool s_lastExternalDrawPreserved = false;
   }
 
+  bool replacementInstancePreservable(const ReplacementInstance& ri, const uint32_t frame) {
+    const ReplacementBucket* bucket = ri.activeReplacements.get();
+    const size_t primCount = bucket != nullptr ? bucket->replacements.size() : 1;
+    if (ri.prims.size() != primCount) {
+      return false;
+    }
+
+    bool hasInstance = false;
+    for (size_t i = 0; i < primCount; i++) {
+      // lights and graphs of a bucket have no RtInstance
+      if (bucket != nullptr && !bucket->replacements[i].includeOriginal && bucket->replacements[i].type != AssetReplacement::eMesh) {
+        continue;
+      }
+      RtInstance* instance = ri.prims[i].getInstance();
+      if (instance == nullptr || instance->isMarkedForGC() || instance->getBlas() == nullptr || instance->getBlas()->frameLastUpdated == frame) {
+        return false;
+      }
+      hasInstance = true;
+    }
+    return hasInstance;
+  }
+
   bool externalDrawTryPreserve(SceneManager& scene, const Rc<DxvkContext>& ctx, ExternalDrawState& state,
                                const std::shared_ptr<const std::vector<RasterGeometry>>& submeshes,
                                ReplacementInstance& ri) {
     s_lastExternalDrawPreserved = false;
     if (!RtxOptions::enablePreservePath() || !ExternalDrawOptions::preserveUnchangedExternalDraws()) {
-      return false;
-    }
-    if (submeshes->size() != 1) {
       return false;
     }
 
@@ -239,18 +259,21 @@ namespace fork_hooks {
     const RasterGeometry& submesh = (*submeshes)[0];
     const XXH64_hash_t materialIdentity = state.drawCall.getMaterialData().computeIdentityHash();
 
-    RtInstance* instance = ri.prims.size() == 1 ? ri.prims[0].getInstance() : nullptr;
-    const bool unchanged =
-      instance != nullptr && instance->getBlas() != nullptr &&
-      instance->getBlas()->frameLastUpdated != frame &&
+    bool unchanged =
       !seenThisFrame && ri.dirtyFlags.isClear() &&
       !RtxOptionManager::isDrawcallTranslationInvalid() &&
       !state.optionalParticleDesc.has_value() &&
       !state.categories.test(InstanceCategories::ParticleEmitter) &&
-      ri.activeReplacements == nullptr &&
-      externalDrawMeshReplacement(*scene.m_pReplacer, reinterpret_cast<XXH64_hash_t>(state.mesh), submesh.externalMaterial, state.drawCall.getMaterialData()) == nullptr &&
       ri.externalMaterialIdentityHash == materialIdentity &&
-      device->getCommon()->getTextureManager().getTextureCacheGeneration() == scene.m_textureCacheGenerationValidForPreserve;
+      device->getCommon()->getTextureManager().getTextureCacheGeneration() == scene.m_textureCacheGenerationValidForPreserve &&
+      replacementInstancePreservable(ri, frame);
+
+    if (unchanged) {
+      // a replaced draw only uses the first submesh, as the geometry template
+      const auto pReplacements = externalDrawMeshReplacement(*scene.m_pReplacer, reinterpret_cast<XXH64_hash_t>(state.mesh), submesh.externalMaterial, state.drawCall.getMaterialData());
+      unchanged = ri.activeReplacements.get() == pReplacements.get() &&
+        (pReplacements != nullptr || submeshes->size() == 1);
+    }
 
     if (!unchanged) {
       // the dynamic path runs next with exactly this material state

@@ -971,3 +971,21 @@ between the water and that surface.
 
 - **`src/dxvk/shaders/rtx/algorithm/rtx_fork_water_shore_decal.slangh`** - fork-owned file. *`forkWaterShoreDefersFirstHitDecal`, `forkWaterShoreGatherFirstHitDecal`.*
 - **`src/dxvk/shaders/rtx/algorithm/geometry_resolver.slangh`** - fork-touchpoint hooks. *Includes the fork header after `resolve.slangh`; `geometryPSRResolverVertex` calls `forkWaterShoreGatherFirstHitDecal` after its unordered resolve; `geometryResolverApplyUnorderedDecalsPass` returns on `forkWaterShoreDefersFirstHitDecal` after reading the G-buffer flags.*
+
+## Workstream - Preserve path for replaced API draws (fork - 2026-11-14)
+
+A Tracy capture at a spot with many replaced vegetation meshes: ~2,700 of ~3,200 `submitExternalDraw` calls per
+frame ran `drawReplacements` and `processDrawCallState` for every prim of their replacement bucket (~8.5 ms on the
+CS thread), since `externalDrawTryPreserve` only took a draw without a USD mesh replacement and with one prim.
+The hook now compares the bucket the RI holds with the one the lookup returns, as `submitDrawState` does
+(`activeReplacementsMatch`), and `replacementInstancePreservable` wants a live instance with an untouched BLAS for
+every mesh of the bucket. A replaced draw may have any number of submeshes: only the first one is used, as the
+geometry template. The retained keep-alive runs the same check and refreshes every instance of the RI, so a
+replaced entry gets pinned too; a pinned entry skips the replacement lookup, so a flip of the mesh replacement
+toggle (`rtx.enableReplacementMeshes` / `rtx.enableReplacementAssets`, which invalidates nothing else) unpins all
+entries for a frame. As on the D3D9 preserve path, a preserved prim reapplies the hair card mark from the
+categories of the draw, not from those its replacement adds.
+
+- **`src/dxvk/rtx_render/rtx_fork_submit.cpp`**, **`rtx_fork_hooks.h`** - fork-owned. *`externalDrawTryPreserve` bucket comparison, `replacementInstancePreservable`.*
+- **`src/dxvk/rtx_render/rtx_fork_retained.h` / `.cpp`** - fork-owned. *`keepAlive` over all prims, the unpin on a mesh replacement toggle.*
+- **`docs/RemixApi_gta4.md`** - companion updated (pin drop conditions).

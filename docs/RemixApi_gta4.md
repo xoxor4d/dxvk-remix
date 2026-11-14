@@ -67,8 +67,9 @@ A static object is described once and replayed by the runtime every frame, inste
 per placement per frame. The runtime keeps each entry's description, runs it through the regular external
 draw path until the preserve path reports it unchanged for `rtx.retained.pinAfterPreservedFrames` (2)
 frames, then pins it: a frame only keeps a pinned instance alive. A description change, a visibility
-change, a texture cache clear, an option that invalidates draw translation or active object picking drops
-the pin and the entry takes the full path again.
+change, a texture cache clear, an option that invalidates draw translation, the mesh replacement toggle
+or active object picking drops the pin and the entry takes the full path again. An entry whose mesh has a
+USD replacement is pinned like any other.
 
 | Function | Purpose |
 | :-- | :-- |

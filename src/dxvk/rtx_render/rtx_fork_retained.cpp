@@ -86,23 +86,26 @@ namespace {
   // checks the entry passed in the frames before. False when the instance is gone or changed.
   bool keepAlive(SceneManager& scene, const Entry& entry, const uint32_t frame) {
     ReplacementInstance* ri = fork_hooks::RetainedSceneAccess::tracker(scene).findReplacementInstanceByIdentity(entry.identityHash);
-    if (ri == nullptr || ri->prims.size() != 1 || !ri->dirtyFlags.isClear()) {
+    if (ri == nullptr || !ri->dirtyFlags.isClear()) {
       return false;
     }
 
     // a second DrawRetainedInstances in the same frame id (the id is the present count, which the CS thread can run
     // ahead of) finds the entry alive already
     if (ri->frameLastSeen == frame) {
-      return true;
+      return !ri->prims.empty();
     }
 
-    RtInstance* instance = ri->prims[0].getInstance();
-    if (instance == nullptr || instance->isMarkedForGC() || instance->getBlas() == nullptr || instance->getBlas()->frameLastUpdated == frame) {
+    if (!fork_hooks::replacementInstancePreservable(*ri, frame)) {
       return false;
     }
 
-    fork_hooks::RetainedSceneAccess::preserve(scene, *instance, &entry.state.drawCall);
-    fork_hooks::RetainedSceneAccess::instances(scene).preserveInstance(*instance, entry.state.drawCall, nullptr);
+    for (const PrimInstance& prim : ri->prims) {
+      if (RtInstance* instance = prim.getInstance()) {
+        fork_hooks::RetainedSceneAccess::preserve(scene, *instance, &entry.state.drawCall);
+        fork_hooks::RetainedSceneAccess::instances(scene).preserveInstance(*instance, entry.state.drawCall, nullptr);
+      }
+    }
     ri->frameLastSeen = frame;
     return true;
   }
@@ -285,6 +288,12 @@ namespace fork_hooks {
       common->getTextureManager().getTextureCacheGeneration() == RetainedSceneAccess::textureCacheGenerationValidForPreserve(scene);
     const uint32_t pinAfter = RetainedOptions::pinAfterPreservedFrames();
 
+    // a pinned entry skips the replacement lookup, and the mesh replacement toggle invalidates nothing else
+    static bool s_replacementMeshesEnabled = RtxOptions::getEnableReplacementMeshes();
+    const bool replacementMeshesEnabled = RtxOptions::getEnableReplacementMeshes();
+    const bool unpinAll = !pinAllowed || replacementMeshesEnabled != s_replacementMeshesEnabled;
+    s_replacementMeshesEnabled = replacementMeshesEnabled;
+
     FrameStats stats;
     for (auto it = s_entries.begin(); it != s_entries.end();) {
       Entry& entry = it->second;
@@ -294,7 +303,7 @@ namespace fork_hooks {
       }
       stats.visible++;
 
-      if (!pinAllowed) {
+      if (unpinAll) {
         unpin(entry);
       }
 
