@@ -989,3 +989,14 @@ categories of the draw, not from those its replacement adds.
 - **`src/dxvk/rtx_render/rtx_fork_submit.cpp`**, **`rtx_fork_hooks.h`** - fork-owned. *`externalDrawTryPreserve` bucket comparison, `replacementInstancePreservable`.*
 - **`src/dxvk/rtx_render/rtx_fork_retained.h` / `.cpp`** - fork-owned. *`keepAlive` over all prims, the unpin on a mesh replacement toggle.*
 - **`docs/RemixApi_gta4.md`** - companion updated (pin drop conditions).
+
+## Workstream - Bridge server below the game's priority class (fork - 2026-11-15)
+
+GTA IV pins its main thread to logical processor 0 (`CApp::Init`: `SetThreadAffinityMask(GetCurrentThread(), 1)`)
+and the gta4-rtx mod runs the game at `HIGH_PRIORITY_CLASS`, the class the bridge client gave the server. At equal
+priority the main thread cannot preempt a server thread that is running on processor 0 and waits for the end of its
+time slice: frame spikes of 30 to 100 ms whenever a busy `NvRemixBridge.exe` thread landed there. The server is now
+created with `ABOVE_NORMAL_PRIORITY_CLASS`, so a game at high priority preempts it and the server thread moves to
+another processor; a game at normal priority is still outranked by the server, as upstream intends.
+
+- **`bridge/src/util/util_process.cpp`** - upstream, inline tweak. *`Process::createChildProcess`: `HIGH_PRIORITY_CLASS` -> `ABOVE_NORMAL_PRIORITY_CLASS`.* Drop on rebase if upstream makes the class configurable.

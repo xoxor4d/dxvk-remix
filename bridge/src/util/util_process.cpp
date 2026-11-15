@@ -50,7 +50,7 @@ namespace bridge_util {
       NULL,          // process security attributes
       NULL,          // primary thread security attributes
       TRUE,          // handles are inherited
-      HIGH_PRIORITY_CLASS,             // creation flags
+      ABOVE_NORMAL_PRIORITY_CLASS,     // creation flags, below a game running at high priority so its threads can preempt the server's
       NULL,          // use parent's environment
       NULL,          // use parent's current directory
       &siStartInfo,  // STARTUPINFO pointer
