@@ -502,7 +502,7 @@ namespace dxvk {
     // NV-DXVK start: DLSS 3D-Guided Neural Generation, collapsed by default
     {
       ImGui::Dummy(ImVec2(0.0f, 3.0f));
-      if (RemixGui::CollapsingHeader("DLSS 3D-Guided Neural Generation [Experimental]", ImGuiTreeNodeFlags_CollapsingHeader)) {
+      if (RemixGui::CollapsingHeader("DLSS5 - 3D-Guided Neural Generation [Experimental]", ImGuiTreeNodeFlags_CollapsingHeader | ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::PushItemWidth(static_cast<float>(subItemWidth));
         ImGui::Indent(static_cast<float>(subItemIndent));
         ImGui::PushID("DLSS 3D-Guided Neural Generation");

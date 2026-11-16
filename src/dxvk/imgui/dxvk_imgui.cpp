@@ -3754,7 +3754,7 @@ namespace dxvk {
         auto& neuralUplift = common->metaNeuralUplift();
         RemixGui::Separator();
 
-        if (RemixGui::CollapsingHeader("DLSS 3D-Guided Neural Generation [Experimental]", collapsingHeaderClosedFlags)) {
+        if (RemixGui::CollapsingHeader("DLSS5 - 3D-Guided Neural Generation [Experimental]", collapsingHeaderFlags)) {
           ImGui::Indent();
           ImGui::PushID("DLSS 3D-Guided Neural Generation");
           neuralUplift.showImguiSettings();
