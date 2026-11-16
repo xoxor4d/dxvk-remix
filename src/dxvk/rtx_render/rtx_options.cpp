@@ -501,8 +501,8 @@ namespace dxvk {
       rtxdiRayQuery.enableRayTracedBiasCorrection.setDeferred(false);
       restirGiRayQuery.biasCorrectionMode.setDeferred(ReSTIRGIBiasCorrection::BRDF);
       restirGiRayQuery.useReflectionReprojection.setDeferred(false);
-      common->metaComposite().enableStochasticAlphaBlend.setDeferred(false);
-      postFx.enable.setDeferred(false);
+      //common->metaComposite().enableStochasticAlphaBlend.setDeferred(false); // eeeh why
+      //postFx.enable.setDeferred(false); // eeeh why
     };
 
     auto indirectPreset = [&](IntegrateIndirectMode mode,
