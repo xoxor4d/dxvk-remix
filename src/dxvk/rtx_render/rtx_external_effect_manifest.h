@@ -55,6 +55,13 @@ namespace dxvk {
     // turns it into a labelled combo. The parser guarantees one entry per
     // representable value.
     std::vector<std::string> items;
+    // Non-empty binds the parameter to a game value: a key in the store the
+    // game writes through remixapi_SetGameValue ('param.<id>.gamevalue'). The
+    // runtime replaces the parameter with that value every frame, so a game
+    // integration can drive an effect (rain on the lens, a damage flash)
+    // without the effect knowing anything about the game. While the key has
+    // never been written the parameter keeps its own value.
+    std::string gameValue;
     RtxExternalEffectParameterType type = RtxExternalEffectParameterType::Float;
     uint32_t valueOffset = 0;
     uint32_t valueCount = 1;

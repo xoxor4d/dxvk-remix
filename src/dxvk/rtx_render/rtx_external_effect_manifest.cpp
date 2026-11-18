@@ -752,7 +752,7 @@ namespace dxvk {
       if (group == "param" && keyParts.size() == 3) {
         const std::string field = toLower(keyParts[2]);
         const auto index = parameterIndices.find(keyParts[1]);
-        if (field != "label" && field != "tooltip" && field != "items") {
+        if (field != "label" && field != "tooltip" && field != "items" && field != "gamevalue") {
           manifest.warnings.push_back(location + "unknown directive '" + key + "'; ignored");
           continue;
         }
@@ -776,6 +776,16 @@ namespace dxvk {
         }
         if (field == "tooltip") {
           parameter.tooltip = value;
+          continue;
+        }
+        if (field == "gamevalue") {
+          // The key is the whole contract between the game and the effect, so
+          // an empty one is a mistake rather than a way to say 'unbound'.
+          if (value.empty()) {
+            error = location + "gamevalue key cannot be empty";
+            return false;
+          }
+          parameter.gameValue = value;
           continue;
         }
 
