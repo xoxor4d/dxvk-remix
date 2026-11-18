@@ -171,12 +171,39 @@ What the parser enforces:
 | `label` | Overrides the title-cased id. Must not be empty |
 | `tooltip` | Hover text, shown unformatted - a `%` in it is safe |
 | `items` | Turns an `int` into a labelled combo, entries separated by `\|` |
+| `gamevalue` | Binds the parameter to a game value key (see below). Must not be empty |
 
 `items` is valid only on an `int`, requires `step 1`, and requires exactly one
 entry per representable value - widen the range and forget the list and you get
 `items declares 3 entries but the range covers 4 values`. The list is indexed
 by the value minus the minimum, so `int 3 [0..3]` with four items starts on the
 fourth.
+
+### Feeding game data with `param.<id>.gamevalue`
+
+```text
+//! remixfx param.rain           = float 0.0 [0..1]
+//! remixfx param.rain.gamevalue = gta4.lens.rain
+```
+
+A game integration writes the key through the Remix API, as often as it likes:
+
+```cpp
+remix.SetGameValue("gta4.lens.rain", "0.8");
+```
+
+Every frame the runtime replaces the parameter with the last value written under
+that key, in the buffer the shader reads. The shader needs nothing new: it reads
+`rain` like any other parameter. Vector parameters take components separated by
+spaces or commas; components the game leaves out keep the effect's own value.
+The value is not clamped to the declared range - it is the game's measurement,
+so a counter or an intensity above one arrives as written.
+
+Until the game has written the key, the parameter is an ordinary one: the slider
+edits it and the config persists it, and it remains the fallback a game that is
+not running the integration sees. The slider's tooltip names the key. Keys share
+the store with `__weather.*` and the other fork-side conventions, so a game
+integration should prefix its own (`gta4.`, `mymod.`).
 
 ### Grouping with `param.category`
 

@@ -16,6 +16,7 @@
 #include "rtx_auto_exposure.h"
 #include "rtx_context.h"
 #include "rtx_external_effects.h"
+#include "rtx_fork_game_state.h"
 #include "rtx_imgui.h"
 #include "rtx_postFx.h"
 
@@ -847,6 +848,34 @@ namespace dxvk {
       path = std::filesystem::path(env::getExePath()).parent_path() / path;
     }
     return path.lexically_normal();
+  }
+
+  // Replaces every parameter bound with 'param.<id>.gamevalue' by the value the
+  // game last wrote under that key. Only the copy headed for the GPU changes:
+  // the effect's own values, which the UI edits and the config persists, are
+  // what the parameter falls back to whenever the game has not written the key.
+  // Not clamped to the declared range on purpose - a game value is the game's
+  // measurement (a counter, an intensity above one), not a slider position.
+  static void applyGameValues(const RtxExternalEffectManifest& manifest, float* values) {
+    std::string text;
+    for (const RtxExternalEffectParameter& parameter : manifest.parameters) {
+      if (parameter.gameValue.empty()
+       || !fork_game_state::GameStateStore::get().tryGet(parameter.gameValue, text)) {
+        continue;
+      }
+
+      // Same spelling SetConfigVariable takes for a vector: components split by
+      // commas or spaces. Components the game left out keep the effect's own.
+      std::replace(text.begin(), text.end(), ',', ' ');
+      std::istringstream stream(text);
+      for (uint32_t i = 0; i < parameter.valueCount; i++) {
+        float component = 0.0f;
+        if (!(stream >> component) || !std::isfinite(component)) {
+          break;
+        }
+        values[parameter.valueOffset + i] = component;
+      }
+    }
   }
 
   std::filesystem::path RtxExternalEffects::findCompiler() const {
@@ -2399,6 +2428,7 @@ namespace dxvk {
     ExternalEffectParameterData parameterData = {};
     parameterData.valueCount = effect->manifest.parameterValueCount;
     std::copy(effect->values.begin(), effect->values.end(), parameterData.values);
+    applyGameValues(effect->manifest, parameterData.values);
 
     DxvkDevice* device = ctx->getDevice().ptr();
     if (m_frameDataBuffer == nullptr || m_uniformBufferDevice != device) {
@@ -2748,7 +2778,14 @@ namespace dxvk {
       // The same hover delay every built-in option row uses, and unformatted
       // because the text is the author's: a '%' in a tooltip about percentages
       // must not be read as a format specifier.
-      if (!parameter.tooltip.empty()) {
+      if (!parameter.gameValue.empty()) {
+        // The slider still edits the fallback, so it stays enabled; what it
+        // needs is a word on why moving it may change nothing on screen.
+        const std::string tooltip = (parameter.tooltip.empty() ? std::string() : parameter.tooltip + "\n\n")
+          + "Driven by the game value '" + parameter.gameValue
+          + "' once the game writes it; this value is used until then.";
+        RemixGui::SetTooltipToLastWidgetOnHover(tooltip.c_str());
+      } else if (!parameter.tooltip.empty()) {
         RemixGui::SetTooltipToLastWidgetOnHover(parameter.tooltip.c_str());
       }
 

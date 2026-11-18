@@ -553,6 +553,34 @@ void main() {}
 )", "same texture twice", "A repeated write target was accepted.");
   }
 
+  // A game value binding is a key and nothing else: the parameter keeps its own
+  // declaration, and a binding on a parameter that does not exist is the same
+  // typo every other annotation is rejected for.
+  void testParsesGameValueBindings() {
+    dxvk::RtxExternalEffectManifest manifest;
+    std::string error;
+    require(parse(R"(
+//! remixfx effect.id = lens
+//! remixfx param.rain = float 0.0 [0..1]
+//! remixfx param.rain.gamevalue = gta4.lens.rain
+//! remixfx param.tint = float3 1 1 1 [0..1]
+)", manifest, error), error.c_str());
+
+    require(manifest.parameters[0].gameValue == "gta4.lens.rain", "A game value key was not parsed.");
+    require(manifest.parameters[0].defaultValues[0] == 0.0f, "A game value binding changed the default.");
+    require(manifest.parameters[1].gameValue.empty(), "An unbound parameter got a game value key.");
+    require(manifest.warnings.empty(), "A game value binding was reported as unknown.");
+
+    requireRejected(R"(
+//! remixfx param.rain = float 0.0 [0..1]
+//! remixfx param.rain.gamevalue =
+)", "gamevalue key cannot be empty", "An empty game value key was accepted.");
+    requireRejected(R"(
+//! remixfx param.rain = float 0.0 [0..1]
+//! remixfx param.snow.gamevalue = gta4.lens.snow
+)", "has not been declared", "A game value key on an undeclared parameter was accepted.");
+  }
+
   // A texture is VRAM, and one no pass fills is a permanent field of zeroes.
   // Worth saying so, but not worth locking an author out of their own file
   // mid-edit, so these are warnings rather than errors.
@@ -686,6 +714,7 @@ int main(int argc, char** argv) {
     testRejectsUndeclaredTextures();
     testRejectsBadPassDeclarations();
     testWarnsAboutUnusedTextures();
+    testParsesGameValueBindings();
     testRejectsTooManyTextures();
     testRejectsDuplicateParameters();
     testRejectsInvalidDomainAndIds();
