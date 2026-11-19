@@ -265,6 +265,8 @@ namespace fork_hooks {
       !state.optionalParticleDesc.has_value() &&
       !state.categories.test(InstanceCategories::ParticleEmitter) &&
       ri.externalMaterialIdentityHash == materialIdentity &&
+      // a repeated registration of the mesh replaced its vertices (AssetReplacer::registerExternalMesh)
+      ri.externalMeshPositionHash == submesh.hashes[HashComponents::VertexPosition] &&
       device->getCommon()->getTextureManager().getTextureCacheGeneration() == scene.m_textureCacheGenerationValidForPreserve &&
       replacementInstancePreservable(ri, frame);
 
@@ -279,6 +281,7 @@ namespace fork_hooks {
       // the dynamic path runs next with exactly this material state
       if (!seenThisFrame) {
         ri.externalMaterialIdentityHash = materialIdentity;
+        ri.externalMeshPositionHash = submesh.hashes[HashComponents::VertexPosition];
       }
       return false;
     }

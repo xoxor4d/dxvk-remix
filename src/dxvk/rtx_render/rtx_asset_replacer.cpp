@@ -241,15 +241,41 @@ void AssetReplacer::destroyExternalMaterial(remixapi_MaterialHandle handle) {
 }
 
 void AssetReplacer::registerExternalMesh(remixapi_MeshHandle handle, std::vector<RasterGeometry>&& submeshes) {
-  if (m_extMeshes.count(handle) > 0) {
-    //Logger::info("Ignoring repeated mesh registration (handle=" + tostr(handle) + ") ");
-    return;
-  }
-
   // Tag each submesh with the external mesh handle so capture + runtime
   // use the same identity for replacement-lookup parity.
   for (auto& submesh : submeshes) {
     submesh.externalMesh = handle;
+  }
+
+  if (const auto found = m_extMeshes.find(handle); found != m_extMeshes.end()) {
+    // Fork: a repeated registration with the same layout is a vertex update. The topology hashes of the
+    // mesh are kept so the draw finds its BlasEntry again and takes kUpdateBVH (refit, last frame's
+    // vertices become the previous positions); the position hash of the new registration says it changed.
+    // Anything else is ignored as before.
+    const std::vector<RasterGeometry>& current = *found->second;
+    if (current.size() != submeshes.size()) {
+      return;
+    }
+
+    for (size_t i = 0; i < submeshes.size(); i++) {
+      if (current[i].vertexCount != submeshes[i].vertexCount ||
+          current[i].indexCount != submeshes[i].indexCount ||
+          current[i].numBonesPerVertex != submeshes[i].numBonesPerVertex ||
+          current[i].externalMaterial != submeshes[i].externalMaterial) {
+        return;
+      }
+    }
+
+    for (size_t i = 0; i < submeshes.size(); i++) {
+      const XXH64_hash_t positionHash = submeshes[i].hashes[HashComponents::VertexPosition];
+      submeshes[i].hashes = current[i].hashes;
+      submeshes[i].hashes[HashComponents::VertexPosition] = positionHash;
+      submeshes[i].hashes.precombine();
+    }
+
+    // draws of earlier frames keep the vector they hold alive
+    found->second = std::make_shared<std::vector<RasterGeometry>>(std::move(submeshes));
+    return;
   }
 
   m_extMeshes.emplace(handle, std::make_shared<std::vector<RasterGeometry>>(std::move(submeshes)));
